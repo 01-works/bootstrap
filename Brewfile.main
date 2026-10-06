@@ -1,0 +1,57 @@
+# 메인 개발기 추가분 (profiles/main.sh)
+
+tap "anomalyco/tap"
+tap "oven-sh/bun"
+tap "steipete/tap"
+
+# 런타임. Node는 fnm으로만 관리한다 (brew "node"는 두지 않음, development/node.md)
+brew "fnm"
+brew "oven-sh/bun/bun", trusted: true
+brew "rust"
+brew "uv"
+
+# 컨테이너 (development/containers.md)
+brew "colima", restart_service: :changed
+brew "docker"
+brew "docker-buildx"
+brew "docker-compose"
+
+# 터널
+brew "cloudflared"
+cask "ngrok"
+
+# 미디어·문서 처리
+brew "ffmpeg"
+brew "poppler"
+cask "libreoffice"
+
+# 기타 CLI
+brew "googleworkspace-cli"
+brew "mas"
+
+# 에이전트 (agents/README.md). Claude Code는 scripts/steps/60-agents.sh에서 설치
+brew "anomalyco/tap/opencode", trusted: true
+cask "codex"
+cask "paseo"
+cask "steipete/tap/codexbar", trusted: true
+# cask "cursor"  # 아직 안 씀. 쓰기로 하면 주석 해제
+
+# 앱
+cask "chatgpt"
+cask "claude"
+cask "discord"
+cask "figma"
+cask "google-chrome"
+cask "rectangle"
+cask "visual-studio-code"
+
+# App Store (먼저 App Store에 로그인)
+mas "KakaoTalk", id: 869223134
+mas "Numbers Creator Studio", id: 361304891
+
+# 언어별 도구. 위 brew 항목이 설치된 뒤에 처리된다
+cargo "cargo-audit"
+uv "aider-chat", with: ["pip"]
+vscode "eamodio.gitlens"
+vscode "esbenp.prettier-vscode"
+vscode "github.vscode-github-actions"

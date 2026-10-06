@@ -1,0 +1,30 @@
+# ~/.codex/config.toml이 없을 때만 복사되는 기본값 (scripts/steps/40-dotfiles.sh).
+# Codex가 이 파일에 신뢰 폴더([projects.*]), 플러그인, 앱 내부 경로를 계속 써넣기 때문에 링크하지 않는다.
+# 여기 있는 값을 바꿨으면 각 기기의 ~/.codex/config.toml에도 직접 반영할 것.
+
+model = "gpt-6.1-sol"
+model_context_window = 250000
+model_auto_compact_token_limit = 200000
+model_reasoning_effort = "medium"
+personality = "pragmatic"
+service_tier = "default"
+
+[agents]
+max_threads = 24
+max_depth = 2
+
+[features]
+hooks = true
+js_repl = false
+
+[notice]
+hide_rate_limit_model_nudge = true
+
+[desktop]
+ambient-suggestions-enabled = false
+conversationDetailMode = "STEPS_PROSE"
+followUpQueueMode = "queue"
+dock-icon-preference = "codex-system"
+
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"

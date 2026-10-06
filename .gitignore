@@ -1,0 +1,12 @@
+.DS_Store
+
+# 비밀값·인증 정보. .githooks/pre-commit의 gitleaks가 한 번 더 막는다.
+.env
+.env.*
+.zsh_secrets
+*.local
+auth.json
+hosts.yml
+id_*
+*.pem
+*.key

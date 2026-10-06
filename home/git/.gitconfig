@@ -1,0 +1,13 @@
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[user]
+	name = 영원
+	email = 236323978+01-office@users.noreply.github.com
+
+# 이 기기에만 필요한 설정 (저장소에 넣지 않음)
+[include]
+	path = ~/.gitconfig.local
