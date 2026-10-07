@@ -60,6 +60,13 @@ if [[ -n "$DOTFILES" ]]; then
   done
 fi
 
+if contains containers $STEPS; then
+  step "docker 플러그인"
+  for sub in compose buildx; do
+    if docker "$sub" version >/dev/null 2>&1; then pass "docker $sub"; else miss "docker $sub 안 됨 (./bootstrap.sh --only containers)"; fi
+  done
+fi
+
 if contains power $STEPS; then
   step "전원"
   if [[ "$(pmset -g custom | awk '$1 == "sleep" {print $2; exit}')" == 0 ]]; then

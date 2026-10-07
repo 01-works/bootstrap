@@ -3,7 +3,7 @@
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
-# Claude Code는 자동 업데이트되는 공식 설치 스크립트를 쓴다 (~/.local/bin/claude).
+# Claude Code는 자동 업데이트되는 공식 설치 스크립트를 쓴다 (~/.local/bin/claude). 근거: TOOLS.md
 if has claude; then
   ok "claude $(claude --version 2>/dev/null | head -1)"
 else

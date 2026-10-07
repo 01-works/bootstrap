@@ -23,6 +23,8 @@
 4. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
 5. 마지막에 출력되는 수동 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale 등)
 
+도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
+
 ## 프로필
 
 기기마다 무엇을 설치하고 어떤 설정 파일을 둘지 [profiles/](profiles/)에서 고른다. 처음 한 번 `--profile`을 주면 기억한다.
@@ -45,6 +47,7 @@
 | power | 잠자기 끄기, 원격 접속 확인 (늘 켜두는 기기) | [hardware/mac-mini.md](hardware/mac-mini.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm | [development/node.md](development/node.md) |
+| containers | docker compose·buildx 플러그인 연결 | [development/containers.md](development/containers.md) |
 | agents | Claude Code 설치, 에이전트 확인 | [agents/](agents/README.md) |
 | auth | GitHub 로그인, SSH 키, 비밀값 파일 | [development/git.md](development/git.md) |
 
@@ -74,6 +77,7 @@
 bootstrap.sh          진입점
 Brewfile              모든 기기 공통 설치 목록
 Brewfile.main         메인 개발기 추가분
+TOOLS.md              도구별 공식 문서 링크, 설치 방법을 고른 이유
 profiles/             기기별 단계·Brewfile·설정 파일 선택
 home/                 ~에 연결할 설정 파일 (묶음별)
 templates/            저장소 밖에 둘 파일의 템플릿

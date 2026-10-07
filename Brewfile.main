@@ -2,11 +2,11 @@
 
 tap "steipete/tap"
 
-# Node: 개발은 fnm으로 (development/node.md). brew "node"는 Hermes 대시보드가 쓴다
+# Node: 개발은 fnm으로 (development/node.md)
 brew "fnm"
-brew "node"
+brew "node"  # 지금 Mac의 Hermes 대시보드가 쓴다 (TOOLS.md 5)
 
-# 컨테이너 (development/containers.md)
+# 컨테이너 (development/containers.md). 플러그인 연결은 containers 단계
 brew "colima", restart_service: :changed
 brew "docker"
 brew "docker-buildx"
@@ -16,11 +16,11 @@ brew "docker-compose"
 cask "codex"
 cask "paseo"
 cask "claude"
-cask "chatgpt"  # Codex 설정이 이 앱 안의 파일을 참조한다
+cask "chatgpt"  # Codex 앱 포함. Codex 설정이 이 앱 안의 파일을 참조한다
 cask "steipete/tap/codexbar", trusted: true
 
 # 에이전트가 쓰는 도구
-brew "ffmpeg"   # Hermes 음성 변환
+brew "ffmpeg"   # 지금 Mac의 Hermes 음성 변환 (TOOLS.md 5)
 brew "ripgrep"  # 에이전트가 셸에서 검색할 때
 
 # 터널

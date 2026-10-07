@@ -8,7 +8,9 @@
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-`~/.local/bin/claude`에 설치되고 스스로 업데이트된다. Homebrew cask(`claude-code`)도 있지만 그건 `brew upgrade`로 따로 올려야 해서 쓰지 않는다.
+`~/.local/bin/claude`에 설치되고 스스로 업데이트된다. 공식 문서의 권장 방법이다 ([TOOLS.md](../TOOLS.md)). Homebrew cask(`claude-code`)도 있지만 자동 업데이트가 안 되고 최신보다 한 주쯤 늦은 stable 채널이라 쓰지 않는다.
+
+설치 상태 점검: `claude doctor`
 
 ## 설정
 

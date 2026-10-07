@@ -9,6 +9,7 @@ colima list                       # VM 목록
 docker ps
 ```
 
+- Homebrew로 설치한 `docker-compose`, `docker-buildx`는 `~/.docker/cli-plugins`에 연결해야 `docker compose`, `docker buildx`로 쓸 수 있다. `containers` 단계가 심볼릭 링크를 만든다 ([TOOLS.md](../TOOLS.md) 3).
 - `brew "colima", restart_service: :changed`이므로 Homebrew 서비스로 로그인할 때 자동 시작된다.
 - 프로필(`colima start -p <이름>`)로 VM을 여러 개 둘 수 있다. 다 쓴 VM은 `colima delete -p <이름>`으로 지워야 디스크가 돌아온다.
 

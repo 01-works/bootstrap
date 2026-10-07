@@ -3,6 +3,7 @@
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
+# 설치 방법 근거: TOOLS.md (Homebrew)
 if has brew; then
   ok "Homebrew $(brew --version | head -1 | awk '{print $2}')"
 else

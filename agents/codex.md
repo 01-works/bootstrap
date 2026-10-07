@@ -4,14 +4,15 @@
 
 `Brewfile.main`의 `cask "codex"` → `/opt/homebrew/bin/codex`.
 
-npm 전역 설치(`npm i -g @openai/codex`)는 Node 버전별로 따로 깔려서, fnm 기본 버전을 바꾸면 `codex`가 사라진다. 그래서 cask를 쓴다.
+공식 문서에는 설치 스크립트(기본), npm, Homebrew 세 가지가 있다 ([TOOLS.md](../TOOLS.md)). npm 전역 설치는 Node 버전별로 따로 깔려서, fnm 기본 버전을 바꾸면 `codex`가 사라진다. 다른 앱과 같이 Homebrew로 관리하려고 cask를 쓴다.
 
-지금 Mac mini에는 npm 전역 설치가 두 군데 있다 (2026-10-07): fnm Node 24.18(실제로 쓰이는 쪽)과 brew `node`(317MB, 안 쓰임). fnm 경로가 PATH 앞에 있어서 cask를 깔아도 fnm 쪽이 먼저 잡힌다. 옮기려면:
+Codex 데스크톱 앱은 2026-07부터 ChatGPT 앱에 합쳐졌다. 그래서 `cask "chatgpt"`도 같이 둔다.
+
+지금 Mac mini는 fnm Node 24.18의 npm 전역 설치를 쓰고 있다 (2026-10-07). fnm 경로가 PATH 앞에 있어서 cask를 깔아도 fnm 쪽이 먼저 잡힌다. 옮기려면:
 
 ```sh
 brew install --cask codex
-npm uninstall -g @openai/codex                       # fnm 쪽
-/opt/homebrew/bin/npm uninstall -g @openai/codex     # brew node 쪽
+npm uninstall -g @openai/codex
 which codex   # /opt/homebrew/bin/codex 인지 확인
 ```
 
