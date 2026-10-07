@@ -10,7 +10,8 @@ brew "gitleaks"  # 이 저장소의 커밋 전 비밀값 검사
 brew "fnm"
 
 # 컨테이너: colima가 Linux VM과 Docker 엔진을 띄우고, docker 명령어로 다룬다 (development/containers.md)
-brew "colima", restart_service: :changed
+# 로그인할 때 자동으로 켜지 않는다. 필요할 때 colima start
+brew "colima"
 brew "docker"
 
 # 앱. Claude Code와 Codex CLI는 자동 업데이트되는 공식 스크립트로 설치한다 (scripts/steps/60-agents.sh)
