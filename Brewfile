@@ -3,4 +3,5 @@
 
 brew "gh"
 brew "gitleaks"  # 이 저장소의 커밋 전 비밀값 검사
-cask "tailscale-app"  # 기기 간 원격 접속. CLI도 앱에 들어 있다
+brew "tailscale"     # Tailscale 명령어
+cask "tailscale-app"  # 기기 간 원격 접속
