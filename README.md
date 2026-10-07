@@ -79,10 +79,10 @@ rm -rf "$T"
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
 - `.seed`로 끝나는 파일은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용.
-- 기존 파일은 `~/.local/state/bootstrap/backup/<시각>/`으로 옮긴 뒤 연결한다.
+- 기존 파일은 `~/.local/state/bootstrap/backup/<시각>-<번호>/`로 옮긴 뒤 연결한다. 되돌리려면 링크(`~/.zshrc` 등)를 지우고 백업 폴더의 파일을 제자리로 옮긴다.
 - 기기마다 다른 설정은 `~/.zshrc.local`, `~/.gitconfig.local`에 둔다. 저장소에 넣지 않는다.
 - 비밀값은 `~/.zsh_secrets`에 둔다 ([templates/zsh_secrets.example](templates/zsh_secrets.example)). 커밋 전에 gitleaks가 한 번 더 검사한다.
-- 넣지 않는 것: 인증 파일(`auth.json`, gh `hosts.yml`), SSH 개인키, 각 도구의 세션·캐시·기록.
+- 넣지 않는 것: 인증 파일(`auth.json`, gh `hosts.yml`), SSH 개인키, 각 도구의 세션·캐시·기록, 도구가 설치해 주는 스킬·플러그인(그 도구가 관리한다).
 
 ## 구조
 
@@ -97,7 +97,7 @@ templates/            저장소 밖에 둘 파일의 템플릿
 scripts/steps/        단계별 스크립트
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
-hardware/             장비 고르기, 기기별 기록
+hardware/             장비 고르기, 기기별 기록 (이 기기에만 해당하는 사실은 여기에만)
 macos/                첫 부팅, 시스템 설정
 development/          Homebrew, Node, git, 터미널, 컨테이너
 agents/               코딩 에이전트별 설치·설정

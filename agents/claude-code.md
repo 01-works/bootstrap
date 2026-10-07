@@ -2,13 +2,7 @@
 
 ## 설치
 
-`agents` 단계가 공식 설치 스크립트를 실행한다.
-
-```sh
-curl -fsSL https://claude.ai/install.sh | bash
-```
-
-`~/.local/bin/claude`에 설치되고 스스로 업데이트된다. 공식 문서의 권장 방법이다 ([TOOLS.md](../TOOLS.md)). Homebrew cask(`claude-code`)도 있지만 자동 업데이트가 안 되고 최신보다 한 주쯤 늦은 stable 채널이라 쓰지 않는다.
+`agents` 단계가 공식 설치 스크립트로 설치한다. `~/.local/bin/claude`에 설치되고 스스로 업데이트된다. Homebrew cask(`claude-code`)는 자동 업데이트가 안 되고 최신보다 한 주쯤 늦어서 쓰지 않는다 ([TOOLS.md](../TOOLS.md)).
 
 설치 상태 점검: `claude doctor`
 
@@ -28,7 +22,3 @@ Claude Code가 `settings.json`을 저장하면서 링크를 일반 파일로 바
 ## 로그인
 
 `claude`를 처음 실행하면 안내가 나온다.
-
-## 별칭
-
-`clauded` = `claude --dangerously-skip-permissions` ([terminal.md](../development/terminal.md))

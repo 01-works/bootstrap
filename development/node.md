@@ -2,7 +2,7 @@
 
 | 도구 | 설치 | 비고 |
 |---|---|---|
-| Node | fnm (`brew "fnm"`) | 기본 버전 24 (`runtimes` 단계의 `NODE_VERSION`) |
+| Node | fnm (`brew "fnm"`) | 기본 버전 24 (`scripts/lib.sh`의 `NODE_VERSION`) |
 | pnpm | corepack | 전역 패키지 위치 `~/Library/pnpm` (`PNPM_HOME`) |
 
 ## fnm

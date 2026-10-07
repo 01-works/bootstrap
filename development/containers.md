@@ -16,5 +16,3 @@ docker ps
 ## 메모리 주의
 
 VM에 준 메모리는 macOS에서 그만큼 빠진다. 16GB 기기에서 8GB VM을 돌리면 스왑을 많이 쓴다 ([hardware/buying-guide.md](../hardware/buying-guide.md)).
-
-지금 Mac mini (2026-10-06): VM 3개 중 `issue6016`(4 CPU, 8GB)이 실행 중이고, `epic5820-ui`와 `issue5740`은 멈춰 있다. `~/.colima`가 5GB를 차지한다.

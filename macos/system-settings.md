@@ -8,7 +8,8 @@
 | 키 반복 시작 | 짧게 (`InitialKeyRepeat 15`) | 〃 | `macos` |
 | 화면 모드 | 다크 | | `macos` |
 | Dock 아이콘 크기 | 42 | | `macos` |
-| 잠자기 | 끔 | 늘 켜두는 기기 | `power` (main만) |
+| 잠자기, 화면 잠자기 | 끔 | 늘 켜두는 기기 | `power` (main만) |
+| 네트워크로 깨우기 | 켬 | 원격에서 깨우기 | `power` (main만) |
 | 원격 로그인, 화면 공유 | 켬 | 원격 작업 | 손으로, `power`가 확인 |
 | FileVault | 켬 | | 손으로 |
 
