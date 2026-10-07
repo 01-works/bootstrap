@@ -30,6 +30,7 @@ printf '\n    남은 로그인:\n'
 printf '      %s\n' \
   'claude          처음 실행하면 로그인 안내' \
   'codex           처음 실행하면 "Sign in with ChatGPT"' \
+  'vercel          vercel login' \
   'Paseo 앱        실행 후 데몬 설정' \
   'Claude·ChatGPT 앱' \
   'Tailscale 앱    실행 후 로그인'

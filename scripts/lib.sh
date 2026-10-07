@@ -84,4 +84,5 @@ power_ok() {
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
+export PNPM_HOME="$HOME/Library/pnpm"  # .zshrc와 같은 값. pnpm 전역 설치에 필요
 export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/Library/pnpm/bin:$PATH"

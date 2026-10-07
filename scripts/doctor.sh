@@ -25,6 +25,7 @@ step "명령어"
 for cmd in git gh gitleaks fnm node pnpm colima docker claude codex paseo; do
   if has "$cmd"; then pass "$cmd"; else miss "$cmd 없음"; fi
 done
+if vercel --version >/dev/null 2>&1; then pass "vercel"; else miss "vercel 실행 안 됨 (./bootstrap.sh --only runtimes)"; fi
 if has node; then
   major="$(node --version | sed -E 's/^v([0-9]+).*/\1/')"
   if [[ "$major" == "$NODE_VERSION" ]]; then pass "Node 기본 버전 $NODE_VERSION"; else miss "Node 기본 버전이 $major (./bootstrap.sh --only runtimes)"; fi

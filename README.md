@@ -20,7 +20,7 @@
    ```
 
 3. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
-4. `auth` 단계가 마지막에 보여 주는 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale)
+4. `auth` 단계가 마지막에 보여 주는 로그인 목록 처리 (Claude, Codex, Vercel, Paseo, Tailscale)
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
@@ -46,7 +46,7 @@ preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기
 | macos | 키보드, 다크 모드, Dock 설정 | [macos/system-settings.md](macos/system-settings.md) |
 | power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기, 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
-| runtimes | Node(fnm) 기본 버전, pnpm | [development/node.md](development/node.md) |
+| runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
 | auth | GitHub 로그인, 기기별 SSH 키, 남은 로그인 안내 | [development/git.md](development/git.md) |
 

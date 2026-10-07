@@ -12,7 +12,7 @@ flowchart LR
     direction TB
     LG1["Homebrew"]:::brew
     LG2["공식 스크립트"]:::script
-    LG3["다른 도구에 포함"]:::bundled
+    LG3["다른 도구가 설치"]:::bundled
   end
 
   subgraph sgBase["기반"]
@@ -35,10 +35,13 @@ flowchart LR
     NODE["Node 24"]
     NPM["npm · npx"]
     PNPM["pnpm"]
+    VERCEL["Vercel CLI"]
   end
   FNM --> NODE
   NODE --> NPM
   PNPM --> PP["pnpm 프로젝트"]
+  PNPM -->|전역 설치| VERCEL
+  NODE --> VERCEL
   NPM --> NP["npm 프로젝트 · npx로 실행하는 MCP"]
 
   subgraph sgDocker["컨테이너"]
@@ -71,7 +74,7 @@ flowchart LR
   classDef use fill:#ffffff,stroke:#d1d5db,color:#333
 
   class BREW,CC,CODEX,PNPM script
-  class CLT,NODE,NPM,VM bundled
+  class CLT,NODE,NPM,VM,VERCEL bundled
   class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP brew
   class PP,NP,GIT,HOOK,LOCAL use
 ```
@@ -106,6 +109,7 @@ flowchart LR
 | fnm | `Brewfile` | [GitHub](https://github.com/Schniz/fnm) | Homebrew가 공식 방법 중 하나 | 2026-10-07 |
 | Node | fnm (`runtimes` 단계) | [nodejs.org](https://nodejs.org/en/download) | fnm이 공식 권장 방법 중 하나 | 2026-10-07 |
 | pnpm | `runtimes` 단계 (공식 설치 스크립트) | [pnpm.io](https://pnpm.io/installation) | Node와 따로 설치되는 단독 실행 파일. 프로젝트의 `packageManager`에 고정된 버전은 자동으로 받아 쓴다([`pmOnFail`](https://pnpm.io/settings/cli) 기본값). 업데이트는 `pnpm self-update` | 2026-10-07 |
+| Vercel CLI | `runtimes` 단계 (pnpm 전역 설치) | [vercel.com](https://vercel.com/docs/cli) | 공식 문서의 pnpm 방법. `vercel upgrade --enable-auto`로 자동 업데이트를 켠다 ([문서](https://vercel.com/docs/cli/upgrade)). Homebrew `vercel-cli`는 공식 문서에 없다 | 2026-10-07 |
 
 ## 컨테이너
 

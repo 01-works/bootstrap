@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Node(fnm) 기본 버전과 pnpm.
+# Node(fnm) 기본 버전, pnpm, Vercel CLI.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
 # dry-run에서는 fnm이나 pnpm을 실행하지 않는다. 둘 다 파일을 만들거나 내려받을 수 있고, 새 Mac에서는 아직 fnm이 없다.
 if [[ "$DRY_RUN" == 1 ]]; then
-  info "[dry-run] fnm으로 Node $NODE_VERSION 설치·기본 버전 지정, pnpm 공식 설치 스크립트 실행"
+  info "[dry-run] fnm으로 Node $NODE_VERSION 설치·기본 버전 지정, pnpm 공식 설치 스크립트 실행, pnpm으로 Vercel CLI 설치"
   exit 0
 fi
 
@@ -39,4 +39,15 @@ else
   rm -rf "$zdot"
   has pnpm || die "pnpm이 설치되지 않았습니다"
   ok "pnpm $(pnpm --version) 설치됨"
+fi
+
+# Vercel CLI: 공식 문서의 pnpm 전역 설치. 자동 업데이트도 켠다(vercel upgrade --enable-auto).
+# 실행 파일만 남고 패키지가 없는 경우가 있어서, 있는지가 아니라 실행되는지로 확인한다.
+if vercel --version >/dev/null 2>&1; then
+  ok "vercel $(vercel --version 2>/dev/null | tail -1)"
+else
+  run pnpm add -g vercel
+  run vercel upgrade --enable-auto
+  vercel --version >/dev/null 2>&1 || die "Vercel CLI가 실행되지 않습니다"
+  ok "vercel 설치됨, 자동 업데이트 켬"
 fi
