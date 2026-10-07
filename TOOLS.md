@@ -25,12 +25,10 @@ flowchart LR
     GH["gh"]
     GL["gitleaks"]
     TSAPP["Tailscale 앱"]
-    TSCLI["tailscale 명령어"]
   end
   CLT --> GIT["git push · pull"]
   GH -->|로그인| GIT
   GL --> HOOK["이 저장소 커밋 검사"]
-  TSAPP -->|앱 설정에서 설치| TSCLI
 
   subgraph sgNode["Node · main"]
     FNM["fnm"]
@@ -74,7 +72,7 @@ flowchart LR
   classDef use fill:#ffffff,stroke:#d1d5db,color:#333
 
   class BREW,CC,CODEX script
-  class CLT,NODE,NPM,PNPM,VM,TSCLI bundled
+  class CLT,NODE,NPM,PNPM,VM bundled
   class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP brew
   class PP,NP,GIT,HOOK,LOCAL use
 ```
@@ -100,8 +98,7 @@ flowchart LR
 | Brewfile | `brew bundle` | [docs.brew.sh](https://docs.brew.sh/Brew-Bundle-and-Brewfile) | | 2026-10-07 |
 | gh | `Brewfile` | [GitHub](https://github.com/cli/cli/blob/trunk/docs/install_macos.md) | Homebrew가 공식 권장 방법 | 2026-10-07 |
 | gitleaks | `Brewfile` | [GitHub](https://github.com/gitleaks/gitleaks) | 이 저장소의 커밋 전 비밀값 검사용. 기능 추가는 끝났고 보안 패치만 나온다 (후속 도구는 Betterleaks) | 2026-10-07 |
-| Tailscale 앱 | `cask "tailscale-app"` | [tailscale.com](https://tailscale.com/docs/install/mac) | Standalone 버전. 공식 권장 | 2026-10-07 |
-| tailscale 명령어 | 앱 설정 → CLI integration → Install Now (`auth` 단계 안내) | [tailscale.com](https://tailscale.com/docs/reference/tailscale-cli) | 앱과 같이 쓸 때의 공식 방법. Homebrew `tailscale`은 데몬을 따로 띄우는 버전이라 쓰지 않는다 | 2026-10-07 |
+| Tailscale 앱 | `cask "tailscale-app"` | [tailscale.com](https://tailscale.com/docs/install/mac) | Standalone 버전. 공식 권장. `tailscale` 명령어는 쓰지 않는다. 필요해지면 앱 설정 → CLI integration → Install Now ([문서](https://tailscale.com/docs/reference/tailscale-cli)) | 2026-10-07 |
 
 ## Node · main
 
@@ -125,7 +122,7 @@ flowchart LR
 | Claude Code | `agents` 단계 (공식 설치 스크립트) | [code.claude.com](https://code.claude.com/docs/en/setup) | 공식 권장. 스스로 업데이트된다 | 2026-10-07 |
 | Claude 앱 | `cask "claude"` | [claude.com](https://claude.com/download) | | 2026-10-07 |
 | Codex CLI | `agents` 단계 (공식 설치 스크립트) | [learn.chatgpt.com](https://learn.chatgpt.com/docs/codex/cli) | 공식 기본 방법. `~/.local/bin`에 설치되고 스스로 업데이트된다. 다른 방법으로 설치한 Codex가 있으면 `~/.zprofile`에 PATH 줄을 추가한다 | 2026-10-07 |
-| ChatGPT 앱 | `cask "chatgpt"` | [learn.chatgpt.com](https://learn.chatgpt.com/docs/app) | 2026-07부터 Codex 앱이 ChatGPT 앱에 합쳐졌다 ([changelog](https://learn.chatgpt.com/docs/changelog)). 2026-10-07에는 cask 다운로드 주소가 404였다. 실패하면 공식 페이지에서 받는다 | 2026-10-07 |
+| ChatGPT 앱 | `cask "chatgpt"` | [learn.chatgpt.com](https://learn.chatgpt.com/docs/app) | 2026-07부터 Codex 앱이 ChatGPT 앱에 합쳐졌다 ([changelog](https://learn.chatgpt.com/docs/changelog)). 앱이 거의 매일 업데이트되어, Homebrew가 새 버전으로 올린 직후 그 파일이 아직 없어 설치가 실패할 때가 있다(2026-10-07 경험). 하루쯤 뒤 다시 하거나 공식 페이지에서 받는다 | 2026-10-07 |
 | Paseo | `cask "paseo"` | [paseo.sh/download](https://paseo.sh/download), [paseo.sh/docs](https://paseo.sh/docs) | cask가 앱 안의 `paseo` CLI도 연결한다 | 2026-10-07 |
 
 ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내장 ripgrep으로 대신하고, Codex CLI는 ripgrep을 함께 설치한다.

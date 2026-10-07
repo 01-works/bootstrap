@@ -39,5 +39,5 @@ fi
 cat <<'EOF'
 
     남은 수동 설정:
-      Tailscale 앱    실행 후 로그인, 설정 → CLI integration → Install Now (tailscale 명령어)
+      Tailscale 앱    실행 후 로그인
 EOF

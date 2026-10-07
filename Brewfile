@@ -4,4 +4,4 @@
 
 brew "gh"
 brew "gitleaks"       # 이 저장소의 커밋 전 비밀값 검사
-cask "tailscale-app"  # 기기 간 원격 접속. tailscale 명령어는 앱 설정에서 설치 (auth 단계 안내)
+cask "tailscale-app"  # 기기 간 원격 접속

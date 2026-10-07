@@ -26,18 +26,12 @@ else
 fi
 
 step "명령어"
-cmds="git gh gitleaks tailscale"
+cmds="git gh gitleaks"
 contains runtimes $STEPS && cmds="$cmds fnm node pnpm"
 contains agents $STEPS && cmds="$cmds claude codex paseo"
 contains Brewfile.main $BREWFILES && cmds="$cmds colima docker"
 for cmd in $cmds; do
-  if has "$cmd"; then
-    pass "$cmd"
-  elif [[ "$cmd" == tailscale ]]; then
-    miss "tailscale 없음 → Tailscale 앱 설정 → CLI integration → Install Now"
-  else
-    miss "$cmd 없음"
-  fi
+  if has "$cmd"; then pass "$cmd"; else miss "$cmd 없음"; fi
 done
 
 if [[ -n "$DOTFILES" ]]; then

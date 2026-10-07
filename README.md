@@ -21,7 +21,7 @@
    ```
 
 4. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
-5. 마지막에 출력되는 수동 설정 목록 처리 (Claude, Codex, Paseo 로그인, Tailscale 명령어 설치 등)
+5. 마지막에 출력되는 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale)
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
