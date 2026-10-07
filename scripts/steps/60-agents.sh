@@ -10,7 +10,7 @@ else
   run bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
 fi
 
-for cmd in codex opencode paseo aider; do
+for cmd in codex paseo; do
   if has "$cmd"; then
     ok "$cmd"
   else
@@ -24,5 +24,6 @@ cat <<'EOF'
       claude          처음 실행하면 로그인 안내
       codex login
       Paseo 앱        실행 후 데몬 설정
-      Claude/ChatGPT 앱, Cursor, Anchor, Hermes → agents/ 문서 참고
+      Claude·ChatGPT 앱, CodexBar
+      Hermes          직접 설치 (agents/hermes.md)
 EOF

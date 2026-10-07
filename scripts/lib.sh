@@ -77,7 +77,7 @@ saved_profile() { cat "$BOOTSTRAP_STATE/profile" 2>/dev/null || true; }
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
-export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$PATH"
 
 # 단계 스크립트는 bootstrap.sh가 넘겨준 프로필을 바로 쓸 수 있게 한다.
 if [[ -n "${PROFILE:-}" ]]; then

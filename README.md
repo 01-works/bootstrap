@@ -21,7 +21,7 @@
    ```
 
 4. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
-5. 마지막에 출력되는 수동 로그인 목록 처리 (Claude, Codex, Tailscale, App Store 등)
+5. 마지막에 출력되는 수동 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale 등)
 
 ## 프로필
 
@@ -29,7 +29,7 @@
 
 | 프로필 | 기기 | 단계 | 설정 파일 |
 |---|---|---|---|
-| `main` | 메인 개발기 (지금은 Mac mini M4) | 전부 | zsh, git, tmux, claude, codex |
+| `main` | 메인 개발기 (지금은 Mac mini M4) | 전부 | zsh, git, claude, codex |
 | `minimal` | 보조 기기 | preflight, xcode, homebrew, macos, auth | 없음 |
 
 ## 단계

@@ -26,9 +26,9 @@ else
 fi
 
 step "명령어"
-cmds="git gh fzf rg tmux gitleaks"
-contains runtimes $STEPS && cmds="$cmds fnm node pnpm bun uv cargo"
-contains agents $STEPS && cmds="$cmds claude codex opencode paseo aider"
+cmds="git gh gitleaks"
+contains runtimes $STEPS && cmds="$cmds fnm node pnpm"
+contains agents $STEPS && cmds="$cmds claude codex paseo"
 for cmd in $cmds; do
   if has "$cmd"; then pass "$cmd"; else miss "$cmd 없음"; fi
 done

@@ -22,7 +22,7 @@
 | 네트워크로 깨우기 | 켬 | `power` 단계 |
 | 원격 로그인 (SSH) | 켬 | 손으로 (시스템 설정 > 일반 > 공유), `power` 단계가 확인 |
 | 화면 공유 | 켬 | 손으로, `power` 단계가 확인 |
-| Tailscale, mosh | 설치 | `Brewfile` |
+| Tailscale | 설치 | `Brewfile` |
 | FileVault | 켬 | 손으로 ([initial-setup.md](../macos/initial-setup.md)) |
 
 정전 후 자동으로 켜지는 설정(`pmset autorestart`)은 꺼져 있다. 켜더라도 FileVault 잠금을 풀어야 원격으로 쓸 수 있으므로, 재부팅 후 원격으로 잠금 해제가 되는지 한 번 확인해 둘 것.

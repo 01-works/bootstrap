@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Node(fnm) 기본 버전과 pnpm. bun, uv, rust는 Brewfile.main에서 설치된다.
+# Node(fnm) 기본 버전과 pnpm.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
@@ -31,11 +31,3 @@ else
   run corepack enable pnpm
   ok "pnpm (corepack)"
 fi
-
-for cmd in bun uv cargo; do
-  if has "$cmd"; then
-    ok "$cmd $("$cmd" --version 2>/dev/null | head -1)"
-  else
-    warn "$cmd 없음 (Brewfile.main 확인)"
-  fi
-done

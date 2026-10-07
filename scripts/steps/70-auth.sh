@@ -40,5 +40,4 @@ cat <<'EOF'
 
     남은 수동 로그인:
       Tailscale 앱    실행 후 로그인
-      App Store       (mas 앱 설치가 실패했다면 로그인 후 ./bootstrap.sh --only homebrew)
 EOF
