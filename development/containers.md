@@ -15,4 +15,4 @@ docker ps
 
 ## 메모리 주의
 
-VM에 준 메모리는 macOS에서 그만큼 빠진다. 16GB 기기에서 8GB VM을 돌리면 스왑을 많이 쓴다 ([hardware/buying-guide.md](../hardware/buying-guide.md)).
+VM에 준 메모리는 macOS에서 그만큼 빠진다. 16GB 기기에서 8GB VM을 돌리면 스왑을 많이 쓴다.

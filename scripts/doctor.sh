@@ -83,13 +83,9 @@ if [[ -d "$BOOTSTRAP_ROOT/.git" ]]; then
     miss "커밋 전 검사 훅 꺼짐 (./bootstrap.sh --only xcode)"
   fi
 fi
-if contains zsh $DOTFILES; then
-  if [[ -f "$HOME/.zsh_secrets" ]]; then
-    perm="$(stat -f '%Lp' "$HOME/.zsh_secrets")"
-    if [[ "$perm" == 600 ]]; then pass "~/.zsh_secrets"; else miss "~/.zsh_secrets 권한이 $perm (chmod 600 필요)"; fi
-  else
-    miss "~/.zsh_secrets 없음 (templates/zsh_secrets.example 참고)"
-  fi
+if [[ -f "$HOME/.zsh_secrets" ]]; then
+  perm="$(stat -f '%Lp' "$HOME/.zsh_secrets")"
+  if [[ "$perm" == 600 ]]; then pass "~/.zsh_secrets 권한 600"; else miss "~/.zsh_secrets 권한이 $perm (chmod 600 필요)"; fi
 fi
 
 printf '\n%s통과 %d%s, %s실패 %d%s\n' "$_green" "$passed" "$_reset" "$_red" "$failed" "$_reset"

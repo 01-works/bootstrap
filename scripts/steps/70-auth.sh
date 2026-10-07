@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 직접 입력이 필요한 인증: GitHub 로그인, SSH 키, 비밀값 파일. 그래서 마지막 단계다.
+# 직접 입력이 필요한 인증: GitHub 로그인, SSH 키. 그래서 마지막 단계다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
@@ -23,15 +23,6 @@ if ls "$HOME"/.ssh/id_ed25519* >/dev/null 2>&1; then
   ok "SSH 키 있음 ($(cd "$HOME/.ssh" && ls id_ed25519*.pub | paste -sd ' ' -))"
 elif confirm "이 기기용 SSH 키를 만들까요?"; then
   run ssh-keygen -t ed25519 -C "$(scutil --get ComputerName 2>/dev/null || hostname)" -f "$HOME/.ssh/id_ed25519"
-fi
-
-# 비밀값: ~/.zsh_secrets (저장소 밖, .zshrc가 읽음)
-if [[ -f "$HOME/.zsh_secrets" ]]; then
-  ok "$(pretty "$HOME/.zsh_secrets")"
-elif contains zsh $DOTFILES; then
-  run cp "$BOOTSTRAP_ROOT/templates/zsh_secrets.example" "$HOME/.zsh_secrets"
-  run chmod 600 "$HOME/.zsh_secrets"
-  warn "~/.zsh_secrets 를 만들었습니다. 값을 채워 넣으세요"
 fi
 
 # 직접 해야 하는 로그인을 마지막에 한 번에 보여 준다.

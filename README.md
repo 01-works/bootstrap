@@ -1,12 +1,11 @@
 # bootstrap
 
-새 Mac을 받아서 내 작업 환경으로 만드는 저장소. 장비 고르기부터 macOS 초기 설정, 개발 도구, 코딩 에이전트까지.
+새 Mac을 받아서 내 작업 환경으로 만드는 저장소. macOS 초기 설정, 개발 도구, 코딩 에이전트까지.
 
 ## 새 Mac에서
 
-1. 장비 고르기 → [hardware/buying-guide.md](hardware/buying-guide.md)
-2. 첫 부팅과 손으로 할 설정 → [macos/initial-setup.md](macos/initial-setup.md)
-3. 터미널을 열고 순서대로:
+1. 첫 부팅과 손으로 할 설정 → [macos/initial-setup.md](macos/initial-setup.md)
+2. 터미널을 열고 순서대로:
 
    ```sh
    xcode-select --install          # 설치 창이 뜨면 끝날 때까지 기다린다
@@ -20,8 +19,8 @@
    ./bootstrap.sh --profile main
    ```
 
-4. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
-5. `auth` 단계가 마지막에 보여 주는 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale)
+3. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
+4. `auth` 단계가 마지막에 보여 주는 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale)
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
@@ -50,7 +49,7 @@ preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
-| auth | GitHub 로그인, 기기별 SSH 키, 비밀값 파일, 남은 로그인 안내 | [development/git.md](development/git.md) |
+| auth | GitHub 로그인, 기기별 SSH 키, 남은 로그인 안내 | [development/git.md](development/git.md) |
 
 ## 자주 쓰는 명령
 
@@ -81,7 +80,7 @@ rm -rf "$T"
 - `.seed`로 끝나는 파일은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용.
 - 기존 파일은 `~/.local/state/bootstrap/backup/<시각>-<번호>/`로 옮긴 뒤 연결한다. 되돌리려면 링크(`~/.zshrc` 등)를 지우고 백업 폴더의 파일을 제자리로 옮긴다.
 - 기기마다 다른 설정은 `~/.zshrc.local`, `~/.gitconfig.local`에 둔다. 저장소에 넣지 않는다.
-- 비밀값은 `~/.zsh_secrets`에 둔다 ([templates/zsh_secrets.example](templates/zsh_secrets.example)). 커밋 전에 gitleaks가 한 번 더 검사한다.
+- API 키 같은 비밀값은 `~/.zsh_secrets`에 `export`로 두고 권한은 600으로 한다. `.zshrc`가 있으면 읽는다. 저장소에는 넣지 않고, 커밋 전에 gitleaks가 한 번 더 검사한다.
 - 넣지 않는 것: 인증 파일(`auth.json`, gh `hosts.yml`), SSH 개인키, 각 도구의 세션·캐시·기록, 도구가 설치해 주는 스킬·플러그인(그 도구가 관리한다).
 
 ## 구조
@@ -93,11 +92,9 @@ Brewfile.main         메인 개발기 추가분
 TOOLS.md              도구별 공식 문서 링크, 설치 방법을 고른 이유
 profiles/             기기별 단계·Brewfile·설정 파일 선택
 home/                 ~에 연결할 설정 파일 (묶음별)
-templates/            저장소 밖에 둘 파일의 템플릿
 scripts/steps/        단계별 스크립트
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
-hardware/             장비 고르기
 macos/                첫 부팅, 시스템 설정
 development/          Homebrew, Node, git, 터미널, 컨테이너
 agents/               코딩 에이전트별 설치·설정
