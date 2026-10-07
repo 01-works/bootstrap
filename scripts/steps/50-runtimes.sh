@@ -5,7 +5,7 @@ source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
 # dry-run에서는 fnm이나 pnpm을 실행하지 않는다. 둘 다 파일을 만들거나 내려받을 수 있고, 새 Mac에서는 아직 fnm이 없다.
 if [[ "$DRY_RUN" == 1 ]]; then
-  info "[dry-run] fnm으로 Node $NODE_VERSION 설치·기본 버전 지정, corepack으로 pnpm 켜기"
+  info "[dry-run] fnm으로 Node $NODE_VERSION 설치·기본 버전 지정, pnpm 공식 설치 스크립트 실행"
   exit 0
 fi
 
@@ -27,11 +27,16 @@ else
 fi
 fnm use default >/dev/null
 
-# pnpm은 corepack으로 관리한다. corepack이 없으면(Node 25부터는 Node에 들어 있지 않다) 전역으로 설치한다.
+# pnpm: 공식 설치 스크립트로 Node와 따로 설치한다(~/Library/pnpm). 프로젝트마다 packageManager에 고정한 버전은
+# pnpm이 알아서 받아 쓴다. 설치 스크립트는 셸 설정의 pnpm 줄을 이 기기의 절대 경로로 다시 쓰는데, ~/.zshrc는
+# 저장소 파일에 링크되어 있고 같은 줄이 이미 들어 있다. 그래서 ZDOTDIR을 임시 폴더로 돌려 그 수정을 버린다.
 if has pnpm; then
   ok "pnpm $(pnpm --version 2>/dev/null)"
 else
-  has corepack || run npm install -g corepack
-  run corepack enable pnpm
-  ok "pnpm (corepack)"
+  script="$(curl -fsSL https://get.pnpm.io/install.sh)" || die "pnpm 설치 스크립트를 받지 못했습니다"
+  zdot="$(mktemp -d)"
+  printf '%s\n' "$script" | ZDOTDIR="$zdot" SHELL=/bin/zsh sh -
+  rm -rf "$zdot"
+  has pnpm || die "pnpm이 설치되지 않았습니다"
+  ok "pnpm $(pnpm --version) 설치됨"
 fi

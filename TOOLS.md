@@ -38,7 +38,6 @@ flowchart LR
   end
   FNM --> NODE
   NODE --> NPM
-  NPM -->|corepack| PNPM
   PNPM --> PP["pnpm 프로젝트"]
   NPM --> NP["npm 프로젝트 · npx로 실행하는 MCP"]
 
@@ -71,8 +70,8 @@ flowchart LR
   classDef bundled fill:#dcfce7,stroke:#16a34a,color:#000
   classDef use fill:#ffffff,stroke:#d1d5db,color:#333
 
-  class BREW,CC,CODEX script
-  class CLT,NODE,NPM,PNPM,VM bundled
+  class BREW,CC,CODEX,PNPM script
+  class CLT,NODE,NPM,VM bundled
   class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP brew
   class PP,NP,GIT,HOOK,LOCAL use
 ```
@@ -82,7 +81,7 @@ flowchart LR
 1. **공식 문서에 있는 방법만 쓴다.** 비공식 경로로 설치한 것은 중복되거나 흔적이 남기 쉽다.
 2. 그중 **스스로 업데이트되는 방법을 우선한다.** Claude Code, Codex CLI가 여기에 해당한다(공식 설치 스크립트).
 3. 업데이트 방식에 차이가 없으면 **Homebrew**를 쓴다. 목록 하나(Brewfile)로 재현되고 지우기도 쉽다. 앱도 Homebrew cask로 설치한다. cask는 개발사가 올린 같은 파일을 받아 설치만 자동으로 해 주고, 설치 후에는 앱이 스스로 업데이트한다.
-4. **언어 런타임은 버전 관리 도구로** 설치한다. Node는 fnm, pnpm은 corepack을 쓴다.
+4. **Node는 버전 관리 도구(fnm)로** 설치한다. 프로젝트마다 다른 버전을 쓰기 때문이다.
 
 ## 갱신하는 법
 
@@ -106,7 +105,7 @@ flowchart LR
 |---|---|---|---|---|
 | fnm | `Brewfile` | [GitHub](https://github.com/Schniz/fnm) | Homebrew가 공식 방법 중 하나 | 2026-10-07 |
 | Node | fnm (`runtimes` 단계) | [nodejs.org](https://nodejs.org/en/download) | fnm이 공식 권장 방법 중 하나 | 2026-10-07 |
-| pnpm | corepack (`runtimes` 단계) | [nodejs.org](https://nodejs.org/en/download), [pnpm.io](https://pnpm.io/installation) | 공식 권장과 다름 (아래) | 2026-10-07 |
+| pnpm | `runtimes` 단계 (공식 설치 스크립트) | [pnpm.io](https://pnpm.io/installation) | Node와 따로 설치되는 단독 실행 파일. 프로젝트의 `packageManager`에 고정된 버전은 자동으로 받아 쓴다([`pmOnFail`](https://pnpm.io/settings/cli) 기본값). 업데이트는 `pnpm self-update` | 2026-10-07 |
 
 ## 컨테이너
 
@@ -132,7 +131,3 @@ ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내�
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
 | cloudflared | `Brewfile` | [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) | Cloudflare Tunnel 연결 프로그램. Homebrew가 첫 번째 공식 방법 | 2026-10-07 |
-
-## 공식 권장과 다르게 하는 것
-
-- **pnpm**: 현재 pnpm 문서(pnpm 12)는 Node 없이 도는 단독 실행 파일 설치를 안내하고, corepack 방법은 예전 문서(pnpm.io/10.x)에만 남아 있다. Node 다운로드 페이지는 여전히 `npm install -g corepack` → `corepack enable pnpm`을 안내한다. 프로젝트마다 `packageManager`로 pnpm 버전이 다르게 고정되어 있고 corepack이 그 버전에 맞춰 실행해 주므로 유지한다. corepack은 Node 25부터 Node에 들어 있지 않으므로, 없으면 전역으로 설치한다.

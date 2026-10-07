@@ -5,7 +5,7 @@
 | 파일 | 언제 읽나 | 내용 |
 |---|---|---|
 | [`.zprofile`](../home/zsh/.zprofile) | 로그인 셸 | PATH: Homebrew, fnm 기본 버전, `~/.local/bin` |
-| [`.zshrc`](../home/zsh/.zshrc) | 대화형 셸 | 별칭, pnpm, fnm 자동 전환 |
+| [`.zshrc`](../home/zsh/.zshrc) | 대화형 셸 | 별칭, pnpm, fnm 자동 전환, 명령어 자동 완성 |
 | `~/.zsh_secrets` | `.zshrc`가 읽음 | API 키. 저장소 밖, 권한 600 |
 | `~/.zshrc.local` | `.zshrc` 마지막 | 이 기기에만 필요한 설정. 저장소 밖 |
 

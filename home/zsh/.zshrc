@@ -17,5 +17,8 @@ alias codexd='codex --dangerously-bypass-approvals-and-sandbox'
 # Node versions and automatic project switching.
 command -v fnm >/dev/null && eval "$(fnm env --use-on-cd --version-file-strategy recursive --shell zsh)"
 
+# 명령어 자동 완성. Homebrew가 넣어 둔 brew·gh·docker·colima·fnm 등의 자동 완성을 쓴다.
+autoload -Uz compinit && compinit
+
 # 이 기기에만 필요한 설정 (저장소에 넣지 않음)
 if [[ -f "$HOME/.zshrc.local" ]]; then source "$HOME/.zshrc.local"; fi
