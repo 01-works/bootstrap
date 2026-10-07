@@ -32,6 +32,10 @@ fnm use default >/dev/null
 # 저장소 파일에 링크되어 있고 같은 줄이 이미 들어 있다. 그래서 ZDOTDIR을 임시 폴더로 돌려 그 수정을 버린다.
 if has pnpm; then
   ok "pnpm $(pnpm --version 2>/dev/null)"
+  # 예전에 corepack으로 켠 pnpm이 남아 있는 기기. 프로젝트 영향이 있을 수 있어 자동으로 바꾸지 않고 알린다.
+  if [[ "$(command -v pnpm)" == */fnm/* ]]; then
+    warn "corepack으로 켠 pnpm을 쓰고 있습니다. 공식 설치 방식으로 바꾸는 법: development/node.md의 '기존 기기에서 corepack pnpm 바꾸기'"
+  fi
 else
   script="$(curl -fsSL https://get.pnpm.io/install.sh)" || die "pnpm 설치 스크립트를 받지 못했습니다"
   zdot="$(mktemp -d)"

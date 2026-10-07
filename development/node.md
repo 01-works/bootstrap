@@ -20,6 +20,18 @@
 - 업데이트: `pnpm self-update`
 - 설치 스크립트는 셸 설정의 pnpm 줄을 기기의 절대 경로로 다시 쓴다. `.zshrc`는 저장소 파일에 링크되어 있어서, `runtimes` 단계가 그 수정을 버리게 해 둔다. 저장소의 `.zshrc`에 같은 줄이 이미 있다.
 
+## 기존 기기에서 corepack pnpm 바꾸기
+
+예전에 corepack으로 pnpm을 켠 기기에서는 `runtimes` 단계가 이미 pnpm이 있다고 보고 건너뛰며 경고만 한다. 돌고 있는 작업이 없을 때 이렇게 바꾼다.
+
+```sh
+curl -fsSL https://get.pnpm.io/install.sh | ZDOTDIR="$(mktemp -d)" SHELL=/bin/zsh sh -   # .zshrc는 건드리지 않게
+for v in $(fnm list | grep -oE 'v[0-9.]+' | sort -u); do fnm exec --using="$v" corepack disable pnpm; done
+pnpm --version   # ~/Library/pnpm/bin/pnpm 이 잡히는지: which pnpm
+```
+
+고정 버전이 깨진 릴리스인 프로젝트가 있으면 바꾼 뒤 그 프로젝트에서 경고가 나온다. 그 프로젝트의 `packageManager`를 올린다.
+
 ## 전역 npm 패키지
 
 npm 전역 패키지는 Node 버전별로 따로 깔린다. 기본 버전을 바꾸면 사라진 것처럼 보인다. 그래서 CLI 도구는 npm 전역으로 설치하지 않는다.
