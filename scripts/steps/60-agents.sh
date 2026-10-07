@@ -14,7 +14,8 @@ fi
 if has codex; then
   ok "codex $(codex --version 2>/dev/null | head -1)"
 else
-  run sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'
+  # 설치 끝에 "지금 실행할까요?"를 묻지 않게 한다
+  run sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'
 fi
 
 if has paseo; then

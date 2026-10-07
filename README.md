@@ -61,6 +61,18 @@
 
 새 도구를 설치했으면 `snapshot`으로 확인하고 Brewfile에 옮겨 적는다. 그래야 다음 기기에도 깔린다.
 
+## 새 기기 없이 시험하기
+
+임시 HOME 폴더에서 설정 파일·Node·에이전트 단계를 실제로 실행해 볼 수 있다. 지금 Mac의 설정은 건드리지 않는다. Homebrew, macOS 설정, 인증 단계는 지금 Mac에 영향을 주므로 빼고 돌린다.
+
+```sh
+T=$(mktemp -d)
+env -i HOME="$T" PATH=/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm USER="$USER" \
+  ./bootstrap.sh --profile main --only dotfiles,runtimes,agents
+env -i HOME="$T" PATH=/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm USER="$USER" ./bootstrap.sh doctor
+rm -rf "$T"
+```
+
 ## 설정 파일
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
