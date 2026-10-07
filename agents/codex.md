@@ -2,21 +2,15 @@
 
 ## 설치
 
-`Brewfile.main`의 `cask "codex"` → `/opt/homebrew/bin/codex`.
-
-공식 문서에는 설치 스크립트(기본), npm, Homebrew 세 가지가 있다 ([TOOLS.md](../TOOLS.md)). npm 전역 설치는 Node 버전별로 따로 깔려서, fnm 기본 버전을 바꾸면 `codex`가 사라진다. 다른 앱과 같이 Homebrew로 관리하려고 cask를 쓴다.
-
-Codex 데스크톱 앱은 2026-07부터 ChatGPT 앱에 합쳐졌다. 그래서 `cask "chatgpt"`도 같이 둔다.
-
-지금 Mac mini는 fnm Node 24.18의 npm 전역 설치를 쓰고 있다 (2026-10-07). fnm 경로가 PATH 앞에 있어서 cask를 깔아도 fnm 쪽이 먼저 잡힌다. 옮기려면:
+`agents` 단계가 공식 문서의 기본 설치 스크립트를 실행한다 ([TOOLS.md](../TOOLS.md)).
 
 ```sh
-brew install --cask codex
-npm uninstall -g @openai/codex
-which codex   # /opt/homebrew/bin/codex 인지 확인
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
 ```
 
-ChatGPT 앱도 같이 둔다. `config.toml`의 `node_repl` MCP와 컴퓨터 사용 기능이 ChatGPT 앱 안의 파일을 실행한다.
+`~/.local/bin/codex`에 설치되고 스스로 업데이트된다. Claude Code와 같은 방식이다. npm 전역 설치는 Node 버전별로 따로 깔려서 fnm 기본 버전을 바꾸면 사라지고, Homebrew cask는 `brew upgrade`를 해야 올라가서 쓰지 않는다.
+
+ChatGPT 앱(Codex 앱 포함)은 따로 `cask "chatgpt"`로 설치한다. 관계는 [README.md](README.md) 참고.
 
 ## 설정
 
@@ -37,9 +31,7 @@ seed를 바꿔도 이미 `config.toml`이 있는 기기에는 반영되지 않�
 
 ## 로그인
 
-```sh
-codex login
-```
+`codex`를 처음 실행하면 "Sign in with ChatGPT"를 고른다.
 
 ## 별칭
 

@@ -3,6 +3,5 @@
 # 도구별 공식 문서와 설치 방법을 고른 이유: TOOLS.md
 
 brew "gh"
-brew "gitleaks"  # 이 저장소의 커밋 전 비밀값 검사
-cask "tailscale-app"  # 기기 간 원격 접속 (Standalone 버전)
-brew "tailscale"      # 명령어. 공식 권장과 다름, TOOLS.md 참고
+brew "gitleaks"       # 이 저장소의 커밋 전 비밀값 검사
+cask "tailscale-app"  # 기기 간 원격 접속. tailscale 명령어는 앱 설정에서 설치 (auth 단계 안내)

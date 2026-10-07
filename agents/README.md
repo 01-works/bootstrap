@@ -6,11 +6,14 @@
 |---|---|---|---|
 | [Claude Code](claude-code.md) | 공식 설치 스크립트 (`agents` 단계) | `CLAUDE.md`, `settings.json` (링크) | `claude` 실행 |
 | Claude 앱 | `cask "claude"` | | 앱에서 |
-| [Codex CLI](codex.md) | `cask "codex"` | `AGENTS.md` (링크), `config.toml` (seed) | `codex login` |
-| ChatGPT 앱 | `cask "chatgpt"` | | 앱에서. Codex 앱이 2026-07부터 이 앱에 합쳐졌다. Codex 설정도 이 앱 안의 파일을 참조한다 |
+| [Codex CLI](codex.md) | 공식 설치 스크립트 (`agents` 단계) | `AGENTS.md` (링크), `config.toml` (seed) | `codex` 실행 |
+| ChatGPT 앱 (Codex 앱) | `cask "chatgpt"` | | 앱에서 |
 | [Paseo](paseo.md) | `cask "paseo"` | | 앱에서 |
-| CodexBar | `cask "steipete/tap/codexbar"` | | 메뉴 막대 사용량 표시 |
-| [Hermes](hermes.md) | 공식 설치 스크립트 (직접) | | `hermes setup` |
+
+## ChatGPT 앱과 Codex
+
+- **앱**: Codex 데스크톱 앱은 2026-07부터 ChatGPT 앱에 합쳐졌다. ChatGPT 앱 하나만 설치하면 된다.
+- **터미널용 Codex CLI는 따로 설치한다.** ChatGPT 앱 안에도 `codex` 실행 파일이 있지만 앱 내부용이라 터미널에서 쓸 수 없다. 공식 문서도 CLI 설치를 따로 안내한다. 터미널에서 `codex`를 쓰거나 Paseo가 Codex를 돌릴 때는 이 CLI가 필요하다.
 
 ## 원칙
 

@@ -19,7 +19,6 @@ brew install <이름>              # 설치하고
 
 - `homebrew` 단계는 `brew bundle --no-upgrade`로 설치한다. 이미 깔린 건 업그레이드하지 않으므로 다시 실행해도 아무것도 바뀌지 않는다. 업그레이드는 따로 `brew upgrade`.
 - 한 항목이 실패해도 다음 단계로 넘어간다. 빠진 항목은 `doctor`가 보여준다.
-- `trusted: true`는 Homebrew 공식이 아닌 tap의 항목을 설치하도록 허용하는 표시다.
 
 ## 기존 앱 옮기기
 

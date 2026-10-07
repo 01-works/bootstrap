@@ -1,27 +1,19 @@
 # 메인 개발기 추가분 (profiles/main.sh)
 
-tap "steipete/tap"
-
-# Node: 개발은 fnm으로 (development/node.md)
+# Node: Node 자체는 fnm이 설치한다 (development/node.md)
 brew "fnm"
-brew "node"  # 지금 Mac의 Hermes 대시보드가 쓴다 (TOOLS.md 5)
 
-# 컨테이너 (development/containers.md). 플러그인 연결은 containers 단계
+# 컨테이너: colima가 Linux VM과 Docker 엔진을 띄우고, docker 명령어로 다룬다 (development/containers.md)
 brew "colima", restart_service: :changed
 brew "docker"
-brew "docker-buildx"
-brew "docker-compose"
 
-# 에이전트 (agents/README.md). Claude Code는 scripts/steps/60-agents.sh에서 설치
-cask "codex"
-cask "paseo"
+# 앱. Claude Code와 Codex CLI는 자동 업데이트되는 공식 스크립트로 설치한다 (scripts/steps/60-agents.sh)
 cask "claude"
-cask "chatgpt"  # Codex 앱 포함. Codex 설정이 이 앱 안의 파일을 참조한다
-cask "steipete/tap/codexbar", trusted: true
+cask "chatgpt"  # Codex 앱 포함
+cask "paseo"
 
-# 에이전트가 쓰는 도구
-brew "ffmpeg"   # 지금 Mac의 Hermes 음성 변환 (TOOLS.md 5)
-brew "ripgrep"  # 에이전트가 셸에서 검색할 때
+# 에이전트가 셸에서 검색할 때
+brew "ripgrep"
 
-# 터널
+# Cloudflare Tunnel
 brew "cloudflared"
