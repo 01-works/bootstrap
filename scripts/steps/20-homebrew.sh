@@ -15,10 +15,6 @@ else
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-if grep -qs '^mas ' $(for f in $BREWFILES; do printf '%s ' "$BOOTSTRAP_ROOT/$f"; done); then
-  info "App Store 앱(mas)이 포함되어 있습니다. App Store에 먼저 로그인해 두세요"
-fi
-
 # 하나가 실패해도(예: brew 밖에서 깔린 같은 앱) 나머지 단계는 계속한다. 빠진 항목은 doctor가 알려준다.
 # --no-upgrade: 이미 깔린 건 업그레이드하지 않는다. 다시 실행해도 아무것도 바뀌지 않게.
 for f in $BREWFILES; do

@@ -28,7 +28,8 @@ fi
 step "명령어"
 cmds="git gh gitleaks tailscale"
 contains runtimes $STEPS && cmds="$cmds fnm node pnpm"
-contains agents $STEPS && cmds="$cmds claude codex paseo colima docker"
+contains agents $STEPS && cmds="$cmds claude codex paseo"
+contains Brewfile.main $BREWFILES && cmds="$cmds colima docker"
 for cmd in $cmds; do
   if has "$cmd"; then
     pass "$cmd"
