@@ -31,7 +31,7 @@
 
 | 프로필 | 기기 | 단계 | 설정 파일 |
 |---|---|---|---|
-| `main` | 메인 개발기 (지금은 Mac mini M4) | 전부 | zsh, git, claude, codex |
+| `main` | 메인 개발기 (늘 켜두고 원격으로도 붙는 기기) | 전부 | zsh, git, claude, codex |
 | `minimal` | 보조 기기 | preflight, xcode, homebrew, macos, auth | 없음 |
 
 ## 단계
@@ -46,7 +46,7 @@ preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기
 | xcode | Xcode 명령줄 도구(git 포함), 이 저장소의 커밋 전 검사 켜기 | |
 | homebrew | Homebrew 설치, 프로필의 Brewfile 설치 | [development/homebrew.md](development/homebrew.md) |
 | macos | 키보드, 다크 모드, Dock 설정 | [macos/system-settings.md](macos/system-settings.md) |
-| power | 잠자기 끄기, 원격 접속 확인 (늘 켜두는 기기) | [hardware/mac-mini.md](hardware/mac-mini.md) |
+| power | 잠자기 끄기, 원격 접속 확인 (늘 켜두는 기기) | [macos/system-settings.md](macos/system-settings.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
@@ -97,7 +97,7 @@ templates/            저장소 밖에 둘 파일의 템플릿
 scripts/steps/        단계별 스크립트
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
-hardware/             장비 고르기, 기기별 기록 (이 기기에만 해당하는 사실은 여기에만)
+hardware/             장비 고르기
 macos/                첫 부팅, 시스템 설정
 development/          Homebrew, Node, git, 터미널, 컨테이너
 agents/               코딩 에이전트별 설치·설정

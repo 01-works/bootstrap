@@ -15,7 +15,7 @@
 
 - [ ] 소프트웨어 업데이트 최신으로
 - [ ] 컴퓨터 이름: 시스템 설정 > 일반 > 정보 (SSH·Tailscale에서 이 이름으로 보인다)
-- [ ] 늘 켜두는 기기라면: 시스템 설정 > 일반 > 공유에서 원격 로그인, 화면 공유 켜기 ([hardware/mac-mini.md](../hardware/mac-mini.md))
+- [ ] 늘 켜두는 기기라면: 시스템 설정 > 일반 > 공유에서 원격 로그인, 화면 공유 켜기 ([system-settings.md](system-settings.md))
 
 ## bootstrap 이후
 

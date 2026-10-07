@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# macOS 시스템 설정. 지금 Mac mini에서 기본값과 다르게 쓰고 있는 것만 적용한다.
+# macOS 시스템 설정. 기본값과 다르게 쓰는 것만 적용한다.
 # 각 항목의 이유는 macos/system-settings.md.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
