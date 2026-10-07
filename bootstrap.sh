@@ -12,13 +12,12 @@ source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 usage() {
   cat <<'EOF'
 사용법:
-  ./bootstrap.sh --profile <main|minimal> [--only 단계,단계] [--dry-run] [--yes]
+  ./bootstrap.sh [--only 단계,단계] [--dry-run] [--yes]
   ./bootstrap.sh doctor      설치 상태 검증
   ./bootstrap.sh snapshot    이 Mac에는 있는데 저장소에 없는 것 찾기
-  ./bootstrap.sh --list      프로필별 단계 보기
+  ./bootstrap.sh --list      단계 목록
 
 옵션:
-  --profile   profiles/<이름>.sh를 쓴다. 한 번 실행하면 기억하므로 다음부터는 생략 가능
   --only      지정한 단계만 실행 (예: --only dotfiles,agents)
   --dry-run   아무것도 바꾸지 않고 할 일만 출력
   --yes       확인 질문에 모두 예
@@ -42,19 +41,18 @@ step_file() {
 }
 
 cmd=install
-profile=''
 only=''
 while [[ $# -gt 0 ]]; do
   case "$1" in
     doctor | snapshot) cmd="$1" ;;
     --list) cmd=list ;;
-    --profile | --only)
-      [[ -n "${2:-}" ]] || { usage; die "$1 다음에 값이 필요합니다"; }
-      if [[ "$1" == --profile ]]; then profile="$2"; else only="$2"; fi
+    --only)
+      [[ -n "${2:-}" ]] || { usage; die "--only 다음에 값이 필요합니다"; }
+      only="$2"
       shift ;;
-    --profile=* | --only=*)
-      [[ -n "${1#*=}" ]] || { usage; die "${1%%=*} 다음에 값이 필요합니다"; }
-      if [[ "$1" == --profile=* ]]; then profile="${1#*=}"; else only="${1#*=}"; fi ;;
+    --only=*)
+      [[ -n "${1#*=}" ]] || { usage; die "--only 다음에 값이 필요합니다"; }
+      only="${1#*=}" ;;
     --dry-run) DRY_RUN=1 ;;
     -y | --yes) ASSUME_YES=1 ;;
     -h | --help) usage; exit 0 ;;
@@ -65,26 +63,17 @@ done
 export DRY_RUN ASSUME_YES
 
 if [[ "$cmd" == list ]]; then
-  for f in "$BOOTSTRAP_ROOT"/profiles/*.sh; do
-    load_profile "$(basename "$f" .sh)"
-    printf '%-8s %s\n' "$PROFILE" "$STEPS"
-  done
-  printf '\n전체 단계 (실행 순서): %s\n' "$(all_steps)"
+  printf '단계 (실행 순서): %s\n' "$(all_steps)"
   exit 0
 fi
-
-[[ -n "$profile" ]] || profile="$(saved_profile)"
-[[ -n "$profile" ]] || { usage; die "--profile을 지정하세요 (처음 한 번만)"; }
-load_profile "$profile"
-export PROFILE
 
 case "$cmd" in
   doctor) exec bash "$BOOTSTRAP_ROOT/scripts/doctor.sh" ;;
   snapshot) exec bash "$BOOTSTRAP_ROOT/scripts/snapshot.sh" ;;
 esac
 
-# 실행할 단계: --only가 있으면 그것만, 없으면 프로필의 STEPS. 순서는 항상 scripts/steps/의 번호 순.
-selected="$STEPS"
+# 실행할 단계: --only가 있으면 그것만, 없으면 전부. 순서는 항상 scripts/steps/의 번호 순.
+selected="$(all_steps)"
 if [[ -n "$only" ]]; then
   selected="${only//,/ }"
   [[ -n "${selected// /}" ]] || die "--only에 단계 이름이 없습니다"
@@ -93,14 +82,9 @@ if [[ -n "$only" ]]; then
   done
 fi
 
-printf '%s프로필: %s%s   단계: %s' "$_bold" "$PROFILE" "$_reset" "$selected"
+printf '%s단계:%s %s' "$_bold" "$_reset" "$selected"
 [[ "$DRY_RUN" == 1 ]] && printf '   %s(dry-run)%s' "$_yellow" "$_reset"
 printf '\n'
-
-if [[ "$DRY_RUN" != 1 ]]; then
-  mkdir -p "$BOOTSTRAP_STATE"
-  printf '%s\n' "$PROFILE" >"$BOOTSTRAP_STATE/profile"
-fi
 
 # preflight·xcode·homebrew는 뒤 단계가 모두 기대므로 실패하면 멈춘다. 나머지는 실패를 모아 두고 계속한다.
 failed=''

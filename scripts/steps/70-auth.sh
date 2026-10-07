@@ -27,11 +27,9 @@ fi
 
 # 직접 해야 하는 로그인을 마지막에 한 번에 보여 준다.
 printf '\n    남은 로그인:\n'
-if contains agents $STEPS; then
-  printf '      %s\n' \
-    'claude          처음 실행하면 로그인 안내' \
-    'codex           처음 실행하면 "Sign in with ChatGPT"' \
-    'Paseo 앱        실행 후 데몬 설정' \
-    'Claude·ChatGPT 앱'
-fi
-printf '      %s\n' 'Tailscale 앱    실행 후 로그인'
+printf '      %s\n' \
+  'claude          처음 실행하면 로그인 안내' \
+  'codex           처음 실행하면 "Sign in with ChatGPT"' \
+  'Paseo 앱        실행 후 데몬 설정' \
+  'Claude·ChatGPT 앱' \
+  'Tailscale 앱    실행 후 로그인'

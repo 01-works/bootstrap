@@ -1,6 +1,6 @@
 # 컨테이너
 
-Docker Desktop 대신 **colima**를 쓴다. colima가 Linux VM을 띄우고 그 안에서 Docker 엔진을 돌린다. 그 엔진을 다루는 `docker` 명령어는 Homebrew의 `docker`(Docker Desktop 없이 명령어만)로 설치한다. 모두 `Brewfile.main`.
+Docker Desktop 대신 **colima**를 쓴다. colima가 Linux VM을 띄우고 그 안에서 Docker 엔진을 돌린다. 그 엔진을 다루는 `docker` 명령어는 Homebrew의 `docker`(Docker Desktop 없이 명령어만)로 설치한다. 모두 `Brewfile`.
 
 ```sh
 colima start                      # 기본 VM 시작

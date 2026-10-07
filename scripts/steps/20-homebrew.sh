@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Homebrew 설치 후 프로필의 Brewfile들을 설치한다.
+# Homebrew 설치 후 Brewfile을 설치한다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
@@ -20,14 +20,11 @@ fi
 
 # 하나가 실패해도(예: brew 밖에서 깔린 같은 앱) 나머지 단계는 계속한다. 빠진 항목은 doctor가 알려준다.
 # --no-upgrade: 이미 깔린 건 업그레이드하지 않는다. 다시 실행해도 아무것도 바뀌지 않게.
-for f in $BREWFILES; do
-  info "brew bundle: $f"
-  if [[ "$DRY_RUN" == 1 ]]; then
-    brew bundle check --file="$BOOTSTRAP_ROOT/$f" --no-upgrade --verbose 2>&1 | grep '→' | sed 's/^/      /' || true
-  fi
-  if ! run brew bundle --file="$BOOTSTRAP_ROOT/$f" --no-upgrade; then
-    warn "$f 일부 항목 설치 실패. 실패해도 이미 설치된 것은 바뀌지 않는다"
-    info "이미 직접 설치한 앱이면: development/homebrew.md의 '기존 앱 옮기기'"
-    info "다운로드 실패(404 등)면: 하루쯤 뒤 ./bootstrap.sh --only homebrew, 급하면 TOOLS.md의 공식 링크에서 받기"
-  fi
-done
+if [[ "$DRY_RUN" == 1 ]]; then
+  brew bundle check --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade --verbose 2>&1 | grep '→' | sed 's/^/      /' || true
+fi
+if ! run brew bundle --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade; then
+  warn "Brewfile 일부 항목 설치 실패. 실패해도 이미 설치된 것은 바뀌지 않는다"
+  info "이미 직접 설치한 앱이면: development/homebrew.md의 '기존 앱 옮기기'"
+  info "다운로드 실패(404 등)면: 하루쯤 뒤 ./bootstrap.sh --only homebrew, 급하면 TOOLS.md의 공식 링크에서 받기"
+fi

@@ -20,15 +20,14 @@ trap 'rm -rf "$tmp"' EXIT
 # 목록을 못 읽으면 빈 목록으로 비교해 엉뚱한 결과가 나오므로 멈춘다.
 dump="$(brew bundle dump --file=- 2>/dev/null)" || die "brew bundle dump 실패"
 printf '%s\n' "$dump" | normalize >"$tmp/installed"
-cat "$BOOTSTRAP_ROOT"/Brewfile* | normalize >"$tmp/listed_any"
-for f in $BREWFILES; do cat "$BOOTSTRAP_ROOT/$f"; done | normalize >"$tmp/listed_profile"
+normalize <"$BOOTSTRAP_ROOT/Brewfile" >"$tmp/listed"
 
-step "설치되어 있지만 어느 Brewfile에도 없음"
-comm -23 "$tmp/installed" "$tmp/listed_any" | sed 's/^/    /'
+step "설치되어 있지만 Brewfile에 없음"
+comm -23 "$tmp/installed" "$tmp/listed" | sed 's/^/    /'
 info "${_dim}→ 계속 쓸 거면 Brewfile에 추가, 안 쓰면 지우기${_reset}"
 
-step "이 프로필의 Brewfile에 있지만 설치 안 됨"
-comm -13 "$tmp/installed" "$tmp/listed_profile" | grep -v '^tap ' | sed 's/^/    /'
+step "Brewfile에 있지만 설치 안 됨"
+comm -13 "$tmp/installed" "$tmp/listed" | grep -v '^tap ' | sed 's/^/    /'
 
 step "/Applications 중 Homebrew나 App Store로 관리하지 않는 앱"
 casks="$(brew info --cask --installed --json=v2 2>/dev/null)" || die "brew info --cask 실패"

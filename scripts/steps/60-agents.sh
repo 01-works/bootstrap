@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 코딩 에이전트 CLI. 둘 다 공식 문서가 기본으로 안내하는 설치 스크립트를 쓴다.
 # 둘 다 ~/.local/bin에 설치되고 스스로 업데이트된다. 근거: TOOLS.md
-# 앱(Claude, ChatGPT, Paseo)은 Brewfile.main에서 설치된다. 로그인 안내는 auth 단계가 모아서 보여 준다.
+# 앱(Claude, ChatGPT, Paseo)은 Brewfile에서 설치된다. 로그인 안내는 auth 단계가 모아서 보여 준다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
@@ -35,7 +35,7 @@ install_cli codex https://chatgpt.com/codex/install.sh sh
 if has paseo; then
   ok "paseo"
 else
-  warn "paseo 없음 (Brewfile.main의 cask \"paseo\" 확인)"
+  warn "paseo 없음 (Brewfile의 cask \"paseo\" 확인)"
 fi
 
 exit "$failed"

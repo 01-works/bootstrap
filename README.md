@@ -15,8 +15,8 @@
    gh auth login --web --git-protocol https   # 비공개 저장소라 clone 전에 로그인이 필요하다
    gh repo clone 01-works/bootstrap ~/dev/bootstrap
    cd ~/dev/bootstrap
-   ./bootstrap.sh --profile main --dry-run   # 할 일 미리 보기
-   ./bootstrap.sh --profile main
+   ./bootstrap.sh --dry-run   # 할 일 미리 보기
+   ./bootstrap.sh
    ```
 
 3. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
@@ -24,14 +24,13 @@
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
-## 프로필
+## 모든 기기가 같은 세팅
 
-기기마다 무엇을 설치하고 어떤 설정 파일을 둘지 [profiles/](profiles/)에서 고른다. 처음 한 번 `--profile`을 주면 기억한다.
+직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 세 가지뿐이다.
 
-| 프로필 | 기기 | 단계 | 설정 파일 |
-|---|---|---|---|
-| `main` | 메인 개발기 (늘 켜두고 원격으로도 붙는 기기) | 전부 | zsh, git, claude, codex |
-| `minimal` | 보조 기기 | preflight, xcode, homebrew, macos, auth | 없음 |
+- 전원: `power` 단계가 배터리 유무로 판단해서, 노트북은 충전 중에만 잠들지 않게 하고 데스크톱은 늘 켜둔다.
+- 로그인하는 계정 (GitHub, Google, Claude, Codex): 기기마다 로그인한다.
+- git 커밋 작성자: 다른 GitHub 계정을 쓰는 기기는 `~/.gitconfig.local`에 이름·이메일을 적는다.
 
 ## 단계
 
@@ -43,9 +42,9 @@ preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기
 |---|---|---|
 | preflight | Apple Silicon·네트워크 확인 | |
 | xcode | Xcode 명령줄 도구(git 포함), 이 저장소의 커밋 전 검사 켜기 | |
-| homebrew | Homebrew 설치, 프로필의 Brewfile 설치 | [development/homebrew.md](development/homebrew.md) |
+| homebrew | Homebrew 설치, Brewfile 설치 | [development/homebrew.md](development/homebrew.md) |
 | macos | 키보드, 다크 모드, Dock 설정 | [macos/system-settings.md](macos/system-settings.md) |
-| power | 잠자기 끄기, 원격 접속 확인 (늘 켜두는 기기) | [macos/system-settings.md](macos/system-settings.md) |
+| power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기, 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
@@ -57,7 +56,7 @@ preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기
 ./bootstrap.sh --only dotfiles     # 한 단계만
 ./bootstrap.sh doctor              # 세팅 상태 검증
 ./bootstrap.sh snapshot            # 이 Mac에는 있는데 저장소에 없는 것 찾기
-./bootstrap.sh --list              # 프로필별 단계
+./bootstrap.sh --list              # 단계 목록
 ```
 
 새 도구를 설치했으면 `snapshot`으로 확인하고 Brewfile에 옮겨 적는다. 그래야 다음 기기에도 깔린다.
@@ -69,7 +68,7 @@ preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기
 ```sh
 T=$(mktemp -d)
 env -i HOME="$T" PATH=/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm USER="$USER" \
-  ./bootstrap.sh --profile main --only dotfiles,runtimes,agents
+  ./bootstrap.sh --only dotfiles,runtimes,agents
 env -i HOME="$T" PATH=/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm USER="$USER" ./bootstrap.sh doctor
 rm -rf "$T"
 ```
@@ -87,10 +86,8 @@ rm -rf "$T"
 
 ```text
 bootstrap.sh          진입점
-Brewfile              모든 기기 공통 설치 목록
-Brewfile.main         메인 개발기 추가분
+Brewfile              설치 목록
 TOOLS.md              도구별 공식 문서 링크, 설치 방법을 고른 이유
-profiles/             기기별 단계·Brewfile·설정 파일 선택
 home/                 ~에 연결할 설정 파일 (묶음별)
 scripts/steps/        단계별 스크립트
 scripts/doctor.sh     검증

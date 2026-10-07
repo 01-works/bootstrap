@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
-# 늘 켜두는 기기 설정: 잠자기 끄기, 네트워크로 깨우기. 원격 접속은 확인만 한다.
+# 전원 설정. 노트북은 충전 중에만 잠들지 않게 하고(배터리 설정은 그대로), 데스크톱은 늘 켜둔다.
+# 데스크톱은 원격으로 붙는 기기이므로 원격 접속도 확인한다. 노트북인지는 배터리 유무로 판단한다 (lib.sh).
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
+
+if is_laptop; then
+  if power_ok; then
+    ok "충전 중에는 잠자기 안 함 (노트북)"
+  else
+    info "충전 중에는 잠들지 않게 합니다 (sudo 비밀번호 필요). 배터리 설정은 그대로입니다"
+    run sudo pmset -c sleep 0
+    ok "충전 중에는 잠자기 안 함 (노트북)"
+  fi
+  exit 0
+fi
 
 if power_ok; then
   ok "잠자기·화면 잠자기 꺼짐, 네트워크로 깨우기 켬"

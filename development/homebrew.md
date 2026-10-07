@@ -2,14 +2,13 @@
 
 설치 목록은 Brewfile이 기준이다.
 
-- [`Brewfile`](../Brewfile): 모든 기기 공통 (gh, gitleaks, Tailscale)
-- [`Brewfile.main`](../Brewfile.main): 메인 개발기 추가분 (fnm, colima·docker, Claude·ChatGPT·Paseo 앱, cloudflared)
+- [`Brewfile`](../Brewfile) 하나에 모든 기기가 설치할 것을 적는다: gh, gitleaks, fnm, colima·docker, Claude·ChatGPT·Paseo·Tailscale 앱, cloudflared
 
 ## 추가·삭제
 
 ```sh
 brew install <이름>              # 설치하고
-# Brewfile(.main)에 한 줄 추가
+# Brewfile에 한 줄 추가
 ./bootstrap.sh snapshot         # 빠진 게 없는지 확인
 ```
 

@@ -4,7 +4,7 @@
 
 ## 전체 구조
 
-화살표 A → B는 B가 A를 쓴다는 뜻이다. 색은 설치 방법, 칸 제목의 "모든 기기"는 `minimal` 프로필에도 들어가는 것, "main"은 메인 개발기에만 들어가는 것이다.
+화살표 A → B는 B가 A를 쓴다는 뜻이다. 색은 설치 방법이다. 모든 기기에 같은 것을 설치한다.
 
 ```mermaid
 flowchart LR
@@ -15,13 +15,13 @@ flowchart LR
     LG3["다른 도구에 포함"]:::bundled
   end
 
-  subgraph sgBase["기반 · 모든 기기"]
+  subgraph sgBase["기반"]
     CLT["Xcode 명령줄 도구<br/>git 포함"]
     BREW["Homebrew"]
   end
   CLT --> BREW
 
-  subgraph sgGit["Git · 원격 접속 · 모든 기기"]
+  subgraph sgGit["Git · 원격 접속"]
     GH["gh"]
     GL["gitleaks"]
     TSAPP["Tailscale 앱"]
@@ -30,7 +30,7 @@ flowchart LR
   GH -->|로그인| GIT
   GL --> HOOK["이 저장소 커밋 검사"]
 
-  subgraph sgNode["Node · main"]
+  subgraph sgNode["Node"]
     FNM["fnm"]
     NODE["Node 24"]
     NPM["npm · npx"]
@@ -42,7 +42,7 @@ flowchart LR
   PNPM --> PP["pnpm 프로젝트"]
   NPM --> NP["npm 프로젝트 · npx로 실행하는 MCP"]
 
-  subgraph sgDocker["컨테이너 · main"]
+  subgraph sgDocker["컨테이너"]
     COLIMA["colima"]
     VM["Linux VM<br/>Docker 엔진"]
     DOCKER["docker 명령어"]
@@ -50,7 +50,7 @@ flowchart LR
   COLIMA --> VM
   VM --> DOCKER
 
-  subgraph sgAgents["에이전트 · main"]
+  subgraph sgAgents["에이전트"]
     CC["Claude Code"]
     CLAUDEAPP["Claude 앱"]
     CHATGPT["ChatGPT 앱<br/>= Codex 앱"]
@@ -61,7 +61,7 @@ flowchart LR
   CC --> PASEO
   CODEX --> PASEO
 
-  subgraph sgTunnel["터널 · main"]
+  subgraph sgTunnel["터널"]
     CF["cloudflared<br/>Cloudflare Tunnel"]
   end
   LOCAL["로컬 서버"] -->|외부 주소로 공개| CF
@@ -89,7 +89,7 @@ flowchart LR
 - 설치가 실패하거나 설치 방법이 바뀐 것 같으면 먼저 공식 문서를 본다. 그다음 Brewfile·스크립트를 고치고, 아래 표에서 그 줄의 확인일을 갱신한다.
 - 새 기기를 들이기 전에 표 전체 링크를 한 번 확인한다.
 
-## 기본 · 모든 기기
+## 기본
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
@@ -100,22 +100,22 @@ flowchart LR
 | gitleaks | `Brewfile` | [GitHub](https://github.com/gitleaks/gitleaks) | 이 저장소의 커밋 전 비밀값 검사용. 기능 추가는 끝났고 보안 패치만 나온다 (후속 도구는 Betterleaks) | 2026-10-07 |
 | Tailscale 앱 | `cask "tailscale-app"` | [tailscale.com](https://tailscale.com/docs/install/mac) | Standalone 버전, 공식 권장. `tailscale` 명령어는 쓰지 않는다 (필요하면 앱 설정 → [CLI integration](https://tailscale.com/docs/reference/tailscale-cli)) | 2026-10-07 |
 
-## Node · main
+## Node
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
-| fnm | `Brewfile.main` | [GitHub](https://github.com/Schniz/fnm) | Homebrew가 공식 방법 중 하나 | 2026-10-07 |
+| fnm | `Brewfile` | [GitHub](https://github.com/Schniz/fnm) | Homebrew가 공식 방법 중 하나 | 2026-10-07 |
 | Node | fnm (`runtimes` 단계) | [nodejs.org](https://nodejs.org/en/download) | fnm이 공식 권장 방법 중 하나 | 2026-10-07 |
 | pnpm | corepack (`runtimes` 단계) | [nodejs.org](https://nodejs.org/en/download), [pnpm.io](https://pnpm.io/installation) | 공식 권장과 다름 (아래) | 2026-10-07 |
 
-## 컨테이너 · main
+## 컨테이너
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
-| colima | `Brewfile.main` | [GitHub](https://github.com/abiosoft/colima) | Homebrew가 첫 번째 방법 | 2026-10-07 |
-| docker 명령어 | `Brewfile.main` | [colima](https://github.com/abiosoft/colima), [Homebrew](https://formulae.brew.sh/formula/docker) | colima 문서가 `brew install docker`를 안내한다. Docker Desktop 없이 명령어만 설치 | 2026-10-07 |
+| colima | `Brewfile` | [GitHub](https://github.com/abiosoft/colima) | Homebrew가 첫 번째 방법 | 2026-10-07 |
+| docker 명령어 | `Brewfile` | [colima](https://github.com/abiosoft/colima), [Homebrew](https://formulae.brew.sh/formula/docker) | colima 문서가 `brew install docker`를 안내한다. Docker Desktop 없이 명령어만 설치 | 2026-10-07 |
 
-## 에이전트 · main
+## 에이전트
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
@@ -127,11 +127,11 @@ flowchart LR
 
 ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내장 ripgrep으로 대신하고, Codex CLI는 ripgrep을 함께 설치한다.
 
-## 터널 · main
+## 터널
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
-| cloudflared | `Brewfile.main` | [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) | Cloudflare Tunnel 연결 프로그램. Homebrew가 첫 번째 공식 방법 | 2026-10-07 |
+| cloudflared | `Brewfile` | [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) | Cloudflare Tunnel 연결 프로그램. Homebrew가 첫 번째 공식 방법 | 2026-10-07 |
 
 ## 공식 권장과 다르게 하는 것
 

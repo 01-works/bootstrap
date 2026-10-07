@@ -61,23 +61,20 @@ contains() {
   return 1
 }
 
-# 프로필(profiles/<이름>.sh)을 읽어 STEPS, BREWFILES, DOTFILES를 채운다.
-load_profile() {
-  local file="$BOOTSTRAP_ROOT/profiles/$1.sh"
-  [[ -f "$file" ]] || die "프로필이 없습니다: $1 ($(ls "$BOOTSTRAP_ROOT/profiles" | sed 's/\.sh$//' | tr '\n' ' '))"
-  STEPS='' BREWFILES='' DOTFILES=''
-  # shellcheck source=/dev/null
-  source "$file"
-  PROFILE="$1"
-}
-
-saved_profile() { cat "$BOOTSTRAP_STATE/profile" 2>/dev/null || true; }
-
 # fnm 기본 Node 주 버전. runtimes 단계와 doctor가 쓴다.
 NODE_VERSION=24
 
-# 늘 켜두는 기기의 전원 설정(잠자기·화면 잠자기 끔, 네트워크로 깨우기 켬)이 맞는지. power 단계와 doctor가 쓴다.
+# 배터리가 있으면 노트북으로 본다. power 단계와 doctor가 쓴다.
+is_laptop() {
+  [[ "$(pmset -g batt)" == *InternalBattery* ]]
+}
+
+# 전원 설정이 맞는지. 노트북은 충전 중에만 잠자기 안 함, 데스크톱은 늘 켜두기(잠자기·화면 잠자기 끔, 네트워크로 깨우기 켬).
 power_ok() {
+  if is_laptop; then
+    [[ "$(pmset -g custom | awk '/^AC Power:/ {ac = 1; next} /^[^ ]/ {ac = 0} ac && $1 == "sleep" {print $2; exit}')" == 0 ]]
+    return
+  fi
   local s
   s="$(pmset -g custom | awk '$1 == "sleep" || $1 == "displaysleep" || $1 == "womp" {print $1 "=" $2}' | sort -u | paste -sd ' ' -)"
   [[ "$s" == "displaysleep=0 sleep=0 womp=1" ]]
@@ -88,8 +85,3 @@ if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$PATH"
-
-# 단계 스크립트는 bootstrap.sh가 넘겨준 프로필을 바로 쓸 수 있게 한다.
-if [[ -n "${PROFILE:-}" ]]; then
-  load_profile "$PROFILE"
-fi
