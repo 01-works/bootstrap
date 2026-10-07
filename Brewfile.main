@@ -12,8 +12,5 @@ cask "claude"
 cask "chatgpt"  # Codex 앱 포함
 cask "paseo"
 
-# 에이전트가 셸에서 검색할 때
-brew "ripgrep"
-
 # Cloudflare Tunnel
 brew "cloudflared"

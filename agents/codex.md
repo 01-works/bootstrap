@@ -8,7 +8,7 @@
 curl -fsSL https://chatgpt.com/codex/install.sh | sh
 ```
 
-`~/.local/bin/codex`에 설치되고 스스로 업데이트된다. Claude Code와 같은 방식이다. npm 전역 설치는 Node 버전별로 따로 깔려서 fnm 기본 버전을 바꾸면 사라지고, Homebrew cask는 `brew upgrade`를 해야 올라가서 쓰지 않는다.
+`~/.local/bin/codex`에 설치되고 스스로 업데이트된다. Claude Code와 같은 방식이다. npm이나 Homebrew로 설치한 Codex가 이미 있으면, 설치 스크립트가 `~/.zprofile`에 `# >>> Codex installer >>>` PATH 줄을 추가한다. `.zprofile`은 이 저장소 파일에 링크되므로, 기존 설치를 지운 뒤 그 줄은 빼면 된다(우리 `.zprofile`에 `~/.local/bin`이 이미 있다). npm 전역 설치는 Node 버전별로 따로 깔려서 fnm 기본 버전을 바꾸면 사라지고, Homebrew cask는 `brew upgrade`를 해야 올라가서 쓰지 않는다.
 
 ChatGPT 앱(Codex 앱 포함)은 따로 `cask "chatgpt"`로 설치한다. 관계는 [README.md](README.md) 참고.
 

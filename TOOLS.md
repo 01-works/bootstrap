@@ -53,15 +53,12 @@ flowchart LR
   VM --> DOCKER
 
   subgraph sgAgents["에이전트 · main"]
-    RG["ripgrep"]
     CC["Claude Code"]
     CLAUDEAPP["Claude 앱"]
     CHATGPT["ChatGPT 앱<br/>= Codex 앱"]
     CODEX["Codex CLI<br/>터미널용"]
     PASEO["Paseo<br/>앱 · CLI · 스킬"]
   end
-  RG -->|셸 검색| CC
-  RG -->|셸 검색| CODEX
   CHATGPT -->|브라우저 · 컴퓨터 사용 도구| CODEX
   CC --> PASEO
   CODEX --> PASEO
@@ -78,7 +75,7 @@ flowchart LR
 
   class BREW,CC,CODEX script
   class CLT,NODE,NPM,PNPM,VM,TSCLI bundled
-  class FNM,COLIMA,DOCKER,RG,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP brew
+  class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP brew
   class PP,NP,GIT,HOOK,LOCAL use
 ```
 
@@ -127,10 +124,11 @@ flowchart LR
 |---|---|---|---|---|
 | Claude Code | `agents` 단계 (공식 설치 스크립트) | [code.claude.com](https://code.claude.com/docs/en/setup) | 공식 권장. 스스로 업데이트된다 | 2026-10-07 |
 | Claude 앱 | `cask "claude"` | [claude.com](https://claude.com/download) | | 2026-10-07 |
-| Codex CLI | `agents` 단계 (공식 설치 스크립트) | [learn.chatgpt.com](https://learn.chatgpt.com/docs/codex/cli) | 공식 기본 방법. `~/.local/bin`에 설치되고 스스로 업데이트된다 | 2026-10-07 |
+| Codex CLI | `agents` 단계 (공식 설치 스크립트) | [learn.chatgpt.com](https://learn.chatgpt.com/docs/codex/cli) | 공식 기본 방법. `~/.local/bin`에 설치되고 스스로 업데이트된다. 다른 방법으로 설치한 Codex가 있으면 `~/.zprofile`에 PATH 줄을 추가한다 | 2026-10-07 |
 | ChatGPT 앱 | `cask "chatgpt"` | [learn.chatgpt.com](https://learn.chatgpt.com/docs/app) | 2026-07부터 Codex 앱이 ChatGPT 앱에 합쳐졌다 ([changelog](https://learn.chatgpt.com/docs/changelog)) | 2026-10-07 |
 | Paseo | `cask "paseo"` | [paseo.sh/download](https://paseo.sh/download), [paseo.sh/docs](https://paseo.sh/docs) | cask가 앱 안의 `paseo` CLI도 연결한다 | 2026-10-07 |
-| ripgrep | `Brewfile.main` | [GitHub](https://github.com/BurntSushi/ripgrep) | Homebrew가 공식 방법 | 2026-10-07 |
+
+ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내장 ripgrep으로 대신하고, Codex CLI는 ripgrep을 함께 설치한다.
 
 ## 터널 · main
 

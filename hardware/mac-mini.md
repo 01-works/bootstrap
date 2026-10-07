@@ -35,6 +35,6 @@
 
 저장소 설정에는 넣지 않고 이 기기에서만 쓰는 것. `./bootstrap.sh snapshot`에 "Brewfile에 없음"으로 나와도 지우지 않는다.
 
-- Hermes가 쓰는 것: Homebrew `node`, `ffmpeg`, `~/.local/share/uv`의 Python 3.11
+- Hermes가 쓰는 것: Homebrew `node`, `ffmpeg`, `ripgrep`, `~/.local/share/uv`의 Python 3.11
 - gws (googleworkspace-cli)
 - 직접 설치한 앱: Chrome, VS Code, Figma, Discord, KakaoTalk, Numbers Creator Studio, Rectangle, LibreOffice
