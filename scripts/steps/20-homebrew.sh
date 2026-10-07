@@ -23,6 +23,8 @@ for f in $BREWFILES; do
     brew bundle check --file="$BOOTSTRAP_ROOT/$f" --no-upgrade --verbose 2>&1 | grep '→' | sed 's/^/      /' || true
   fi
   if ! run brew bundle --file="$BOOTSTRAP_ROOT/$f" --no-upgrade; then
-    warn "$f 일부 항목 설치 실패. 이미 직접 설치한 앱이면 development/homebrew.md의 '기존 앱 옮기기' 참고"
+    warn "$f 일부 항목 설치 실패. 실패해도 이미 설치된 것은 바뀌지 않는다"
+    info "이미 직접 설치한 앱이면: development/homebrew.md의 '기존 앱 옮기기'"
+    info "다운로드 실패(404 등)면: 하루쯤 뒤 ./bootstrap.sh --only homebrew, 급하면 TOOLS.md의 공식 링크에서 받기"
   fi
 done
