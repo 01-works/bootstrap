@@ -37,4 +37,4 @@
 
 - Hermes가 쓰는 것: Homebrew `node`, `ffmpeg`, `ripgrep`, `~/.local/share/uv`의 Python 3.11
 - gws (googleworkspace-cli)
-- 직접 설치한 앱: Chrome, VS Code, Figma, Discord, KakaoTalk, Numbers Creator Studio, Rectangle, LibreOffice
+- 앱: Chrome, VS Code, Figma, Discord, KakaoTalk, Numbers Creator Studio, Rectangle (직접 설치), LibreOffice (Homebrew)

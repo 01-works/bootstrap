@@ -12,13 +12,3 @@ if curl -fsI --max-time 10 https://github.com >/dev/null 2>&1; then
 else
   die "github.com에 연결할 수 없습니다"
 fi
-
-# 이 저장소의 커밋 전 비밀값 검사(.githooks/pre-commit)를 켠다.
-if git -C "$BOOTSTRAP_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  if [[ "$(git -C "$BOOTSTRAP_ROOT" config core.hooksPath || true)" == .githooks ]]; then
-    ok "git hooks (.githooks)"
-  else
-    run git -C "$BOOTSTRAP_ROOT" config core.hooksPath .githooks
-    ok "git hooks 켬 (.githooks)"
-  fi
-fi

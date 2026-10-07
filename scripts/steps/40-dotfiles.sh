@@ -6,7 +6,7 @@
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
-backup_dir="$BOOTSTRAP_STATE/backup/$(date +%Y%m%d-%H%M%S)"
+backup_dir="$BOOTSTRAP_STATE/backup/$(date +%Y%m%d-%H%M%S)-$$"
 
 ensure_parent() {
   [[ -d "$(dirname "$1")" ]] || run mkdir -p "$(dirname "$1")"
@@ -20,6 +20,10 @@ link_file() {
   fi
   if [[ -e "$dst" || -L "$dst" ]]; then
     local bak="$backup_dir/${dst#"$HOME"/}"
+    # 도구가 링크를 일반 파일로 바꿔 놓고 내용을 고쳤을 수 있다. 저장소에 옮길 게 있는지 알린다.
+    if [[ -f "$dst" && ! -L "$dst" ]] && ! cmp -s "$dst" "$src"; then
+      warn "$(pretty "$dst")의 내용이 저장소와 다릅니다. 필요한 변경은 저장소로 옮기세요: diff $(pretty "$bak") $(pretty "$src")"
+    fi
     ensure_parent "$bak"
     run mv "$dst" "$bak"
     info "기존 파일 백업 → $(pretty "$bak")"

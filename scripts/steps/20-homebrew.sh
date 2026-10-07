@@ -6,12 +6,15 @@ source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 # 설치 방법 근거: TOOLS.md (Homebrew)
 if has brew; then
   ok "Homebrew $(brew --version | head -1 | awk '{print $2}')"
+elif [[ "$DRY_RUN" == 1 ]]; then
+  info "[dry-run] Homebrew 공식 설치 스크립트 실행"
+  info "Homebrew가 없어서 Brewfile 설치는 미리 볼 수 없습니다"
+  exit 0
 else
-  run /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  if [[ "$DRY_RUN" == 1 ]]; then
-    info "Homebrew가 없어서 Brewfile 설치는 미리 볼 수 없습니다"
-    exit 0
-  fi
+  # curl | bash는 받기에 실패해도 성공으로 끝나므로, 먼저 받아 두고 확인한 뒤 실행한다.
+  installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || die "Homebrew 설치 스크립트를 받지 못했습니다"
+  /bin/bash -c "$installer"
+  [[ -x /opt/homebrew/bin/brew ]] || die "Homebrew가 설치되지 않았습니다"
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 

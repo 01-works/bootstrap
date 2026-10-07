@@ -135,4 +135,4 @@ ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내�
 
 ## 공식 권장과 다르게 하는 것
 
-- **pnpm**: 현재 pnpm 문서(pnpm 12)는 Node 없이 도는 단독 실행 파일 설치를 안내하고, corepack 방법은 예전 문서(pnpm.io/10.x)에만 남아 있다. Node 다운로드 페이지는 여전히 `npm install -g corepack` → `corepack enable pnpm`을 안내한다. 프로젝트마다 `packageManager`로 pnpm 버전이 다르게 고정되어 있고 corepack이 그 버전에 맞춰 실행해 주므로 유지한다. corepack은 Node 25부터 Node에 들어 있지 않아서 전역으로 따로 설치한다.
+- **pnpm**: 현재 pnpm 문서(pnpm 12)는 Node 없이 도는 단독 실행 파일 설치를 안내하고, corepack 방법은 예전 문서(pnpm.io/10.x)에만 남아 있다. Node 다운로드 페이지는 여전히 `npm install -g corepack` → `corepack enable pnpm`을 안내한다. 프로젝트마다 `packageManager`로 pnpm 버전이 다르게 고정되어 있고 corepack이 그 버전에 맞춰 실행해 주므로 유지한다. corepack은 Node 25부터 Node에 들어 있지 않으므로, 없으면 전역으로 설치한다.

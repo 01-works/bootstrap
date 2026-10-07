@@ -33,6 +33,10 @@ contains Brewfile.main $BREWFILES && cmds="$cmds colima docker"
 for cmd in $cmds; do
   if has "$cmd"; then pass "$cmd"; else miss "$cmd 없음"; fi
 done
+if contains runtimes $STEPS && has node; then
+  major="$(node --version | sed -E 's/^v([0-9]+).*/\1/')"
+  if [[ "$major" == "$NODE_VERSION" ]]; then pass "Node 기본 버전 $NODE_VERSION"; else miss "Node 기본 버전이 $major (./bootstrap.sh --only runtimes)"; fi
+fi
 
 if [[ -n "$DOTFILES" ]]; then
   step "설정 파일"
@@ -63,15 +67,22 @@ fi
 
 if contains power $STEPS; then
   step "전원"
-  if [[ "$(pmset -g custom | awk '$1 == "sleep" {print $2; exit}')" == 0 ]]; then
-    pass "잠자기 꺼짐"
+  if power_ok; then
+    pass "잠자기·화면 잠자기 꺼짐, 네트워크로 깨우기 켬"
   else
-    miss "잠자기 켜짐"
+    miss "전원 설정이 다름 (./bootstrap.sh --only power)"
   fi
 fi
 
 step "인증"
 if gh auth status >/dev/null 2>&1; then pass "GitHub 로그인"; else miss "GitHub 로그인 안 됨 (gh auth login)"; fi
+if [[ -d "$BOOTSTRAP_ROOT/.git" ]]; then
+  if [[ "$(git -C "$BOOTSTRAP_ROOT" config core.hooksPath 2>/dev/null)" == .githooks ]]; then
+    pass "커밋 전 검사 훅"
+  else
+    miss "커밋 전 검사 훅 꺼짐 (./bootstrap.sh --only xcode)"
+  fi
+fi
 if contains zsh $DOTFILES; then
   if [[ -f "$HOME/.zsh_secrets" ]]; then
     perm="$(stat -f '%Lp' "$HOME/.zsh_secrets")"

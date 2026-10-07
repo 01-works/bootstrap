@@ -7,6 +7,8 @@ export BOOTSTRAP_ROOT
 # shellcheck source=scripts/lib.sh
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
+[[ "$(id -u)" != 0 ]] || die "sudo 없이 실행하세요. 관리자 권한이 필요한 곳에서만 따로 묻습니다"
+
 usage() {
   cat <<'EOF'
 사용법:
@@ -46,10 +48,13 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     doctor | snapshot) cmd="$1" ;;
     --list) cmd=list ;;
-    --profile) profile="${2:-}"; shift ;;
-    --profile=*) profile="${1#*=}" ;;
-    --only) only="${2:-}"; shift ;;
-    --only=*) only="${1#*=}" ;;
+    --profile | --only)
+      [[ -n "${2:-}" ]] || { usage; die "$1 다음에 값이 필요합니다"; }
+      if [[ "$1" == --profile ]]; then profile="$2"; else only="$2"; fi
+      shift ;;
+    --profile=* | --only=*)
+      [[ -n "${1#*=}" ]] || { usage; die "${1%%=*} 다음에 값이 필요합니다"; }
+      if [[ "$1" == --profile=* ]]; then profile="${1#*=}"; else only="${1#*=}"; fi ;;
     --dry-run) DRY_RUN=1 ;;
     -y | --yes) ASSUME_YES=1 ;;
     -h | --help) usage; exit 0 ;;
@@ -82,6 +87,7 @@ esac
 selected="$STEPS"
 if [[ -n "$only" ]]; then
   selected="${only//,/ }"
+  [[ -n "${selected// /}" ]] || die "--only에 단계 이름이 없습니다"
   for name in $selected; do
     step_file "$name" >/dev/null || die "없는 단계: $name (가능: $(all_steps))"
   done
@@ -96,17 +102,28 @@ if [[ "$DRY_RUN" != 1 ]]; then
   printf '%s\n' "$PROFILE" >"$BOOTSTRAP_STATE/profile"
 fi
 
+# preflight·xcode·homebrew는 뒤 단계가 모두 기대므로 실패하면 멈춘다. 나머지는 실패를 모아 두고 계속한다.
+failed=''
 for name in $(all_steps); do
   contains "$name" $selected || continue
   step "$name"
-  if ! bash "$(step_file "$name")"; then
-    fail "'$name' 단계에서 멈췄습니다. 원인을 고친 뒤: ./bootstrap.sh --only $name"
+  bash "$(step_file "$name")" && continue
+  if contains "$name" preflight xcode homebrew; then
+    fail "'$name' 단계에서 멈췄습니다. 뒤 단계가 이 단계에 기댑니다. 고친 뒤: ./bootstrap.sh --only $name"
     exit 1
   fi
+  fail "'$name' 단계 실패. 나머지 단계는 계속합니다"
+  failed="$failed $name"
 done
 
 if [[ -z "$only" && "$DRY_RUN" != 1 ]]; then
   step "doctor"
   bash "$BOOTSTRAP_ROOT/scripts/doctor.sh" || true
   printf '\n새 터미널을 열어야 셸 설정이 적용됩니다.\n'
+fi
+
+if [[ -n "$failed" ]]; then
+  failed="${failed# }"
+  fail "실패한 단계: $failed → 원인을 고친 뒤: ./bootstrap.sh --only ${failed// /,}"
+  exit 1
 fi

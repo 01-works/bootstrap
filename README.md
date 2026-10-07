@@ -13,7 +13,7 @@
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    eval "$(/opt/homebrew/bin/brew shellenv)"
    brew install gh
-   gh auth login                   # 비공개 저장소라 clone 전에 로그인이 필요하다
+   gh auth login --web --git-protocol https   # 비공개 저장소라 clone 전에 로그인이 필요하다
    gh repo clone 01-works/bootstrap ~/dev/bootstrap
    cd ~/dev/bootstrap
    ./bootstrap.sh --profile main --dry-run   # 할 일 미리 보기
@@ -21,7 +21,7 @@
    ```
 
 4. 새 터미널을 열고 `./bootstrap.sh doctor`가 모두 통과하는지 확인
-5. 마지막에 출력되는 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale)
+5. `auth` 단계가 마지막에 보여 주는 로그인 목록 처리 (Claude, Codex, Paseo, Tailscale)
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
@@ -38,17 +38,19 @@
 
 `scripts/steps/`의 번호 순서대로 실행된다. 여러 번 실행해도 이미 된 것은 건너뛴다.
 
+preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기에 기댄다). 나머지 단계는 실패해도 다음 단계로 넘어가고, 마지막에 실패한 단계와 다시 실행할 명령을 보여 준다. 실패해도 이미 설치된 것은 바꾸지 않는다.
+
 | 단계 | 하는 일 | 문서 |
 |---|---|---|
-| preflight | Apple Silicon·네트워크 확인, 이 저장소의 커밋 전 검사 켜기 | |
-| xcode | Xcode 명령줄 도구 | |
+| preflight | Apple Silicon·네트워크 확인 | |
+| xcode | Xcode 명령줄 도구(git 포함), 이 저장소의 커밋 전 검사 켜기 | |
 | homebrew | Homebrew 설치, 프로필의 Brewfile 설치 | [development/homebrew.md](development/homebrew.md) |
 | macos | 키보드, 다크 모드, Dock 설정 | [macos/system-settings.md](macos/system-settings.md) |
 | power | 잠자기 끄기, 원격 접속 확인 (늘 켜두는 기기) | [hardware/mac-mini.md](hardware/mac-mini.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
-| auth | GitHub 로그인, SSH 키, 비밀값 파일 | [development/git.md](development/git.md) |
+| auth | GitHub 로그인, 기기별 SSH 키, 비밀값 파일, 남은 로그인 안내 | [development/git.md](development/git.md) |
 
 ## 자주 쓰는 명령
 

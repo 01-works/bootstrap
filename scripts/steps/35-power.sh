@@ -3,12 +3,12 @@
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
-if [[ "$(pmset -g custom | awk '$1 == "sleep" {print $2; exit}')" == 0 ]]; then
-  ok "잠자기 꺼짐"
+if power_ok; then
+  ok "잠자기·화면 잠자기 꺼짐, 네트워크로 깨우기 켬"
 else
-  info "잠자기를 끕니다 (sudo 비밀번호 필요)"
+  info "전원 설정을 바꿉니다 (sudo 비밀번호 필요)"
   run sudo pmset -a sleep 0 displaysleep 0 womp 1
-  ok "잠자기 꺼짐, 네트워크로 깨우기 켬"
+  ok "잠자기·화면 잠자기 끔, 네트워크로 깨우기 켬"
 fi
 
 # 원격 로그인/화면 공유는 최신 macOS에서 명령어로 켜기 까다로워 시스템 설정에서 직접 켠다.

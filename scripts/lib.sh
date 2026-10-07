@@ -73,6 +73,16 @@ load_profile() {
 
 saved_profile() { cat "$BOOTSTRAP_STATE/profile" 2>/dev/null || true; }
 
+# fnm 기본 Node 주 버전. runtimes 단계와 doctor가 쓴다.
+NODE_VERSION=24
+
+# 늘 켜두는 기기의 전원 설정(잠자기·화면 잠자기 끔, 네트워크로 깨우기 켬)이 맞는지. power 단계와 doctor가 쓴다.
+power_ok() {
+  local s
+  s="$(pmset -g custom | awk '$1 == "sleep" || $1 == "displaysleep" || $1 == "womp" {print $1 "=" $2}' | sort -u | paste -sd ' ' -)"
+  [[ "$s" == "displaysleep=0 sleep=0 womp=1" ]]
+}
+
 # 비대화형 bash에서도 로그인 셸과 같은 도구를 찾을 수 있게 PATH를 맞춘다 (home/zsh/.zprofile과 같은 순서).
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"

@@ -3,7 +3,7 @@
 설치 목록은 Brewfile이 기준이다.
 
 - [`Brewfile`](../Brewfile): 모든 기기 공통 (gh, gitleaks, Tailscale)
-- [`Brewfile.main`](../Brewfile.main): 메인 개발기 추가분 (Node, 컨테이너, 에이전트와 에이전트가 쓰는 도구)
+- [`Brewfile.main`](../Brewfile.main): 메인 개발기 추가분 (fnm, colima·docker, Claude·ChatGPT·Paseo 앱, cloudflared)
 
 ## 추가·삭제
 
@@ -30,4 +30,4 @@ brew install --cask --adopt <이름>
 
 설치된 앱과 버전이 달라서 adopt가 안 되면, 앱을 종료한 뒤 `--force`로 덮어쓴다. 앱 데이터(`~/Library`)는 그대로 남는다.
 
-지금 Mac mini에서 아직 옮기지 않은 앱 (2026-10-07): ChatGPT, Claude, Paseo, Tailscale.
+지금 Mac mini에서 아직 옮기지 않은 앱 (2026-10-07): ChatGPT(cask 다운로드가 일시적으로 실패), Paseo(지금 에이전트를 돌리는 데몬이라 재설치 보류), Tailscale(재설치에 관리자 비밀번호 필요). 셋 다 스스로 업데이트한다.

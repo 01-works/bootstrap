@@ -17,15 +17,11 @@ normalize() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-brew bundle dump --file=- 2>/dev/null | normalize >"$tmp/installed"
-all_brewfiles=''
-for f in "$BOOTSTRAP_ROOT"/Brewfile*; do
-  all_brewfiles="$all_brewfiles $f"
-done
-# shellcheck disable=SC2086
-cat $all_brewfiles | normalize >"$tmp/listed_any"
-# shellcheck disable=SC2086
-cat $(for f in $BREWFILES; do printf '%s ' "$BOOTSTRAP_ROOT/$f"; done) | normalize >"$tmp/listed_profile"
+# 목록을 못 읽으면 빈 목록으로 비교해 엉뚱한 결과가 나오므로 멈춘다.
+dump="$(brew bundle dump --file=- 2>/dev/null)" || die "brew bundle dump 실패"
+printf '%s\n' "$dump" | normalize >"$tmp/installed"
+cat "$BOOTSTRAP_ROOT"/Brewfile* | normalize >"$tmp/listed_any"
+for f in $BREWFILES; do cat "$BOOTSTRAP_ROOT/$f"; done | normalize >"$tmp/listed_profile"
 
 step "설치되어 있지만 어느 Brewfile에도 없음"
 comm -23 "$tmp/installed" "$tmp/listed_any" | sed 's/^/    /'
@@ -35,7 +31,8 @@ step "이 프로필의 Brewfile에 있지만 설치 안 됨"
 comm -13 "$tmp/installed" "$tmp/listed_profile" | grep -v '^tap ' | sed 's/^/    /'
 
 step "/Applications 중 Homebrew나 App Store로 관리하지 않는 앱"
-brew info --cask --installed --json=v2 2>/dev/null |
+casks="$(brew info --cask --installed --json=v2 2>/dev/null)" || die "brew info --cask 실패"
+printf '%s' "$casks" |
   /usr/bin/python3 -c '
 import json, sys
 for c in json.load(sys.stdin)["casks"]:

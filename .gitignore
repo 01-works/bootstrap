@@ -10,3 +10,6 @@ hosts.yml
 id_*
 *.pem
 *.key
+*.p12
+.netrc
+settings.local.json

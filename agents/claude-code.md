@@ -23,7 +23,7 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 링크된 파일이라 Claude Code가 `settings.json`에 저장한 변경은 저장소에도 바로 반영된다. `git diff`로 확인하고 커밋한다.
 
-Claude Code가 `settings.json`을 저장하면서 링크를 일반 파일로 바꿔 버릴 수도 있다. `./bootstrap.sh doctor`가 "링크가 끊김"으로 알려주면, 바뀐 내용을 저장소 파일에 옮기고 `./bootstrap.sh --only dotfiles`로 다시 연결한다.
+Claude Code가 `settings.json`을 저장하면서 링크를 일반 파일로 바꿔 버릴 수도 있다. `./bootstrap.sh doctor`가 "링크가 아니라 일반 파일"이라고 알려주면, 바뀐 내용을 저장소 파일에 옮기고 `./bootstrap.sh --only dotfiles`로 다시 연결한다.
 
 ## 로그인
 

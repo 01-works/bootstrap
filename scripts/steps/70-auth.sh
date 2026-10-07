@@ -17,14 +17,12 @@ else
   ok "git 자격 증명을 gh로 설정"
 fi
 
-# SSH 키: 기기마다 새로 만든다. 다른 기기의 키를 복사해 오지 않는다.
+# SSH 키: 다른 기기·서버에 SSH로 접속할 때 쓴다. 기기마다 새로 만들고, 다른 기기의 키를 복사해 오지 않는다.
+# git은 https로 쓰므로 GitHub에는 등록하지 않는다 (development/git.md).
 if ls "$HOME"/.ssh/id_ed25519* >/dev/null 2>&1; then
   ok "SSH 키 있음 ($(cd "$HOME/.ssh" && ls id_ed25519*.pub | paste -sd ' ' -))"
-elif confirm "이 기기용 SSH 키를 만들고 GitHub에 등록할까요?"; then
-  name="$(scutil --get ComputerName 2>/dev/null || hostname)"
-  run ssh-keygen -t ed25519 -C "$name" -f "$HOME/.ssh/id_ed25519"
-  run gh ssh-key add "$HOME/.ssh/id_ed25519.pub" --title "$name" ||
-    warn "등록 실패. 권한 추가 후 다시: gh auth refresh -s admin:public_key"
+elif confirm "이 기기용 SSH 키를 만들까요?"; then
+  run ssh-keygen -t ed25519 -C "$(scutil --get ComputerName 2>/dev/null || hostname)" -f "$HOME/.ssh/id_ed25519"
 fi
 
 # 비밀값: ~/.zsh_secrets (저장소 밖, .zshrc가 읽음)
@@ -36,8 +34,13 @@ elif contains zsh $DOTFILES; then
   warn "~/.zsh_secrets 를 만들었습니다. 값을 채워 넣으세요"
 fi
 
-cat <<'EOF'
-
-    남은 수동 설정:
-      Tailscale 앱    실행 후 로그인
-EOF
+# 직접 해야 하는 로그인을 마지막에 한 번에 보여 준다.
+printf '\n    남은 로그인:\n'
+if contains agents $STEPS; then
+  printf '      %s\n' \
+    'claude          처음 실행하면 로그인 안내' \
+    'codex           처음 실행하면 "Sign in with ChatGPT"' \
+    'Paseo 앱        실행 후 데몬 설정' \
+    'Claude·ChatGPT 앱'
+fi
+printf '      %s\n' 'Tailscale 앱    실행 후 로그인'
