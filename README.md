@@ -43,7 +43,7 @@ preflight, xcode, homebrew가 실패하면 멈춘다(뒤 단계가 모두 여기
 | preflight | Apple Silicon·네트워크 확인 | |
 | xcode | Xcode 명령줄 도구(git 포함), 이 저장소의 커밋 전 검사 켜기 | |
 | homebrew | Homebrew 설치, Brewfile 설치 | [development/homebrew.md](development/homebrew.md) |
-| macos | 키보드, 다크 모드, Dock 설정 | [macos/system-settings.md](macos/system-settings.md) |
+| macos | 키보드, 다크 모드, Dock, 트랙패드 세 손가락 드래그 설정 | [macos/system-settings.md](macos/system-settings.md) |
 | power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기, 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |

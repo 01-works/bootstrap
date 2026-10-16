@@ -28,6 +28,13 @@ set_default NSGlobalDomain InitialKeyRepeat -int 15 "키 반복 시작 빠르게
 set_default NSGlobalDomain AppleInterfaceStyle -string Dark "다크 모드 (로그아웃 후 완전히 반영)"
 set_default com.apple.dock tilesize -int 42 "Dock 아이콘 크기 42"
 
+# 내장·외장 트랙패드 모두 세 손가락 드래그 사용. 다른 드래그 방식은 끈다.
+for domain in com.apple.AppleMultitouchTrackpad com.apple.driver.AppleBluetoothMultitouch.trackpad; do
+  set_default "$domain" Dragging -bool false "탭 드래그 끄기 ($domain)"
+  set_default "$domain" DragLock -bool false "드래그 잠금 끄기 ($domain)"
+  set_default "$domain" TrackpadThreeFingerDrag -bool true "세 손가락 드래그 ($domain, 재로그인 후 확인)"
+done
+
 if [[ "$restart_dock" == 1 ]]; then
   run killall Dock
 fi
