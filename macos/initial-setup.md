@@ -20,6 +20,9 @@
 ## bootstrap 이후
 
 - [ ] `auth` 단계가 마지막에 보여 주는 로그인 목록 처리
+- [ ] Paseo 앱에서 데몬 초기 설정 후 Chrome을 종료하고 `./bootstrap.sh --only browser,paseo`로 브라우저·프로필·공통 스킬 설정
+- [ ] Chrome 직접 연결 시 표시되는 허용 창 승인 ([브라우저 설정](../agents/browser.md)); Paseo 로그인은 기존 Chrome과 별도
+- [ ] 새 터미널에서 `./bootstrap.sh doctor`: 실패·수동 작업 대기 없이 완료 확인
 - [ ] 로그아웃했다가 다시 로그인 (다크 모드 같은 시스템 설정 완전 반영)
 - [ ] 트랙패드가 있다면 세 손가락 드래그 동작 확인 ([설정·미반영 시 확인 방법](system-settings.md#세-손가락-드래그))
 - [ ] 이번에 막혔던 부분을 이 문서나 스크립트에 반영

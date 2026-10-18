@@ -19,10 +19,18 @@ fi
 
 # SSH 키: 다른 기기·서버에 SSH로 접속할 때 쓴다. 기기마다 새로 만들고, 다른 기기의 키를 복사해 오지 않는다.
 # git은 https로 쓰므로 GitHub에는 등록하지 않는다 (development/git.md).
-if ls "$HOME"/.ssh/id_ed25519* >/dev/null 2>&1; then
-  ok "SSH 키 있음 ($(cd "$HOME/.ssh" && ls id_ed25519*.pub | paste -sd ' ' -))"
+key_status=0
+ssh_key_state "$HOME/.ssh/id_ed25519" || key_status=$?
+pending=0
+if [[ "$key_status" == 0 ]]; then
+  ok 'SSH 개인키 파일 있음 (~/.ssh/id_ed25519, 실제 접속은 별도 확인)'
+elif [[ "$key_status" == 2 ]]; then
+  warn '기본 SSH 키가 불완전합니다. 공개키·기존 파일은 유지했습니다. development/git.md를 확인하세요'
+  pending=2
 elif confirm "이 기기용 SSH 키를 만들까요?"; then
   run ssh-keygen -t ed25519 -C "$(scutil --get ComputerName 2>/dev/null || hostname)" -f "$HOME/.ssh/id_ed25519"
+else
+  warn '기본 SSH 키 생성 보류. 필요할 때 ./bootstrap.sh --only auth'
 fi
 
 # 직접 해야 하는 로그인을 마지막에 한 번에 보여 준다.
@@ -31,6 +39,8 @@ printf '      %s\n' \
   'claude          처음 실행하면 로그인 안내' \
   'codex           처음 실행하면 "Sign in with ChatGPT"' \
   'vercel          vercel login' \
-  'Paseo 앱        실행 후 데몬 설정' \
+  'Paseo 앱        실행 후 데몬 설정 → ./bootstrap.sh --only browser,paseo' \
+  'Chrome          종료 후 browser 단계로 자동 설정; 연결 허용 창은 직접 승인' \
   'Claude·ChatGPT 앱' \
   'Tailscale 앱    실행 후 로그인'
+exit "$pending"

@@ -27,4 +27,5 @@ if ! run brew bundle --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade; then
   warn "Brewfile 일부 항목 설치 실패. 실패해도 이미 설치된 것은 바뀌지 않는다"
   info "이미 직접 설치한 앱이면: development/homebrew.md의 '기존 앱 옮기기'"
   info "다운로드 실패(404 등)면: 하루쯤 뒤 ./bootstrap.sh --only homebrew, 급하면 TOOLS.md의 공식 링크에서 받기"
+  exit 3  # Homebrew 자체는 준비됨. 나머지 단계는 진행하되 최종 실패로 집계.
 fi

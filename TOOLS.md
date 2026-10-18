@@ -127,6 +127,9 @@ flowchart LR
 | Codex CLI | `agents` 단계 (공식 설치 스크립트) | [learn.chatgpt.com](https://learn.chatgpt.com/docs/codex/cli) | 공식 기본 방법. `~/.local/bin`에 설치되고 스스로 업데이트된다 | 2026-10-07 |
 | ChatGPT 앱 | `cask "chatgpt"` | [learn.chatgpt.com](https://learn.chatgpt.com/docs/app) | 2026-07부터 Codex 앱이 ChatGPT 앱에 합쳐졌다 ([changelog](https://learn.chatgpt.com/docs/changelog)). 업데이트가 잦아 Homebrew가 OpenAI보다 먼저 새 버전으로 올라가 설치가 실패할 때가 있다. 하루쯤 뒤 다시 하거나 공식 페이지에서 받는다 | 2026-10-07 |
 | Paseo | `cask "paseo"` | [paseo.sh/download](https://paseo.sh/download), [paseo.sh/docs](https://paseo.sh/docs) | cask가 앱 안의 `paseo` CLI도 연결한다 | 2026-10-07 |
+| Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 기존 로그인·탭 작업용. 종료 상태에서 디버깅 설정을 병합하며 연결 승인은 별도 | 2026-10-18 |
+| agent-browser | `brew "agent-browser"` | [공식 설치](https://agent-browser.dev/installation) | 공식 Homebrew 배포로 fnm 버전별 npm 설치를 피한다. `browser` 단계가 공식 스킬을 Codex·Claude 양쪽에 설치 | 2026-10-18 |
+| Paseo Browser | Paseo 앱 내장 | [브라우저 문서](https://paseo.sh/docs/browser.md) | 개발 UI 검증용. `browser` 단계에서 도구와 MCP 주입을 활성화 | 2026-10-18 |
 
 ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내장 ripgrep으로 대신하고, Codex CLI는 ripgrep을 함께 설치한다.
 

@@ -86,13 +86,21 @@ printf '%s단계:%s %s' "$_bold" "$_reset" "$selected"
 [[ "$DRY_RUN" == 1 ]] && printf '   %s(dry-run)%s' "$_yellow" "$_reset"
 printf '\n'
 
-# preflight·xcode·homebrew는 뒤 단계가 모두 기대므로 실패하면 멈춘다. 나머지는 실패를 모아 두고 계속한다.
+# 종료 코드: 0 완료, 1 실패, 2 수동 작업 대기. 단계의 3은 부분 실패(계속 진행 후 최종 실패).
 failed=''
+pending=''
 for name in $(all_steps); do
   contains "$name" $selected || continue
   step "$name"
-  bash "$(step_file "$name")" && continue
-  if contains "$name" preflight xcode homebrew; then
+  status=0
+  bash "$(step_file "$name")" || status=$?
+  [[ "$status" == 0 ]] && continue
+  if [[ "$status" == 2 ]]; then
+    pending="$pending $name"
+    warn "'$name' 단계에 수동 작업이 남았습니다. 나머지 단계는 계속합니다"
+    continue
+  fi
+  if [[ "$status" != 3 ]] && contains "$name" preflight xcode homebrew; then
     fail "'$name' 단계에서 멈췄습니다. 뒤 단계가 이 단계에 기댑니다. 고친 뒤: ./bootstrap.sh --only $name"
     exit 1
   fi
@@ -100,14 +108,27 @@ for name in $(all_steps); do
   failed="$failed $name"
 done
 
+doctor_status=0
 if [[ -z "$only" && "$DRY_RUN" != 1 ]]; then
   step "doctor"
-  bash "$BOOTSTRAP_ROOT/scripts/doctor.sh" || true
+  bash "$BOOTSTRAP_ROOT/scripts/doctor.sh" || doctor_status=$?
   printf '\n새 터미널을 열어야 셸 설정이 적용됩니다.\n'
 fi
 
+if [[ -n "$pending" ]]; then
+  pending="${pending# }"
+  warn "수동 작업 대기: $pending → 안내한 조치 후 ./bootstrap.sh --only ${pending// /,}"
+fi
 if [[ -n "$failed" ]]; then
   failed="${failed# }"
   fail "실패한 단계: $failed → 원인을 고친 뒤: ./bootstrap.sh --only ${failed// /,}"
   exit 1
+fi
+if [[ "$doctor_status" != 0 && "$doctor_status" != 2 ]]; then
+  fail '최종 doctor 검사 실패. 위 항목을 해결한 뒤 ./bootstrap.sh doctor'
+  exit 1
+fi
+if [[ -n "$pending" || "$doctor_status" == 2 ]]; then
+  warn '수동 작업을 마친 뒤 ./bootstrap.sh doctor 로 최종 확인하세요'
+  exit 2
 fi

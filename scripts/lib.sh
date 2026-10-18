@@ -22,6 +22,17 @@ die()  { fail "$*"; exit 1; }
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
+# 실행 파일의 존재와 실제 기동 성공을 구분한다. 설치 단계와 doctor에서 함께 사용.
+cli_works() { "$1" --version >/dev/null 2>&1; }
+
+# 기본 SSH 키: 0 개인키 있음, 1 없음, 2 공개키만 있거나 불완전한 파일.
+ssh_key_state() {
+  local key="$1"
+  [[ -f "$key" && -s "$key" ]] && return 0
+  [[ -e "$key" || -L "$key" || -e "$key.pub" || -L "$key.pub" ]] && return 2
+  return 1
+}
+
 # $HOME을 ~로 줄여서 보여준다.
 pretty() {
   case "$1" in

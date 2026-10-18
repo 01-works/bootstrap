@@ -14,14 +14,19 @@ failed=0
 install_cli() {
   local cmd="$1" url="$2" shell="$3" script
   if has "$cmd"; then
-    ok "$cmd $("$cmd" --version 2>/dev/null | head -1)"
+    if cli_works "$cmd"; then
+      ok "$cmd $("$cmd" --version 2>/dev/null | head -1)"
+    else
+      warn "$cmd 실행 실패: $(command -v "$cmd"). 기존 설치는 유지합니다. TOOLS.md의 공식 설치 방법으로 복구하세요"
+      failed=1
+    fi
     return 0
   fi
   if [[ "$DRY_RUN" == 1 ]]; then
     info "[dry-run] $url 을 받아서 $shell 로 실행"
     return 0
   fi
-  if script="$(curl -fsSL "$url")" && printf '%s\n' "$script" | "$shell" && has "$cmd"; then
+  if script="$(curl -fsSL "$url")" && printf '%s\n' "$script" | "$shell" && cli_works "$cmd"; then
     ok "$cmd 설치됨"
   else
     warn "$cmd 설치 실패. 다시: ./bootstrap.sh --only agents"

@@ -18,6 +18,8 @@ brew "docker"
 cask "claude"
 cask "chatgpt"        # Codex 앱 포함
 cask "paseo"
+cask "google-chrome"  # 기존 로그인·탭을 agent-browser로 조작
+brew "agent-browser" # 공식 Homebrew 배포. fnm Node 버전과 별도 관리
 cask "tailscale-app"  # 기기 간 원격 접속
 
 # Cloudflare Tunnel

@@ -8,7 +8,8 @@
 | Claude 앱 | `cask "claude"` | | 앱에서 |
 | [Codex CLI](codex.md) | 공식 설치 스크립트 (`agents` 단계) | `AGENTS.md` (링크), `config.toml` (seed) | `codex` 실행 |
 | ChatGPT 앱 (Codex 앱) | `cask "chatgpt"` | | 앱에서 |
-| [Paseo](paseo.md) | `cask "paseo"` | | 앱에서 |
+| [Paseo](paseo.md) | `cask "paseo"` | 프로필 (병합), `yw-supervisor` 스킬 (Claude·Codex에 링크) | 앱에서 |
+| [브라우저 작업](browser.md) | Chrome cask, agent-browser formula (`homebrew` 단계) | 공식 스킬을 Codex·Claude 양쪽에 설치, Chrome·Paseo 설정 병합 (`browser` 단계) | 기존 Chrome 로그인 사용, Paseo 로그인은 별도 |
 
 ## ChatGPT 앱과 Codex
 
