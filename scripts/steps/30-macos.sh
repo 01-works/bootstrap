@@ -38,3 +38,29 @@ done
 if [[ "$restart_dock" == 1 ]]; then
   run killall Dock
 fi
+
+# 화면 보호기를 쓰지 않는다. 가만히 있으면 전원 설정에 따라 화면이 꺼진다 (power 단계).
+if [[ "$(defaults -currentHost read com.apple.screensaver idleTime 2>/dev/null || true)" == 0 ]]; then
+  ok "화면 보호기 사용 안 함"
+else
+  run defaults -currentHost write com.apple.screensaver idleTime -int 0
+  ok "화면 보호기 사용 안 함 (변경)"
+fi
+
+# 배경화면: 검정 단색. 시스템 기본 "검정"이나 Solid Colors/Black.png면 그대로 둔다.
+# 바꿀 때 macOS가 이 터미널의 System Events 제어 허용을 한 번 묻는다 (직접 허용).
+wallpaper_is_black() {
+  /usr/bin/python3 - "$HOME/Library/Application Support/com.apple.wallpaper/Store/Index.plist" <<'PY' 2>/dev/null
+import plistlib, sys
+choice = plistlib.load(open(sys.argv[1], 'rb'))['AllSpacesAndDisplays']['Desktop']['Content']['Choices'][0]
+config = plistlib.loads(choice['Configuration']) if choice.get('Configuration') else {}
+black = 'black' in config.get('systemColor', {}) or 'Black.png' in repr(config) + repr(choice.get('Files'))
+sys.exit(0 if black else 1)
+PY
+}
+if wallpaper_is_black; then
+  ok "배경화면 검정"
+else
+  run osascript -e 'tell application "System Events" to tell every desktop to set picture to "/System/Library/Desktop Pictures/Solid Colors/Black.png"'
+  ok "배경화면 검정 (변경)"
+fi

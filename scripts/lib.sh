@@ -85,7 +85,10 @@ device_flag() {
   if is_laptop; then printf '%s' --laptop; else printf '%s' --desktop; fi
 }
 
-# 전원 설정이 맞는지. 노트북은 충전 중에만 잠자기 안 함, 데스크톱은 늘 켜두기(잠자기·화면 잠자기 끔, 네트워크로 깨우기 켬).
+# 데스크톱이 가만히 있을 때 화면을 끄는 시간(분). 컴퓨터는 계속 깨어 있다. 화면 보호기는 쓰지 않는다 (macos 단계).
+DISPLAY_SLEEP_MINUTES=10
+
+# 전원 설정이 맞는지. 노트북은 충전 중에만 잠자기 안 함, 데스크톱은 늘 켜두기(잠자기 끔, 화면은 DISPLAY_SLEEP_MINUTES 뒤 끔, 네트워크로 깨우기 켬).
 power_ok() {
   if is_laptop; then
     [[ "$(pmset -g custom | awk '/^AC Power:/ {ac = 1; next} /^[^ ]/ {ac = 0} ac && $1 == "sleep" {print $2; exit}')" == 0 ]]
@@ -93,7 +96,7 @@ power_ok() {
   fi
   local s
   s="$(pmset -g custom | awk '$1 == "sleep" || $1 == "displaysleep" || $1 == "womp" {print $1 "=" $2}' | sort -u | paste -sd ' ' -)"
-  [[ "$s" == "displaysleep=0 sleep=0 womp=1" ]]
+  [[ "$s" == "displaysleep=$DISPLAY_SLEEP_MINUTES sleep=0 womp=1" ]]
 }
 
 # 비대화형 bash에서도 로그인 셸과 같은 도구를 찾을 수 있게 PATH를 맞춘다 (home/zsh/.zprofile과 같은 순서).

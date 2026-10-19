@@ -24,7 +24,7 @@
 
 직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 네 가지뿐이다.
 
-- 전원: `power` 단계가 배터리 유무로 판단해서, 노트북은 충전 중에만 잠들지 않게 하고 데스크톱은 늘 켜둔다.
+- 전원: `power` 단계가 배터리 유무로 판단해서, 노트북은 충전 중에만 잠들지 않게 하고 데스크톱은 늘 켜둔다(화면은 가만히 있으면 끈다).
 - 자동 시작: 데스크톱은 로그인할 때 Paseo 앱과 에이전트 Chrome을 띄운다. 노트북은 필요할 때 시작한다.
 - 로그인하는 계정 (GitHub, Google, Claude, Codex): 기기마다 로그인한다.
 - git 커밋 작성자: 다른 GitHub 계정을 쓰는 기기는 `~/.gitconfig.local`에 이름·이메일을 적는다.
@@ -42,8 +42,8 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | preflight | Apple Silicon·네트워크 확인 | |
 | xcode | Xcode 명령줄 도구(git 포함), 이 저장소의 커밋 전 검사 켜기 | |
 | homebrew | Homebrew 설치, Brewfile 설치 | [development/homebrew.md](development/homebrew.md) |
-| macos | 키보드, 다크 모드, Dock, 트랙패드 세 손가락 드래그 설정 | [macos/system-settings.md](macos/system-settings.md) |
-| power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기, 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
+| macos | 키보드, 다크 모드, Dock, 트랙패드 세 손가락 드래그, 검정 배경화면, 화면 보호기 끄기 | [macos/system-settings.md](macos/system-settings.md) |
+| power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기(화면은 10분 뒤 끔), 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |

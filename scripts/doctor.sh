@@ -116,7 +116,7 @@ if has node; then
 fi
 
 step "전원"
-if is_laptop; then label="충전 중에는 잠자기 안 함 (노트북)"; else label="잠자기·화면 잠자기 꺼짐, 네트워크로 깨우기 켬"; fi
+if is_laptop; then label="충전 중에는 잠자기 안 함 (노트북)"; else label="잠자기 꺼짐, 화면 ${DISPLAY_SLEEP_MINUTES}분 뒤 끔, 네트워크로 깨우기 켬"; fi
 if power_ok; then pass "$label"; else miss "전원 설정이 다름: $label (./bootstrap.sh --only power)"; fi
 
 step "인증"
