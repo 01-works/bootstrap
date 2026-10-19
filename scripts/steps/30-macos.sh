@@ -90,7 +90,7 @@ else
 fi
 
 # 배경화면: 검정 단색. 시스템 기본 "검정"이나 Solid Colors/Black.png면 그대로 둔다.
-# 바꿀 때 macOS가 이 터미널의 System Events 제어 허용을 한 번 묻는다 (직접 허용).
+# 바꿀 때 macOS가 이 터미널의 System Events 제어 허용을 한 번 묻는다 (직접 허용). 자동 갱신에서는 묻는 창을 띄우지 않게 미룬다.
 # 배경화면은 전체(AllSpacesAndDisplays)나 모니터·스페이스별(Displays, Spaces)로 저장되므로 모든 Desktop 항목을 본다.
 # SystemDefault는 새 모니터에 쓰는 기본값이라 보지 않는다.
 wallpaper_is_black() {
@@ -112,11 +112,15 @@ found = list(desktops(store))
 sys.exit(0 if found and all(map(is_black, found)) else 1)
 PY
 }
+manual=0
 if wallpaper_is_black; then
   ok "배경화면 검정"
+elif needs_person '배경화면 검정 (System Events 제어 허용 창)'; then
+  manual=2
 elif run osascript -e 'tell application "System Events" to tell every desktop to set picture to "/System/Library/Desktop Pictures/Solid Colors/Black.png"'; then
   ok "배경화면 검정 (변경)"
 else
   # 제어 허용을 거부했거나 macOS가 바뀐 경우. 다른 설정은 계속한다.
   warn "배경화면을 바꾸지 못했습니다 → 시스템 설정 > 배경화면에서 색상 '검정' 선택"
 fi
+exit "$manual"

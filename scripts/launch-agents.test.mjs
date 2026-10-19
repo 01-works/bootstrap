@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AGENT_CHROME_URL, LABELS, apply, definitions, harnessEnvPath, plist } from './launch-agents.mjs';
+import { AGENT_CHROME_URL, LABELS, UPDATE_INTERVAL, apply, definitions, harnessEnvPath, plist } from './launch-agents.mjs';
 
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), 'bootstrap-launch-test-'));
@@ -81,4 +81,34 @@ test('.env의 다른 값은 보존하고, 다른 연결 대상은 덮어쓰지 �
   assert.equal(readFileSync(envPath, 'utf8'), 'BU_CDP_URL=http://127.0.0.1:9222\n');
   assert.equal(apply({ ...f.options, laptop: true, only: 'agent-chrome', chromeBinary: join(f.home, 'missing') }), 1);
   assert.equal(harnessEnvPath({ home: '/h', env: { BH_HOME: '/bh' } }), '/bh/agent-workspace/.env');
+});
+
+test('자동 갱신은 모든 기기에서 같고, 로그인할 때와 주기마다 낮은 우선순위로 실행한다', () => {
+  const desktop = plist(definitions({ home: '/h', laptop: false, root: '/repo' }).update);
+  assert.equal(plist(definitions({ home: '/h', laptop: true, root: '/repo' }).update), desktop);
+  assert.match(desktop, /<string>\/bin\/bash<\/string>\s*<string>\/repo\/bootstrap\.sh<\/string>\s*<string>update<\/string>\s*<string>--auto<\/string>/);
+  assert.match(desktop, /<key>RunAtLoad<\/key><true\/>/);
+  assert.match(desktop, new RegExp(`<key>StartInterval</key><integer>${UPDATE_INTERVAL}</integer>`));
+  assert.match(desktop, /<key>ProcessType<\/key><string>Background<\/string>/);
+  assert.match(desktop, /<key>StandardOutPath<\/key><string>\/h\/.local\/state\/bootstrap\/update\/update\.log<\/string>/);
+  assert.doesNotMatch(desktop, /KeepAlive/);
+  const custom = definitions({ home: '/h', laptop: false, env: { XDG_STATE_HOME: '/s' } }).update;
+  assert.match(plist(custom), /\/s\/bootstrap\/update\/update\.log/);
+  assert.ok(custom.args[1].endsWith('/bootstrap.sh'), '기본값은 이 저장소');
+});
+
+test('자동 갱신 중(noRestart)에는 실행 중인 등록을 내렸다 올리지 않고 대기로 알린다', t => {
+  const f = fixture(t);
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  writeFileSync(f.agentPath(LABELS.paseo), 'old');
+  f.calls.length = 0;
+  assert.equal(apply({ ...f.options, laptop: false, only: 'paseo', noRestart: true }), 2);
+  assert.ok(f.calls.every(call => call === 'print'), '내리지 않음');
+  assert.equal(readFileSync(f.agentPath(LABELS.paseo), 'utf8'), 'old');
+  f.loaded.delete(LABELS.update);
+  assert.equal(apply({ ...f.options, laptop: false, only: 'update', noRestart: true }), 0, '등록이 없으면 올림');
+  assert.ok(f.loaded.has(LABELS.update));
+  assert.equal(apply({ ...f.options, laptop: false, noRestart: true, chromeBinary: join(f.home, 'missing') }), 1, '실패가 대기보다 우선');
+  const xdg = plist(definitions({ home: '/h', laptop: false, env: { XDG_STATE_HOME: '/s' } }).update);
+  assert.match(xdg, /<key>XDG_STATE_HOME<\/key><string>\/s<\/string>/, '셸의 상태 위치를 launchd에도 줌');
 });

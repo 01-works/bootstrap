@@ -24,13 +24,18 @@ paseo_home="${PASEO_HOME:-$HOME/.paseo}"
 if [[ -f "$paseo_home/config.json" ]]; then
   ok "Paseo 설정 ($(pretty "$paseo_home"))"
 else
-  run paseo onboard --home "$paseo_home" --relay --voice disable --timeout 600 </dev/null
+  # 데몬이 이 실행의 환경을 물려받지 않게 한다. 데몬이 띄운 에이전트가 bootstrap을 자동 갱신으로 착각하지 않도록.
+  run env -u BOOTSTRAP_UNATTENDED -u BOOTSTRAP_LOCKED -u BOOTSTRAP_RESULTS \
+    paseo onboard --home "$paseo_home" --relay --voice disable --timeout 600 </dev/null
 fi
 
 # 자동 시작 등록이 실패해도 프로필 설정은 계속한다. 실패(1)가 수동 작업 대기(2)보다 우선한다.
+# 자동 갱신 중에는 실행 중인 데몬 등록을 다시 올리지 않는다(바뀌었으면 대기). 데몬과 그 에이전트가 끝나기 때문이다.
 autostart=0
-node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo "$(device_flag)" || autostart=1
+# shellcheck disable=SC2046
+node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo "$(device_flag)" $(no_restart_flag) || autostart=$?
 profiles=0
 node "$BOOTSTRAP_ROOT/scripts/paseo-profiles.mjs" || profiles=$?
-[[ "$autostart" == 0 ]] || exit 1
-exit "$profiles"
+[[ "$autostart" == 0 || "$autostart" == 2 ]] || exit 1
+[[ "$profiles" == 0 ]] || exit "$profiles"
+exit "$autostart"

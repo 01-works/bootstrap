@@ -91,6 +91,60 @@ confirm() {
   [[ "$reply" == y || "$reply" == Y ]]
 }
 
+# 자동 갱신(./bootstrap.sh update --auto, LaunchAgent)으로 실행 중인지.
+# 이때는 비밀번호·설치 창·로그인처럼 사람을 기다리는 일을 하지 않고 수동 작업 대기(2)로 남긴다.
+unattended() { [[ "${BOOTSTRAP_UNATTENDED:-0}" == 1 ]]; }
+
+# 사람이 필요한 일 앞에서 부른다. 무인 실행이면 알리고 참을 반환한다:
+#   if needs_person '전원 설정 (관리자 비밀번호)'; then exit 2; fi
+needs_person() {
+  unattended || return 1
+  warn "$1: 자동 갱신에서는 하지 않습니다 → 터미널에서 ./bootstrap.sh update"
+}
+
+# 자동 갱신 중에는 실행 중인 LaunchAgent를 다시 올리지 않는다 (launch-agents.mjs --no-restart). 인자로 따옴표 없이 쓴다.
+no_restart_flag() { if unattended; then printf '%s' --no-restart; fi; }
+
+# 자동 갱신 상태 (scripts/update.sh). applied는 이 기기에 마지막으로 적용한 커밋.
+BOOTSTRAP_UPDATE_STATE="$BOOTSTRAP_STATE/update"
+
+# 이 기기에 저장소의 현재 커밋까지 적용했다고 기록한다 (전체 설치·갱신 성공).
+mark_applied() {
+  local head
+  head="$(git -C "$BOOTSTRAP_ROOT" rev-parse HEAD 2>/dev/null)" || return 0
+  mkdir -p "$BOOTSTRAP_UPDATE_STATE" && printf '%s\n' "$head" >"$BOOTSTRAP_UPDATE_STATE/applied"
+}
+
+# 설치와 자동 갱신이 동시에 돌지 않게 잡는 잠금. 얻으면 0, 다른 실행이 잡고 있으면 1. 끝날 때(EXIT) 푼다.
+# BOOTSTRAP_LOCKED는 잠금을 잡은 프로세스 번호다. 하위 실행(update.sh → bootstrap.sh)과 exec로 바뀐 자신은
+# 그 번호가 잠금의 pid와 같을 때만 이어서 쓴다. 끝난 실행의 환경 변수가 남아 있어도 잠금을 건너뛰지 않는다.
+BOOTSTRAP_LOCK="$BOOTSTRAP_STATE/lock"
+lock_acquire() {
+  local dir="$BOOTSTRAP_LOCK" pid boot
+  pid="$(cat "$dir/pid" 2>/dev/null || true)"
+  if [[ -n "${BOOTSTRAP_LOCKED:-}" && "$pid" == "$BOOTSTRAP_LOCKED" ]]; then
+    [[ "$pid" == "$$" ]] && trap 'rm -rf "$BOOTSTRAP_LOCK"' EXIT  # exec 뒤에는 trap이 사라진다
+    return 0
+  fi
+  mkdir -p "$BOOTSTRAP_STATE"
+  if ! mkdir "$dir" 2>/dev/null; then
+    # 재시동 전에 잡힌 잠금은 버린다(정전 등). pid가 지금 다른 프로세스에 쓰였을 수 있다.
+    boot="$(sysctl -n kern.boottime 2>/dev/null | sed -E 's/^\{ sec = ([0-9]+).*/\1/')"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && ! [[ "$boot" =~ ^[0-9]+$ && "$(stat -f %m "$dir" 2>/dev/null || echo 0)" -lt "$boot" ]]; then
+      return 1
+    fi
+    # pid를 쓰기 직전일 수 있으므로 pid 없는 잠금은 1분이 지나야 버린다.
+    if [[ -z "$pid" && -z "$(find "$dir" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; then return 1; fi
+    # 옮기기에 성공한 쪽만 버린다. 두 실행이 함께 버리려다 서로의 새 잠금을 지우지 않게 한다.
+    mv "$dir" "$dir.stale.$$" 2>/dev/null || return 1
+    rm -rf "$dir.stale.$$"
+    mkdir "$dir" 2>/dev/null || return 1
+  fi
+  printf '%s\n' "$$" >"$dir/pid"
+  trap 'rm -rf "$BOOTSTRAP_LOCK"' EXIT
+  export BOOTSTRAP_LOCKED="$$"
+}
+
 # 공백으로 구분된 목록에 값이 있는지 확인한다: contains <값> <목록...>
 contains() {
   local needle="$1"

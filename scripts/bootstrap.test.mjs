@@ -15,7 +15,7 @@ function sandbox(t) {
   copyFileSync(join(repo, 'bootstrap.sh'), join(root, 'bootstrap.sh'));
   copyFileSync(join(repo, 'scripts/lib.sh'), join(root, 'scripts/lib.sh'));
   const run = (...args) => spawnSync('/bin/bash', [join(root, 'bootstrap.sh'), ...args], {
-    env: { ...process.env, DRY_RUN: '0', ASSUME_YES: '0' }, encoding: 'utf8'
+    env: { ...process.env, DRY_RUN: '0', ASSUME_YES: '0', XDG_STATE_HOME: join(root, 'state') }, encoding: 'utf8'
   });
   return { root, run };
 }
@@ -45,11 +45,11 @@ test('전체 실행은 doctor 실패·수동 대기를 보존하고 부분 실�
 });
 
 // 원본 단계는 그대로 실행하고 외부 명령만 셸 함수로 대체한다.
-function mockStep(t, name, mocks) {
+function mockStep(t, name, mocks, env = {}) {
   const { root } = sandbox(t);
   writeFileSync(join(root, 'scripts/lib.sh'), readFileSync(join(root, 'scripts/lib.sh'), 'utf8') + '\n' + mocks);
   const rerun = () => spawnSync('/bin/bash', [join(repo, 'scripts/steps', name)], {
-    env: { ...process.env, BOOTSTRAP_ROOT: root, DRY_RUN: '0', ASSUME_YES: '0', XDG_STATE_HOME: join(root, 'state') }, encoding: 'utf8'
+    env: { ...process.env, BOOTSTRAP_ROOT: root, DRY_RUN: '0', ASSUME_YES: '0', XDG_STATE_HOME: join(root, 'state'), ...env }, encoding: 'utf8'
   });
   return { root, result: rerun(), rerun };
 }
@@ -147,4 +147,37 @@ git init -q --separate-git-dir "$BOOTSTRAP_ROOT/git-dir" "$BOOTSTRAP_ROOT"
   const config = spawnSync('git', ['-C', root, 'config', 'core.hooksPath'], { encoding: 'utf8' });
   assert.equal(config.status, 0, config.stderr);
   assert.equal(config.stdout.trim(), '.githooks');
+});
+
+test('자동 갱신(무인 실행)에서는 비밀번호·설치 창·로그인·앱 열기 대신 수동 작업 대기로 남긴다', t => {
+  const unattended = { BOOTSTRAP_UNATTENDED: '1' };
+  const record = 'printf \'%s %s\\n\' "$FUNCNAME" "$*" >> "$BOOTSTRAP_ROOT/calls"';
+  const cases = [
+    ['35-power.sh', `is_laptop() { return 1; }\npower_ok() { return 1; }\nsudo() { ${record}; }\n`],
+    ['35-power.sh', `is_laptop() { return 0; }\npower_ok() { return 1; }\nsudo() { ${record}; }\n`],
+    ['10-xcode.sh', `xcode-select() { [[ "$1" == -p ]] && return 1; ${record}; }\n`],
+    ['70-auth.sh', `gh() { [[ "$1 $2" == "auth status" ]] && return 1; [[ "$1 $2" == "auth login" ]] && ${record}; return 0; }
+git() { echo 'gh auth git-credential'; }
+open() { ${record}; }
+launchctl() { ${record}; }
+sudo() { ${record}; }
+is_laptop() { return 1; }
+filevault_off() { return 0; }
+autologin_on() { return 1; }
+`],
+  ];
+  for (const [name, mocks] of cases) {
+    const { root, result } = mockStep(t, name, mocks, unattended);
+    assert.equal(result.status, 2, `${name}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stderr, /자동 갱신에서는 하지 않습니다 → 터미널에서 \.\/bootstrap\.sh update/);
+    assert.equal(existsSync(join(root, 'calls')), false, `${name}: ${existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8') : ''}`);
+  }
+});
+
+test('browser 단계: 자동 갱신 중 에이전트 Chrome 등록이 바뀌었으면 대기, 다른 실패가 있으면 실패', t => {
+  const run = setup => mockStep(t, '62-browser.sh', `has() { return 0; }\nis_laptop() { return 1; }\n${setup}`, { BOOTSTRAP_UNATTENDED: '1' }).result;
+  const pending = run(`node() { [[ "$1" == *launch-agents.mjs ]] || return 0; [[ " $* " == *" --no-restart "* ]] && return 2; return 9; }`);
+  assert.equal(pending.status, 2, pending.stdout + pending.stderr);
+  const failed = run(`node() { [[ "$1" == *launch-agents.mjs ]] && return 2; return 1; }`);
+  assert.equal(failed.status, 1);
 });

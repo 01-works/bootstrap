@@ -13,6 +13,8 @@ usage() {
   cat <<'EOF'
 사용법:
   ./bootstrap.sh [--only 단계,단계] [--dry-run] [--yes]
+  ./bootstrap.sh update [--auto] [--dry-run]
+                             저장소를 받아 바뀐 부분만 적용 (자동 갱신이 10분마다 --auto로 실행)
   ./bootstrap.sh doctor      설치 상태 검증
   ./bootstrap.sh snapshot    이 Mac에는 있는데 저장소에 없는 것 찾기
   ./bootstrap.sh --list      단계 목록
@@ -39,6 +41,12 @@ step_file() {
   done
   return 1
 }
+
+# 갱신은 자기 인자를 따로 받는다 (scripts/update.sh).
+if [[ "${1:-}" == update ]]; then
+  shift
+  exec bash "$BOOTSTRAP_ROOT/scripts/update.sh" "$@"
+fi
 
 cmd=install
 only=''
@@ -86,6 +94,12 @@ printf '%s단계:%s %s' "$_bold" "$_reset" "$selected"
 [[ "$DRY_RUN" == 1 ]] && printf '   %s(dry-run)%s' "$_yellow" "$_reset"
 printf '\n'
 
+# 자동 갱신과 동시에 돌지 않게 한다. 자동 갱신 안에서 부른 경우는 이미 잡혀 있다.
+if [[ "$DRY_RUN" != 1 ]] && ! lock_acquire; then
+  info '다른 설치·자동 갱신이 실행 중입니다. 끝나기를 기다립니다 (중단: Ctrl-C)'
+  until lock_acquire; do sleep 5; done
+fi
+
 # 관리자 비밀번호는 처음에 한 번만 묻고 끝날 때까지 유지한다 (Homebrew 설치·전원 설정·일부 앱 설치).
 # 터미널이 아니면 묻지 않는다. 그때 sudo가 필요한 단계는 각자 실패로 알린다.
 if [[ "$DRY_RUN" != 1 && -t 0 ]] && { contains homebrew $selected || contains power $selected; }; then
@@ -102,6 +116,8 @@ for name in $(all_steps); do
   step "$name"
   status=0
   bash "$(step_file "$name")" || status=$?
+  # 자동 갱신(update.sh)이 단계별 결과를 받아 간다.
+  [[ -z "${BOOTSTRAP_RESULTS:-}" ]] || printf '%s %s\n' "$name" "$status" >>"$BOOTSTRAP_RESULTS"
   [[ "$status" == 0 ]] && continue
   if [[ "$status" == 2 ]]; then
     pending="$pending $name"
@@ -115,6 +131,12 @@ for name in $(all_steps); do
   fail "'$name' 단계 실패. 나머지 단계는 계속합니다"
   failed="$failed $name"
 done
+
+# 전체 설치가 실패 없이 끝나면 이 커밋까지 적용한 것으로 기록한다. 자동 갱신은 여기부터 바뀐 것만 실행한다.
+if [[ -z "$only" && "$DRY_RUN" != 1 && -z "$failed" ]]; then
+  mark_applied
+  rm -f "$BOOTSTRAP_UPDATE_STATE/status"
+fi
 
 doctor_status=0
 if [[ -z "$only" && "$DRY_RUN" != 1 ]]; then

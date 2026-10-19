@@ -8,6 +8,8 @@ source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 if is_laptop; then
   if power_ok; then
     ok "충전 중에는 잠자기 안 함 (노트북)"
+  elif needs_person '전원 설정 변경 (관리자 비밀번호)'; then
+    exit 2
   else
     info "충전 중에는 잠들지 않게 합니다 (sudo 비밀번호 필요). 배터리 설정은 그대로입니다"
     run sudo pmset -c sleep 0
@@ -18,6 +20,8 @@ fi
 
 if power_ok; then
   ok "잠자기 꺼짐, 화면 ${DISPLAY_SLEEP_MINUTES}분 뒤 끔, 네트워크로 깨우기·정전 후 자동 켜기"
+elif needs_person '전원 설정 변경 (관리자 비밀번호)'; then
+  exit 2
 else
   info "전원 설정을 바꿉니다 (sudo 비밀번호 필요)"
   run sudo pmset -a sleep 0 displaysleep "$DISPLAY_SLEEP_MINUTES" womp 1 autorestart 1

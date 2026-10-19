@@ -6,6 +6,8 @@ source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 # 설치 방법 근거: TOOLS.md (Homebrew)
 if has brew; then
   ok "Homebrew $(brew --version | head -1 | awk '{print $2}')"
+elif needs_person 'Homebrew 설치 (관리자 비밀번호)'; then
+  exit 2
 elif [[ "$DRY_RUN" == 1 ]]; then
   info "[dry-run] Homebrew 공식 설치 스크립트 실행"
   info "Homebrew가 없어서 Brewfile 설치는 미리 볼 수 없습니다"

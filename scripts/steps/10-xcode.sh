@@ -5,6 +5,8 @@ source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
 if xcode-select -p >/dev/null 2>&1; then
   ok "Xcode 명령줄 도구 ($(xcode-select -p))"
+elif needs_person 'Xcode 명령줄 도구 설치 (설치 창)'; then
+  exit 2
 else
   run xcode-select --install
   [[ "$DRY_RUN" == 1 ]] && exit 0

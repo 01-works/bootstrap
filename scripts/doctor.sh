@@ -135,6 +135,26 @@ if [[ -f "$HOME/.zsh_secrets" ]]; then
   if [[ "$perm" == 600 ]]; then pass "~/.zsh_secrets 권한 600"; else miss "~/.zsh_secrets 권한이 $perm (chmod 600 필요)"; fi
 fi
 
+step "자동 갱신"
+if has node && node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only update "$(device_flag)"; then
+  pass "자동 갱신 등록 (로그인할 때와 10분마다)"
+else
+  miss "자동 갱신 확인 필요 (./bootstrap.sh --only autoupdate)"
+fi
+update_status="$BOOTSTRAP_UPDATE_STATE/status"
+case "$(sed -n 's/^result=//p' "$update_status" 2>/dev/null)" in
+  failed) miss "$(sed -n 's/^banner=//p' "$update_status")" ;;
+  pending | held) wait_for_user "$(sed -n 's/^banner=//p' "$update_status")" ;;
+esac
+checked="$BOOTSTRAP_UPDATE_STATE/checked"
+if [[ ! -e "$checked" ]]; then
+  info "저장소 확인 기록 없음 (등록 뒤 첫 주기에 생김)"
+elif [[ -z "$(find "$checked" -mmin +1440 2>/dev/null)" ]]; then
+  pass "마지막 저장소 확인: $(stat -f '%Sm' -t '%F %T' "$checked")"
+else
+  warn "하루 넘게 저장소를 확인하지 못함 (마지막: $(stat -f '%Sm' -t '%F %T' "$checked")). 네트워크와 $(pretty "$BOOTSTRAP_UPDATE_STATE")/update.log 확인"
+fi
+
 # 공식 확인 방법이 없어 자동으로 검사하지 못하는 것. 새 기기에서 한 번 처리한다 (macos/initial-setup.md).
 printf '\n%s직접 확인할 것%s (자동 검사 불가, 새 기기에서 한 번):\n' "$_bold" "$_reset"
 printf '    - %s\n' \

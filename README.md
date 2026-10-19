@@ -53,17 +53,32 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | browser | Browser Use CLI(uv)와 공식 스킬, 에이전트 전용 Chrome 자동 시작 | [agents/browser.md](agents/browser.md) |
 | paseo | 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 없는 프로필 추가, Paseo 도구 켜기, 데스크톱은 로그인 시 데몬 시작 | [agents/paseo.md](agents/paseo.md) |
 | auth | GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내와 로그인할 앱 열기 | [development/git.md](development/git.md) |
+| autoupdate | 저장소 자동 갱신 등록 (로그인할 때와 10분마다) | 아래 "변경 전파" |
 
 ## 자주 쓰는 명령
 
 ```sh
 ./bootstrap.sh --only dotfiles     # 한 단계만
+./bootstrap.sh update              # 저장소를 받아 바뀐 부분만 적용 (수동 작업 대기 처리)
 ./bootstrap.sh doctor              # 세팅 상태 검증
 ./bootstrap.sh snapshot            # 이 Mac에는 있는데 저장소에 없는 것 찾기
 ./bootstrap.sh --list              # 단계 목록
 ```
 
 새 도구를 설치했으면 `snapshot`으로 확인하고 Brewfile에 옮겨 적는다. 그래야 다음 기기에도 깔린다.
+
+## 변경 전파
+
+아무 기기에서나 고쳐서 push하면 다른 기기가 따라온다. `autoupdate` 단계가 등록한 LaunchAgent(`local.bootstrap.update`)가 로그인할 때와 10분마다 `./bootstrap.sh update --auto`를 실행한다. 잠들어 있던 기기는 깨어난 뒤 따라온다. 공개 저장소라 받을 때 로그인이 필요 없다.
+
+- 받기: fetch 후 fast-forward만 한다. 커밋 안 된 변경이 있거나 이 기기의 커밋과 갈라졌으면 받지 않고 "보류"로 알린다. push·merge는 하지 않는다. 고치는 중인 기기(커밋 안 된 변경만 있고 새 커밋 없음)는 건드리지 않는다.
+- 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일에 해당하는 단계만 실행한다. `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `agents/skills/` → paseo, `agents/paseo-profiles.json` → paseo와 기존 프로필 갱신, `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
+- 사람이 필요한 일: 자동 갱신은 관리자 비밀번호(전원 설정·자동 로그인·Homebrew 설치), 설치 창(Xcode 명령줄 도구), GitHub 로그인, 배경화면 제어 허용 창을 띄우지 않고 "수동 작업 대기"로 남긴다. 터미널에서 `./bootstrap.sh update`를 실행하면 대기 단계까지 다시 실행한다. 관리자 비밀번호가 필요한 cask는 자동 갱신에서 실패로 표시된다.
+- 실패: 적용 기록을 남기지 않고 같은 커밋은 한 시간 뒤 다시 시도한다. 새 커밋이 오면 바로 시도한다.
+- 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
+- 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
+- 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다.
+- 끄기: `launchctl bootout gui/$(id -u)/local.bootstrap.update` 후 `~/Library/LaunchAgents/local.bootstrap.update.plist`를 지운다.
 
 ## 새 기기 없이 시험하기
 
@@ -95,6 +110,7 @@ TOOLS.md              도구별 공식 문서 링크, 설치 방법을 고른 �
 home/                 ~에 연결할 설정 파일 (묶음별)
 scripts/steps/        단계별 스크립트
 scripts/*.mjs         설정 병합·스킬 배치 (같은 이름의 *.test.mjs가 테스트)
+scripts/update.sh     변경 전파 (./bootstrap.sh update)
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
 macos/                첫 부팅, 시스템 설정

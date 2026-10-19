@@ -1,4 +1,4 @@
-// 로그인 시 실행할 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬.
+// 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬, (모든 기기) 저장소 자동 갱신.
 // plist에는 이 기기의 절대 경로가 들어가므로 저장소에 두지 않고 여기서 만든다.
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -11,11 +11,14 @@ export const AGENT_CHROME_URL = `http://127.0.0.1:${AGENT_CHROME_PORT}`;
 export const CHROME_BETA = '/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta';
 // cask는 /opt/homebrew/bin에, 앱 직접 설치는 다른 곳에 링크하므로 앱 안의 CLI를 직접 쓴다.
 export const PASEO_CLI = '/Applications/Paseo.app/Contents/Resources/bin/paseo';
-export const LABELS = { 'agent-chrome': 'local.bootstrap.agent-chrome', paseo: 'local.bootstrap.paseo' };
+export const LABELS = { 'agent-chrome': 'local.bootstrap.agent-chrome', paseo: 'local.bootstrap.paseo', update: 'local.bootstrap.update' };
+// 자동 갱신 주기(초). 잠들어 있던 기기는 깨어나면 놓친 주기를 한 번 실행한다.
+export const UPDATE_INTERVAL = 600;
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const escape = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function plist({ label, args, runAtLoad, keepAlive, interactive, env }) {
+export function plist({ label, args, runAtLoad, keepAlive, processType, startInterval, log, env }) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -35,21 +38,24 @@ export function plist({ label, args, runAtLoad, keepAlive, interactive, env }) {
   }
   // 비정상 종료만 다시 띄운다. 사용자가 직접 종료하면 다음 로그인까지 그대로 둔다.
   if (keepAlive) lines.push('  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>');
-  if (interactive) lines.push('  <key>ProcessType</key><string>Interactive</string>');
+  if (processType) lines.push(`  <key>ProcessType</key><string>${processType}</string>`);
+  if (startInterval) lines.push(`  <key>StartInterval</key><integer>${startInterval}</integer>`);
+  if (log) lines.push(`  <key>StandardOutPath</key><string>${escape(log)}</string>`, `  <key>StandardErrorPath</key><string>${escape(log)}</string>`);
   lines.push('</dict>', '</plist>', '');
   return lines.join('\n');
 }
 
 // 노트북은 필요할 때 시작하고(launchctl kickstart), 늘 켜두는 기기는 로그인할 때 시작한다.
-export function definitions({ home, laptop, env = {} }) {
+export function definitions({ home, laptop, env = {}, root = REPO_ROOT }) {
   const dataHome = env.XDG_DATA_HOME || join(home, '.local/share');
   const profile = join(dataHome, 'bootstrap/agent-chrome');
+  const updateState = join(env.XDG_STATE_HOME || join(home, '.local/state'), 'bootstrap/update');
   return {
     'agent-chrome': {
       label: LABELS['agent-chrome'],
       args: [CHROME_BETA, `--user-data-dir=${profile}`, `--remote-debugging-port=${AGENT_CHROME_PORT}`,
         '--no-first-run', '--no-default-browser-check'],
-      runAtLoad: !laptop, keepAlive: !laptop, interactive: true, dirs: [profile],
+      runAtLoad: !laptop, keepAlive: !laptop, processType: 'Interactive', dirs: [profile],
     },
     // 노트북의 Paseo 자동 시작은 선택 사항이라 만들지 않는다 (시스템 설정 > 일반 > 로그인 항목).
     // 데몬만 띄운다(앱 불필요). 이미 실행 중이면 그대로 둔다. 데몬이 claude·codex를 찾을 수 있게 PATH를 준다.
@@ -57,6 +63,15 @@ export function definitions({ home, laptop, env = {} }) {
       label: LABELS.paseo, args: [PASEO_CLI, 'daemon', 'start'], runAtLoad: true, keepAlive: false,
       env: { PATH: [join(home, '.local/bin'), join(home, 'Library/pnpm/bin'), join(home, '.local/share/fnm/aliases/default/bin'),
         '/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':') },
+    },
+    // 모든 기기가 같다. 로그인할 때와 주기마다 저장소를 확인해 바뀐 부분만 적용한다 (scripts/update.sh).
+    // 다른 일을 방해하지 않게 낮은 우선순위로 돈다. 출력은 update.log에 이어 쓴다.
+    // 셸에서 XDG_STATE_HOME을 바꿔 쓰면 launchd에도 같은 값을 줘서 상태·잠금 위치를 맞춘다.
+    update: {
+      label: LABELS.update, args: ['/bin/bash', join(root, 'bootstrap.sh'), 'update', '--auto'],
+      runAtLoad: true, keepAlive: false, processType: 'Background', startInterval: UPDATE_INTERVAL,
+      log: join(updateState, 'update.log'), dirs: [updateState],
+      env: env.XDG_STATE_HOME ? { XDG_STATE_HOME: env.XDG_STATE_HOME } : undefined,
     },
   };
 }
@@ -87,7 +102,9 @@ function ensureHarnessEnv({ home, env, check, dryRun }) {
   return 0;
 }
 
-function ensureAgent(def, { home, check, dryRun, run, uid }) {
+// noRestart: 자동 갱신 중에는 실행 중인 등록을 내렸다 올리지 않는다. 에이전트 Chrome·Paseo 데몬·자동 갱신 자신이
+// 작업 도중에 끝나기 때문이다. 내용이 바뀌었으면 수동 작업 대기(2)로 알린다. 등록이 없을 때는 그대로 올린다.
+function ensureAgent(def, { home, check, dryRun, noRestart, run, uid }) {
   const path = join(home, 'Library/LaunchAgents', `${def.label}.plist`);
   const want = plist(def);
   const current = existsSync(path) ? readFileSync(path, 'utf8') : null;
@@ -97,6 +114,10 @@ function ensureAgent(def, { home, check, dryRun, run, uid }) {
   if (check) {
     console.error(`자동 시작 ${current === null ? '없음' : current === want ? '미등록' : '내용 다름'}: ${def.label}`);
     return 1;
+  }
+  if (noRestart && current !== null && current !== want && loaded()) {
+    console.error(`자동 시작 내용이 바뀜: ${def.label}. 실행 중이라 자동 갱신에서는 다시 올리지 않습니다 → 터미널에서 ./bootstrap.sh update`);
+    return 2;
   }
   console.log(`${dryRun ? '[dry-run] ' : ''}자동 시작 등록: ${path}`);
   if (dryRun) return 0;
@@ -112,11 +133,13 @@ function ensureAgent(def, { home, check, dryRun, run, uid }) {
   return 0;
 }
 
-export function apply({ home = homedir(), env = process.env, laptop, only, check = false, dryRun = false,
+// 결과: 0 완료, 1 실패, 2 수동 작업 대기(noRestart). 실패가 대기보다 우선한다.
+export function apply({ home = homedir(), env = process.env, laptop, only, check = false, dryRun = false, noRestart = false,
   run = spawnSync, uid = process.getuid(), chromeBinary = CHROME_BETA } = {}) {
   if (typeof laptop !== 'boolean') throw new Error('--laptop 또는 --desktop이 필요합니다');
   const defs = definitions({ home, laptop, env });
   let status = 0;
+  let pending = false;
   for (const name of only ? [only] : Object.keys(defs)) {
     if (!(name in defs)) throw new Error(`알 수 없는 대상: ${name}`);
     const def = defs[name];
@@ -129,9 +152,11 @@ export function apply({ home = homedir(), env = process.env, laptop, only, check
       }
       status = Math.max(status, ensureHarnessEnv({ home, env, check, dryRun }));
     }
-    status = Math.max(status, ensureAgent(def, { home, check, dryRun, run, uid }));
+    const result = ensureAgent(def, { home, check, dryRun, noRestart, run, uid });
+    if (result === 2) pending = true;
+    else status = Math.max(status, result);
   }
-  return status;
+  return status || (pending ? 2 : 0);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -140,10 +165,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     let only;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--only' && args[i + 1]) only = args[++i];
-      else if (!['--check', '--dry-run', '--laptop', '--desktop'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
+      else if (!['--check', '--dry-run', '--no-restart', '--laptop', '--desktop'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
     }
     const laptop = args.includes('--laptop') ? true : args.includes('--desktop') ? false : undefined;
-    process.exitCode = apply({ laptop, only, check: args.includes('--check'),
+    process.exitCode = apply({ laptop, only, check: args.includes('--check'), noRestart: args.includes('--no-restart'),
       dryRun: args.includes('--dry-run') || process.env.DRY_RUN === '1' });
   } catch (error) { console.error(`자동 시작: ${error.message}`); process.exitCode = 1; }
 }

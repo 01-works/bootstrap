@@ -4,29 +4,35 @@
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
+pending=0
+
 # GitHub: git은 https + gh 자격 증명을 쓴다. 일회용 코드는 클립보드에 복사된다.
 if gh auth status >/dev/null 2>&1; then
   ok "GitHub 로그인 ($(gh api user --jq .login 2>/dev/null || echo '?'))"
+elif needs_person 'GitHub 로그인'; then
+  pending=2
 else
   run gh auth login --web --clipboard --git-protocol https
 fi
+# gh 로그인 전에는 git 자격 증명을 설정할 수 없다 (자동 갱신에서 로그인을 미룬 경우).
 helpers="$(git config --global --get-all credential.https://github.com.helper 2>/dev/null || true)"
 if grep 'gh auth git-credential' <<<"$helpers" >/dev/null; then
   ok "git 자격 증명: gh"
-else
+elif [[ "$pending" != 2 ]]; then
   run gh auth setup-git
   ok "git 자격 증명을 gh로 설정"
 fi
 
 # 데스크톱: 정전 뒤에도 혼자 로그인까지 되도록 자동 로그인을 켠다 (macos/system-settings.md#원격-접속).
 # 자동 로그인은 FileVault가 꺼져 있어야 켤 수 있다. FileVault를 끄는 것은 직접 한다(복호화가 끝날 때까지 시간이 걸릴 수 있다, fdesetup status로 확인).
-pending=0
 if ! is_laptop; then
   if ! filevault_off; then
     warn 'FileVault가 켜져 있거나 복호화 중이라 자동 로그인을 켤 수 없습니다 → sudo fdesetup disable, 복호화가 끝나면 ./bootstrap.sh --only auth'
     pending=2
   elif autologin_on; then
     ok "자동 로그인 ($(id -un))"
+  elif needs_person '자동 로그인 (로그인 비밀번호)'; then
+    pending=2
   else
     info '자동 로그인을 켭니다. 이 계정의 로그인 비밀번호를 입력하세요'
     run sudo sysadminctl -autologin set -userName "$(id -un)" -password -
@@ -44,8 +50,9 @@ printf '      %s\n' \
   'Chrome Beta     에이전트 전용 창. 에이전트가 쓸 서비스에 한 번씩 로그인'
 
 # 처음 한 번만 로그인할 앱을 열어 준다. 에이전트 Chrome은 전용 프로필로 띄워야 하므로 LaunchAgent로 시작한다.
+# 자동 갱신 중에는 갑자기 앱을 띄우지 않는다.
 marker="$BOOTSTRAP_STATE/login-apps-opened"
-if [[ "$DRY_RUN" != 1 && ! -e "$marker" ]]; then
+if [[ "$DRY_RUN" != 1 && ! -e "$marker" ]] && ! unattended; then
   for app in Claude ChatGPT Tailscale; do open -a "$app" 2>/dev/null || true; done
   launchctl kickstart "gui/$(id -u)/local.bootstrap.agent-chrome" 2>/dev/null || true
   mkdir -p "$BOOTSTRAP_STATE" && touch "$marker"

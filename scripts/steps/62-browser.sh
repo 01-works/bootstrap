@@ -11,8 +11,15 @@ if [[ "$DRY_RUN" == 1 ]]; then
 fi
 has node || die 'Node 없음. ./bootstrap.sh --only runtimes,browser 로 다시 실행하세요'
 
-# 한쪽 실패로 다른 설정을 막지 않는다.
+# 한쪽 실패로 다른 설정을 막지 않는다. 자동 갱신 중에는 실행 중인 에이전트 Chrome을 다시 시작하지 않는다(바뀌었으면 대기).
 status=0
 node "$BOOTSTRAP_ROOT/scripts/browser-use-setup.mjs" || status=1
-node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only agent-chrome "$(device_flag)" || status=1
+agent=0
+# shellcheck disable=SC2046
+node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only agent-chrome "$(device_flag)" $(no_restart_flag) || agent=$?
+case "$agent" in
+  0) ;;
+  2) [[ "$status" == 1 ]] || status=2 ;;
+  *) status=1 ;;
+esac
 exit "$status"

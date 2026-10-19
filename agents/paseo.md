@@ -70,7 +70,9 @@ node scripts/paseo-profiles.mjs --update
 
 변경 전 전체 설정을 `~/.local/state/bootstrap/backup/paseo-*/config.json`에 권한 600으로 백업한다(`XDG_STATE_HOME` 지정 시 해당 경로 사용). Paseo CLI가 설정을 검증·저장하고 실행 중인 데몬에 reload한다. 재시작은 하지 않는다. CLI가 `saved; not applied`를 보고하면 다음 데몬 시작 때 적용되며, reload 실패 시 원인을 해결한 뒤 `paseo reload`한다.
 
-`doctor`는 프로필·도구 설정의 누락·차이를 경고만 하고, 사용자 스킬 연결 누락·충돌은 실패로 표시한다. 스킬만 설치하거나 검사하려면 `node scripts/agent-skills.mjs` 또는 `node scripts/agent-skills.mjs --check`를 쓴다. 기본값의 모델 ID를 바꿨을 때 기존 기기는 위 `--update` 명령으로 갱신한다. 모델과 추론 옵션이 해당 기기에서 지원되는지는 Paseo 모델 선택기에서 확인한다.
+자동 갱신([변경 전파](../README.md#변경-전파))은 `agents/paseo-profiles.json`이 바뀐 커밋을 받으면 `--update`까지 실행한다. 그래서 기본값을 고쳐 push하면 모든 기기의 기존 프로필이 함께 바뀐다.
+
+`doctor`는 프로필·도구 설정의 누락·차이를 경고만 하고, 사용자 스킬 연결 누락·충돌은 실패로 표시한다. 스킬만 설치하거나 검사하려면 `node scripts/agent-skills.mjs` 또는 `node scripts/agent-skills.mjs --check`를 쓴다. 자동 갱신을 끈 기기는 기본값을 바꾼 뒤 위 `--update` 명령으로 갱신한다. 모델과 추론 옵션이 해당 기기에서 지원되는지는 Paseo 모델 선택기에서 확인한다.
 
 공식 문서: [프로필](https://paseo.sh/docs/agent-profiles.md), [설정과 reload](https://paseo.sh/docs/configuration.md).
 
