@@ -46,6 +46,7 @@ printf '      %s\n' \
   'claude          터미널에서 처음 실행하면 로그인 안내' \
   'codex           터미널에서 처음 실행하면 "Sign in with ChatGPT"' \
   'vercel          vercel login' \
+  'cloudflared     고정 이름 터널을 쓸 때 cloudflared tunnel login' \
   'Claude·ChatGPT 앱, Tailscale 앱' \
   'Chrome Beta     에이전트 전용 창. 에이전트가 쓸 서비스에 한 번씩 로그인'
 

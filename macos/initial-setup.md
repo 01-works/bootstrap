@@ -20,7 +20,7 @@
 
 설치가 끝나면 로그인할 앱이 열린다. 다시 설치를 돌릴 필요는 없다.
 
-- [ ] 터미널에서 `claude`, `codex`를 한 번씩 실행해 로그인 (`vercel login`은 쓸 때)
+- [ ] 터미널에서 `claude`, `codex`를 한 번씩 실행해 로그인 (`vercel login`, `cloudflared tunnel login`은 쓸 때)
 - [ ] Claude 앱, ChatGPT 앱, Tailscale 앱 로그인. Tailscale은 설정에서 로그인 시 실행을 켠다
 - [ ] Chrome Beta(에이전트 전용 창)에서 에이전트가 쓸 서비스 로그인 ([브라우저 작업](../agents/browser.md)). Dock 아이콘으로 새로 띄운 Chrome Beta는 전용 프로필이 아니니 열려 있는 창을 쓴다. 노트북에서 창이 없으면 `launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome`
 
