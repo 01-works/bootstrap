@@ -91,13 +91,25 @@ fi
 
 # 배경화면: 검정 단색. 시스템 기본 "검정"이나 Solid Colors/Black.png면 그대로 둔다.
 # 바꿀 때 macOS가 이 터미널의 System Events 제어 허용을 한 번 묻는다 (직접 허용).
+# 배경화면은 전체(AllSpacesAndDisplays)나 모니터·스페이스별(Displays, Spaces)로 저장되므로 모든 Desktop 항목을 본다.
+# SystemDefault는 새 모니터에 쓰는 기본값이라 보지 않는다.
 wallpaper_is_black() {
-  /usr/bin/python3 - "$HOME/Library/Application Support/com.apple.wallpaper/Store/Index.plist" <<'PY' 2>/dev/null
+  /usr/bin/python3 -I - "$HOME/Library/Application Support/com.apple.wallpaper/Store/Index.plist" <<'PY' 2>/dev/null
 import plistlib, sys
-choice = plistlib.load(open(sys.argv[1], 'rb'))['AllSpacesAndDisplays']['Desktop']['Content']['Choices'][0]
-config = plistlib.loads(choice['Configuration']) if choice.get('Configuration') else {}
-black = 'black' in config.get('systemColor', {}) or 'Black.png' in repr(config) + repr(choice.get('Files'))
-sys.exit(0 if black else 1)
+store = plistlib.load(open(sys.argv[1], 'rb'))
+def desktops(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == 'Desktop' and isinstance(value, dict) and 'Content' in value:
+                yield value
+            elif key != 'SystemDefault':
+                yield from desktops(value)
+def is_black(desktop):
+    choice = desktop['Content']['Choices'][0]
+    config = plistlib.loads(choice['Configuration']) if choice.get('Configuration') else {}
+    return 'black' in config.get('systemColor', {}) or 'Black.png' in repr(config) + repr(choice.get('Files'))
+found = list(desktops(store))
+sys.exit(0 if found and all(map(is_black, found)) else 1)
 PY
 }
 if wallpaper_is_black; then
