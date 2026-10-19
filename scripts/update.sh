@@ -51,11 +51,12 @@ steps_for_paths() {
       home/*) out="$out dotfiles" ;;
       agents/skills/*) out="$out paseo" ;;
       agents/paseo-profiles.json) out="$out paseo paseo-profiles" ;;
+      agents/paseo-plugins.json) out="$out paseo" ;;
       Brewfile) out="$out homebrew" ;;
       bootstrap.sh | scripts/lib.sh) out="$out $(auto_steps)" ;;
       scripts/launch-agents.mjs) out="$out browser paseo autoupdate" ;;
       scripts/skill-paths.mjs) out="$out browser paseo" ;;
-      scripts/agent-skills.mjs | scripts/paseo-profiles.mjs) out="$out paseo" ;;
+      scripts/agent-skills.mjs | scripts/paseo-profiles.mjs | scripts/paseo-plugins.mjs) out="$out paseo" ;;
       scripts/browser-use-setup.mjs) out="$out browser" ;;
       scripts/steps/[0-9]*-*.sh)
         path="${path##*/}"

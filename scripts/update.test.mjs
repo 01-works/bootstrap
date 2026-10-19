@@ -114,6 +114,10 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['dotfiles 1']);
 
+  f.push({ 'agents/paseo-plugins.json': '{}\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['paseo 1'], '플러그인 목록은 paseo 단계만');
+
   f.push({ 'agents/paseo-profiles.json': '[1]\n', 'Brewfile': 'brew "gh"\n' });
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['homebrew 1', 'paseo 1', 'paseo-profiles --update'], '실행 순서대로 한 번씩');
@@ -121,7 +125,7 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   f.push({ 'scripts/steps/35-power.sh': mockStep('power') + '# changed\n' });
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['power 1']);
-  assert.equal(f.notifications().length, 4);
+  assert.equal(f.notifications().length, 5);
 });
 
 test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 실행하면 다시 실행한다', t => {

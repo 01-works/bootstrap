@@ -60,7 +60,7 @@ for src_root in "$BOOTSTRAP_ROOT"/home/*; do
   done < <(find "$src_root" \( -type f -o -type l \) ! -name .DS_Store | sort)
 done
 
-step "사용자 스킬과 Paseo 프로필"
+step "사용자 스킬과 Paseo 프로필·플러그인"
 if has node; then
   if node "$BOOTSTRAP_ROOT/scripts/agent-skills.mjs" --check; then
     pass "사용자 스킬"
@@ -73,6 +73,13 @@ if has node; then
     pass "Paseo 프로필·도구 설정"
   else
     warn "Paseo 프로필·도구 설정 확인 필요 (agents/paseo.md 참고). 기기별 변경은 유지됩니다"
+  fi
+  if [[ -f "${PASEO_HOME:-$HOME/.paseo}/config.json" ]]; then
+    if node "$BOOTSTRAP_ROOT/scripts/paseo-plugins.mjs" --check; then
+      pass "Paseo 기본 플러그인"
+    else
+      warn "Paseo 기본 플러그인 확인 필요 (./bootstrap.sh --only paseo, agents/paseo.md#플러그인)"
+    fi
   fi
   if ! is_laptop; then
     if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only paseo --desktop; then

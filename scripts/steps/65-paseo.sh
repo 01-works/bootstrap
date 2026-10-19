@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 빠진 프로필 추가와 에이전트용 Paseo 도구 켜기.
+# 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 빠진 프로필 추가와 에이전트용 Paseo 도구 켜기, 기본 플러그인 설치·버전 맞춤.
 # 늘 켜두는 기기는 로그인할 때 데몬을 자동으로 띄운다. 기존 프로필 수정은 --update.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
@@ -36,6 +36,11 @@ autostart=0
 node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo "$(device_flag)" $(no_restart_flag) || autostart=$?
 profiles=0
 node "$BOOTSTRAP_ROOT/scripts/paseo-profiles.mjs" || profiles=$?
-[[ "$autostart" == 0 || "$autostart" == 2 ]] || exit 1
-[[ "$profiles" == 0 ]] || exit "$profiles"
-exit "$autostart"
+plugins=0
+node "$BOOTSTRAP_ROOT/scripts/paseo-plugins.mjs" || plugins=$?
+st=0
+for s in "$autostart" "$profiles" "$plugins"; do
+  [[ "$s" == 0 || "$s" == 2 ]] || exit 1
+  [[ "$s" == 0 ]] || st=2
+done
+exit "$st"

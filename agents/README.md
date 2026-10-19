@@ -8,7 +8,7 @@
 | Claude 앱 | Cowork·데스크톱 Claude Code | `cask "claude"` | | 앱에서 |
 | [Codex CLI](codex.md) | 터미널·Paseo 코딩 작업 | 공식 설치 스크립트 (`agents` 단계) | `AGENTS.md` (링크), `config.toml` (seed) | `codex` 실행 |
 | ChatGPT 앱 (Codex 앱) | Work·Codex | `cask "chatgpt"` | | 앱에서 |
-| [Paseo](paseo.md) | 작업자·workspace 조율 | `cask "paseo"` | 프로필·도구 설정 (병합), `yw-supervisor` 스킬 (Claude·Codex에 링크) | 앱에서 |
+| [Paseo](paseo.md) | 작업자·workspace 조율 | `cask "paseo"` | 프로필·도구 설정 (병합), 기본 플러그인 (목록 버전으로 맞춤), `yw-supervisor` 스킬 (Claude·Codex에 링크) | 앱에서 |
 | [브라우저 작업](browser.md) | 에이전트 전용 Chrome(기본)·개인 Chrome(요청 시) 조작 | Chrome·Chrome Beta·uv (`homebrew` 단계), Browser Use CLI·공식 스킬 (`browser` 단계) | 에이전트 Chrome 자동 시작 | 에이전트 Chrome에 한 번씩 로그인 |
 
 네이티브 앱 GUI 작업(Computer Use)은 앱 설치와 별개로 기기마다 활성화·권한 설정이 필요하다 → [기기 GUI 작업](computer-use.md).
