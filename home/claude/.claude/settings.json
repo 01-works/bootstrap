@@ -1,12 +1,13 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(gh pr merge:*)"
+    ]
+  },
   "model": "opus[1m]",
   "enabledPlugins": {},
   "extraKnownMarketplaces": {},
   "skipDangerousModePermissionPrompt": true,
   "agentPushNotifEnabled": true,
-  "permissions": {
-    "allow": [
-      "Bash(gh pr merge:*)"
-    ]
-  }
+  "tui": "fullscreen"
 }
