@@ -41,6 +41,7 @@ Frontend Builder에는 사용자/사용 목적, 기존 디자인 시스템·참�
 - 기기 GUI 작업은 CLI·API·MCP를 먼저 검토하고, 실제 노출된 Computer Use 도구를 확인한 뒤 배정한다(`agents/computer-use.md`). Paseo 작업자의 지원은 확인되지 않았으므로 기본으로 배정하지 않는다. 같은 앱의 브라우저 작업과 GUI 작업은 순서를 정해 겹치지 않게 한다.
 - 프로젝트와 기존 작업 공간을 확인하고 `workspaceId`를 명시한다. 다른 프로젝트의 작업을 현재 workspace에 잘못 생성하지 않는다.
 - 독립적인 구현은 별도 worktree/workspace에서 병렬로 진행한다. 같은 checkout에 수정 작업자 둘을 동시에 배정하지 않는다. 선행 작업의 실제 변경이 필요한 후속 작업은 해당 결과가 통합된 뒤 시작한다.
+- 전체 타입 검사·린트·테스트·빌드, dev 서버, 앱 설정 전체 로딩처럼 메모리를 많이 쓰는 작업은 worktree가 달라도 같은 기기에서 기본적으로 하나씩 실행하도록 차례를 정해 작업자에게 전달한다. 메모리 여유가 확인된 경우에만 병렬 실행을 늘리고, 검증이 끝난 dev 서버는 종료하게 한다.
 - 병렬도는 서로 독립인 작업 수와 사용자 한도·예산에 맞춘다. Opus 작업은 판단과 시각 작업에 집중시키고, 대기 작업까지 미리 에이전트로 만들지 않는다.
 - 프로필을 `create_agent`에 전달할 때 `provider/model`, `settings.modeId`, `settings.thinkingOptionId`, `settings.features`로 펼친다(`featureValues` → `features`). 없는 필드는 생략한다. `profile`이라는 인자를 임의로 만들지 않는다. 맞는 프로필이 없으면 제공자·모델·기능을 조회하고 대체 이유를 알린다.
 - **프로필 notes는 선택 지침이다.** 실제 작업 지시는 아래 내용을 채워 `initialPrompt`에 전달한다. 작업자는 Supervisor의 전체 대화를 이미 알고 있다고 가정하지 않는다.
