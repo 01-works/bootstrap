@@ -60,7 +60,9 @@ PY
 }
 if wallpaper_is_black; then
   ok "배경화면 검정"
-else
-  run osascript -e 'tell application "System Events" to tell every desktop to set picture to "/System/Library/Desktop Pictures/Solid Colors/Black.png"'
+elif run osascript -e 'tell application "System Events" to tell every desktop to set picture to "/System/Library/Desktop Pictures/Solid Colors/Black.png"'; then
   ok "배경화면 검정 (변경)"
+else
+  # 제어 허용을 거부했거나 macOS가 바뀐 경우. 다른 설정은 계속한다.
+  warn "배경화면을 바꾸지 못했습니다 → 시스템 설정 > 배경화면에서 색상 '검정' 선택"
 fi
