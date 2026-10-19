@@ -4,7 +4,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 
 ## 설치
 
-`Brewfile`의 `cask "paseo"`. 앱은 `/Applications/Paseo.app`, CLI는 Apple Silicon의 `/opt/homebrew/bin/paseo`, Intel의 `/usr/local/bin/paseo`에 링크된다. 데몬은 앱 안에 들어 있고, 앱과 별개로 실행된다. 앱은 데몬에 붙어서 보는 화면이다.
+`Brewfile`의 `cask "paseo"`. 앱은 `/Applications/Paseo.app`, CLI는 Apple Silicon의 `/opt/homebrew/bin/paseo`, Intel의 `/usr/local/bin/paseo`에 링크된다. 데몬은 앱 안에 들어 있고, 앱과 별개로 실행된다. 앱은 데몬에 붙어서 보는 화면이다. 앱을 Homebrew 밖에서 설치한 기기(직접 받은 경우)는 이 링크가 없을 수 있어, `paseo` 단계가 `paseo` 명령이 없으면 앱 안의 CLI를 `~/.local/bin/paseo`에 연결한다.
 
 앱 없이 서버에서 CLI와 데몬만 쓸 때는 공식 문서의 npm 패키지(`@getpaseo/cli`)를 쓴다 ([공식 문서](https://paseo.sh/docs)).
 

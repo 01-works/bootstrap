@@ -12,6 +12,18 @@ if ! has node; then
   die 'Node 없음. ./bootstrap.sh --only runtimes,paseo 로 다시 실행하세요'
 fi
 node "$BOOTSTRAP_ROOT/scripts/agent-skills.mjs"
+# Homebrew 밖에서 설치한 앱은 CLI 연결이 없을 수 있다. 앱 안의 CLI를 ~/.local/bin(PATH에 있음)에 연결한다.
+paseo_cli=/Applications/Paseo.app/Contents/Resources/bin/paseo
+paseo_link="$HOME/.local/bin/paseo"
+if ! has paseo && [[ -x "$paseo_cli" ]]; then
+  if [[ -e "$paseo_link" && ! -L "$paseo_link" ]]; then
+    warn "$(pretty "$paseo_link")가 링크가 아닌 파일이라 그대로 둡니다"
+  else
+    run mkdir -p "$(dirname "$paseo_link")"
+    run ln -sfn "$paseo_cli" "$paseo_link"
+    ok "Paseo CLI 연결 ($(pretty "$paseo_link"))"
+  fi
+fi
 if ! has paseo; then
   warn 'paseo 없음 (Brewfile의 cask "paseo" 확인)'
   [[ "$DRY_RUN" == 1 ]] && exit 0
