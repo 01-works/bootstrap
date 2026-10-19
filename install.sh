@@ -21,7 +21,11 @@ slug() {
   printf '%s/%s' "${rest##*[:/]}" "$name"
 }
 
-[[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || die 'Apple Silicon Mac 전용입니다'
+[[ "$(uname -s)" == Darwin ]] || die 'macOS 전용입니다'
+case "$(uname -m)" in
+  arm64 | x86_64) ;;
+  *) die '64비트 Intel 또는 Apple Silicon Mac이 필요합니다' ;;
+esac
 [[ "$(id -u)" != 0 ]] || die 'sudo 없이 실행하세요. 관리자 권한이 필요한 곳에서만 따로 묻습니다'
 
 # git은 Xcode 명령줄 도구에 들어 있다. 없으면 설치 창을 띄우고 끝날 때까지 기다린다.

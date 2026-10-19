@@ -27,7 +27,7 @@ step "명령어"
 for cmd in git gh gitleaks fnm node pnpm colima docker paseo; do
   if has "$cmd"; then pass "$cmd"; else miss "$cmd 없음"; fi
 done
-for cmd in claude codex; do
+for cmd in claude codex uv; do
   if cli_works "$cmd"; then pass "$cmd 실행"; else miss "$cmd 없음 또는 실행 실패 ($(command -v "$cmd" || true))"; fi
 done
 if vercel --version >/dev/null 2>&1; then pass "vercel"; else miss "vercel 실행 안 됨 (./bootstrap.sh --only runtimes)"; fi
@@ -121,7 +121,7 @@ if power_ok; then pass "$label"; else miss "전원 설정이 다름: $label (./b
 
 step "인증"
 if gh auth status >/dev/null 2>&1; then pass "GitHub 로그인"; else wait_for_user "GitHub 로그인 확인 필요 (gh auth status)"; fi
-if [[ -d "$BOOTSTRAP_ROOT/.git" ]]; then
+if git -C "$BOOTSTRAP_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if [[ "$(git -C "$BOOTSTRAP_ROOT" config core.hooksPath 2>/dev/null)" == .githooks ]]; then
     pass "커밋 전 검사 훅"
   else

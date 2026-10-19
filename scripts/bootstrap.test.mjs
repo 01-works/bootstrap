@@ -56,6 +56,7 @@ function mockStep(t, name, mocks) {
 
 test('Homebrew bundle 실패는 부분 실패 코드로 전달', t => {
   const { result } = mockStep(t, '20-homebrew.sh', `
+uv() { echo 'uv test'; }
 brew() { if [[ "$1" == --version ]]; then echo 'Homebrew test'; else return 1; fi; }
 `);
   assert.equal(result.status, 3, result.stderr);
@@ -103,4 +104,33 @@ ssh-keygen() { echo 'unexpected key overwrite'; return 99; }
   assert.equal(result.status, 2, result.stderr);
   assert.match(result.stderr, /불완전/);
   assert.doesNotMatch(result.stdout + result.stderr, /unexpected key overwrite/);
+});
+
+
+test('Intel uv 설치 실패는 Brewfile 설치를 막지 않고 부분 실패로 전달', t => {
+  const { root, result } = mockStep(t, '20-homebrew.sh', `
+uname() { echo x86_64; }
+uv() { return 1; }
+curl() { echo 'unexpected download'; return 99; }
+brew() {
+  if [[ "$1" == --version ]]; then echo 'Homebrew test';
+  else touch "$BOOTSTRAP_ROOT/bundle-ran"; fi
+}
+`);
+  assert.equal(result.status, 3, result.stderr);
+  assert.equal(existsSync(join(root, 'bundle-ran')), true);
+  assert.doesNotMatch(result.stdout + result.stderr, /unexpected download/);
+});
+
+
+test('별도 Git 디렉터리를 쓰는 checkout에도 커밋 검사 훅을 설정한다', t => {
+  const { root, result } = mockStep(t, '10-xcode.sh', `
+xcode-select() { echo '/mock/CommandLineTools'; }
+git init -q --separate-git-dir "$BOOTSTRAP_ROOT/git-dir" "$BOOTSTRAP_ROOT"
+`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(readFileSync(join(root, '.git'), 'utf8').startsWith('gitdir:'));
+  const config = spawnSync('git', ['-C', root, 'config', 'core.hooksPath'], { encoding: 'utf8' });
+  assert.equal(config.status, 0, config.stderr);
+  assert.equal(config.stdout.trim(), '.githooks');
 });

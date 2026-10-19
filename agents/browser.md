@@ -25,6 +25,7 @@ node scripts/launch-agents.mjs --check --only agent-chrome --desktop   # 노트�
 node scripts/browser-settings.mjs --check
 ```
 
+- uv는 Apple Silicon에서는 Brewfile, Intel에서는 `homebrew` 단계의 공식 바이너리 설치기로 준비한다 (`~/.local/bin`, 기존 CLI·셸 설정 유지).
 - Browser Use가 없을 때만 `uv tool install --python 3.12 browser-use`로 설치한다. 기존 CLI는 갱신하지 않는다. ([공식 CLI](https://docs.browser-use.com/open-source/browser-use-cli))
 - 공식 스킬(`browser-use skill` 출력)을 Codex용 `~/.agents/skills/browser-use`와 Claude용 `~/.claude/skills/browser-use`에 둔다. 다른 내용의 같은 이름 스킬이 있으면 덮어쓰지 않고 중단한다. Codex 이전 경로 `~/.codex/skills/browser-use`가 있으면 중복으로 보이므로 중단한다. 내용을 확인하고 지우거나 `~/.agents/skills`로 옮긴다.
 - **에이전트 Chrome**: LaunchAgent `local.bootstrap.agent-chrome`으로 등록한다. 늘 켜두는 기기(배터리 없음)는 로그인할 때 시작하고 비정상 종료 시 다시 띄운다. 노트북은 필요할 때 시작한다. 시작 명령은 `launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome`. 자동 시작을 없애려면 `launchctl bootout gui/$(id -u)/local.bootstrap.agent-chrome` 후 `~/Library/LaunchAgents/local.bootstrap.agent-chrome.plist`를 지운다(doctor는 실패로 표시한다).
