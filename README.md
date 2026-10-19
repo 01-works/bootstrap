@@ -19,7 +19,7 @@
    ./bootstrap.sh
    ```
 
-3. `auth` 단계의 로그인 목록 처리 (Claude, Codex, Vercel, Paseo, Tailscale). Paseo 앱 초기 설정 후 `./bootstrap.sh --only paseo` 재실행. Chrome 설정이 대기로 남았다면 Chrome을 종료하고 `./bootstrap.sh --only browser`
+3. `auth` 단계의 로그인 목록 처리 (Claude, Codex, Vercel, Paseo, Tailscale). Paseo 앱 초기 설정 후 `./bootstrap.sh --only paseo` 재실행. 에이전트 Chrome(Chrome Beta)에서 에이전트가 쓸 서비스에 로그인
 4. 새 터미널을 열고 `./bootstrap.sh doctor`로 최종 확인. 실패·수동 작업 대기가 모두 없어야 완료
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
@@ -28,9 +28,10 @@
 
 ## 모든 기기가 같은 세팅
 
-직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 세 가지뿐이다.
+직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 네 가지뿐이다.
 
 - 전원: `power` 단계가 배터리 유무로 판단해서, 노트북은 충전 중에만 잠들지 않게 하고 데스크톱은 늘 켜둔다.
+- 자동 시작: 데스크톱은 로그인할 때 Paseo 앱과 에이전트 Chrome을 띄운다. 노트북은 필요할 때 시작한다.
 - 로그인하는 계정 (GitHub, Google, Claude, Codex): 기기마다 로그인한다.
 - git 커밋 작성자: 다른 GitHub 계정을 쓰는 기기는 `~/.gitconfig.local`에 이름·이메일을 적는다.
 
@@ -52,8 +53,8 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
-| browser | Browser Use CLI(uv)와 공식 스킬, Chrome 승인형 원격 디버깅 설정 | [agents/browser.md](agents/browser.md) |
-| paseo | 사용자 스킬을 Claude·Codex에 연결, 없는 Paseo 프로필 추가, Paseo 도구 켜기 | [agents/paseo.md](agents/paseo.md) |
+| browser | Browser Use CLI(uv)와 공식 스킬, 에이전트 전용 Chrome 자동 시작, 개인 Chrome 승인형 원격 디버깅 설정 | [agents/browser.md](agents/browser.md) |
+| paseo | 사용자 스킬을 Claude·Codex에 연결, 없는 Paseo 프로필 추가, Paseo 도구 켜기, 데스크톱은 로그인 시 자동 시작 | [agents/paseo.md](agents/paseo.md) |
 | auth | GitHub 로그인, 기기별 SSH 키, 남은 로그인 안내 | [development/git.md](development/git.md) |
 
 ## 자주 쓰는 명령

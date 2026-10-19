@@ -20,9 +20,11 @@ cask "chatgpt"        # Codex 앱 포함
 cask "paseo"
 cask "tailscale-app"  # 기기 간 원격 접속
 
-# 브라우저: 기존 Chrome 로그인·탭을 Browser Use CLI로 조작한다 (agents/browser.md)
-cask "google-chrome"
-brew "uv"             # Browser Use CLI 설치용 (browser 단계)
+# 브라우저 (agents/browser.md). 에이전트는 Chrome Beta의 전용 프로필을 Browser Use CLI로 조작한다.
+# 앱이 달라야 개인 Chrome과 Dock·링크 열기가 섞이지 않는다.
+cask "google-chrome"       # 개인용. 로그인이 필요한 작업에 사용자가 요청할 때만 연결
+cask "google-chrome@beta"  # 에이전트 전용
+brew "uv"                  # Browser Use CLI 설치용 (browser 단계)
 
 # Cloudflare Tunnel
 brew "cloudflared"

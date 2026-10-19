@@ -136,9 +136,10 @@ test('browser 단계는 Browser Use 실패에도 Chrome 설정을 실행하고 �
     writeFileSync(join(home, 'scripts/lib.sh'), `
 has() { return 0; }
 die() { exit 1; }
+device_flag() { printf '%s' --desktop; }
 node() {
   printf '%s\\n' "$1" >> "$BOOTSTRAP_ROOT/calls"
-  case "$1" in *browser-use-setup.mjs) return ${setupStatus} ;; *) return ${chromeStatus} ;; esac
+  case "$1" in *browser-use-setup.mjs) return ${setupStatus} ;; *launch-agents.mjs) return 0 ;; *) return ${chromeStatus} ;; esac
 }
 `);
     const result = spawnSync('/bin/bash', [step], { env: { ...process.env, BOOTSTRAP_ROOT: home, DRY_RUN: '0' }, encoding: 'utf8' });

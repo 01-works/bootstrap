@@ -74,6 +74,13 @@ if has node; then
   else
     warn "Paseo 프로필·도구 설정 확인 필요 (agents/paseo.md 참고). 기기별 변경은 유지됩니다"
   fi
+  if ! is_laptop; then
+    if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only paseo --desktop; then
+      pass "Paseo 로그인 시 자동 시작"
+    else
+      miss "Paseo 자동 시작 확인 필요 (./bootstrap.sh --only paseo)"
+    fi
+  fi
 else
   warn "Node가 없어 사용자 스킬·Paseo 프로필 확인을 건너뜁니다"
 fi
@@ -85,14 +92,26 @@ else
   miss "Browser Use 설치/스킬 확인 필요 (./bootstrap.sh --only homebrew,browser)"
 fi
 if has node; then
+  if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only agent-chrome "$(device_flag)"; then
+    pass "에이전트 Chrome 자동 시작·Browser Use 기본 연결"
+  else
+    miss "에이전트 Chrome 설정 확인 필요 (./bootstrap.sh --only homebrew,browser)"
+  fi
+  if curl -fsS --max-time 3 http://127.0.0.1:9333/json/version >/dev/null 2>&1; then
+    pass "에이전트 Chrome 실행 중 (127.0.0.1:9333)"
+  elif is_laptop; then
+    info "에이전트 Chrome 꺼짐. 노트북은 필요할 때 시작: launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome"
+  else
+    miss "에이전트 Chrome이 응답하지 않음 (launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome)"
+  fi
   browser_status=0
   node "$BOOTSTRAP_ROOT/scripts/browser-settings.mjs" --check || browser_status=$?
   if [[ "$browser_status" == 0 ]]; then
-    pass "Chrome 승인형 원격 디버깅 설정 (실제 연결·사용자 승인은 별도 검증)"
+    pass "개인 Chrome 승인형 원격 디버깅 설정 (요청 시 연결, 승인은 사용자)"
   elif [[ "$browser_status" == 2 ]]; then
-    wait_for_user 'Chrome 설정 대기 (위 안내 참고)'
+    wait_for_user '개인 Chrome 설정 대기 (위 안내 참고)'
   else
-    miss "Chrome 설정 확인 필요 (agents/browser.md 참고)"
+    miss "개인 Chrome 설정 확인 필요 (agents/browser.md 참고)"
   fi
 fi
 

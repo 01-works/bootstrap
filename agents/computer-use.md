@@ -1,6 +1,6 @@
 # 기기 GUI 작업 (Computer Use)
 
-CLI·API·MCP로 처리할 수 있으면 그것을 우선한다. 웹 UI와 기존 Chrome 작업은 [Browser Use](browser.md)를 쓴다. 그 밖의 네이티브 GUI는 아래 제품별 Computer Use를 쓴다.
+CLI·API·MCP로 처리할 수 있으면 그것을 우선한다. 웹 작업은 [Browser Use](browser.md)를 쓴다. 그 밖의 네이티브 GUI는 아래 제품별 Computer Use를 쓴다.
 
 앱·CLI 설치는 bootstrap이 하지만, Computer Use 활성화·OS 권한·앱 접근 승인은 기기마다 직접 한다. bootstrap·doctor 통과가 GUI 작업 준비 완료를 뜻하지 않는다.
 

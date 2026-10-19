@@ -64,12 +64,14 @@ flowchart LR
   CODEX --> PASEO
 
   subgraph sgBrowser["브라우저"]
-    CHROME["Google Chrome"]
+    CHROME["Google Chrome<br/>개인, 요청 시"]
+    CHROMEBETA["Chrome Beta<br/>에이전트 전용"]
     UV["uv"]
     BU["Browser Use CLI<br/>· 공식 스킬"]
   end
   UV -->|도구 설치| BU
-  CHROME -->|기존 로그인·탭| BU
+  CHROMEBETA -->|기본 연결| BU
+  CHROME -.->|사용자 승인| BU
   BU --> CC
   BU --> CODEX
 
@@ -85,7 +87,7 @@ flowchart LR
 
   class BREW,CC,CODEX,PNPM script
   class CLT,NODE,NPM,VM,VERCEL,BU bundled
-  class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP,CHROME,UV brew
+  class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP,CHROME,CHROMEBETA,UV brew
   class PP,NP,GIT,HOOK,LOCAL use
 ```
 
@@ -144,7 +146,8 @@ ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내�
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
-| Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 기존 로그인·탭 작업용. 종료 상태에서 디버깅 설정을 병합하며 연결 승인은 별도 | 2026-10-18 |
+| Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 개인용. 사용자가 요청할 때만 에이전트가 연결하며 연결마다 사용자 승인. 종료 상태에서 디버깅 설정을 병합 | 2026-10-18 |
+| Google Chrome Beta | `cask "google-chrome@beta"` | [Chrome Beta](https://www.google.com/chrome/beta/) | 에이전트 전용. 개인 Chrome과 앱이 달라야 Dock·링크 열기가 섞이지 않는다. 전용 프로필·고정 포트(9333)로 띄워 승인 없이 연결 | 2026-10-19 |
 | uv | `brew "uv"` | [astral.sh](https://docs.astral.sh/uv/getting-started/installation/) | Homebrew가 공식 방법 중 하나. Browser Use를 Node와 독립된 도구 환경에 설치한다 | 2026-10-19 |
 | Browser Use | `browser` 단계 (`uv tool install --python 3.12 browser-use`) | [공식 CLI](https://docs.browser-use.com/open-source/browser-use-cli) | 브라우저 작업 기본 도구. 공식 스킬을 Codex·Claude에 배치 → [운영 지침](agents/browser.md) | 2026-10-19 |
 

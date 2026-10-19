@@ -76,6 +76,6 @@ node scripts/paseo-profiles.mjs --update
 
 ## 새 기기에서
 
-앱을 실행하고 안내에 따라 데몬을 설정한 뒤 `./bootstrap.sh --only paseo`를 실행한다. 아직 설정 파일이 없으면 bootstrap은 프로필 설치를 건너뛰고 이 순서를 안내한다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
+앱을 실행하고 안내에 따라 데몬을 설정한 뒤 `./bootstrap.sh --only paseo`를 실행한다. 늘 켜두는 기기(배터리 없음)는 이 단계가 LaunchAgent `local.bootstrap.paseo`를 등록해 로그인할 때 Paseo 앱(데몬 포함)을 띄운다. 노트북은 선택 사항이라 필요하면 시스템 설정 > 일반 > 로그인 항목에 Paseo를 추가한다. 데스크톱에서 끄려면 `launchctl bootout gui/$(id -u)/local.bootstrap.paseo` 후 `~/Library/LaunchAgents/local.bootstrap.paseo.plist`를 지운다. 아직 설정 파일이 없으면 bootstrap은 프로필 설치를 건너뛰고 이 순서를 안내한다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
 
 작업자의 브라우저 작업은 [브라우저 작업](browser.md)의 운영 규칙(공유 연결, own 탭, 순서대로 조작)을, 네이티브 GUI 작업은 [기기 GUI 작업](computer-use.md)을 따른다. Paseo 작업자의 Computer Use 지원은 확인되지 않았으므로 GUI 작업을 기본으로 배정하지 않는다.

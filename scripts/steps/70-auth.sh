@@ -40,7 +40,7 @@ printf '      %s\n' \
   'codex           처음 실행하면 "Sign in with ChatGPT"' \
   'vercel          vercel login' \
   'Paseo 앱        실행 후 데몬 설정 → ./bootstrap.sh --only paseo' \
-  'Chrome          설정 대기였다면 종료 후 ./bootstrap.sh --only browser; 연결 허용 창은 직접 승인' \
+  'Chrome Beta     에이전트 전용. 에이전트가 쓸 서비스에 한 번씩 로그인' \
   'Claude·ChatGPT 앱' \
   'Tailscale 앱    실행 후 로그인'
 exit "$pending"

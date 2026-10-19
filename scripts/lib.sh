@@ -80,6 +80,11 @@ is_laptop() {
   [[ "$(pmset -g batt)" == *InternalBattery* ]]
 }
 
+# 자동 시작 스크립트(launch-agents.mjs)에 넘길 기기 종류. 노트북은 필요할 때, 늘 켜두는 기기는 로그인할 때 시작한다.
+device_flag() {
+  if is_laptop; then printf '%s' --laptop; else printf '%s' --desktop; fi
+}
+
 # 전원 설정이 맞는지. 노트북은 충전 중에만 잠자기 안 함, 데스크톱은 늘 켜두기(잠자기·화면 잠자기 끔, 네트워크로 깨우기 켬).
 power_ok() {
   if is_laptop; then
