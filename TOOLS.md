@@ -1,6 +1,6 @@
 # 도구와 공식 문서
 
-이 저장소가 설치하는 도구와 그 관계, 도구마다 공식 문서 링크와 설치 방법을 고른 이유를 적는다. 자동 설치 명령은 Brewfile과 `scripts/`에서 관리한다. 브라우저 기본값과 설치 범위는 [브라우저 가이드](agents/browser.md)에, 자동화 밖의 대안과 과거 시험은 같은 문서에 확인일·버전·지원 옵션과 함께 기록한다.
+이 저장소가 설치하는 도구와 그 관계, 도구마다 공식 문서 링크와 설치 방법을 고른 이유를 적는다. 자동 설치 명령은 Brewfile과 `scripts/`에서 관리한다.
 
 ## 전체 구조
 
@@ -63,6 +63,16 @@ flowchart LR
   CC --> PASEO
   CODEX --> PASEO
 
+  subgraph sgBrowser["브라우저"]
+    CHROME["Google Chrome"]
+    UV["uv"]
+    BU["Browser Use CLI<br/>· 공식 스킬"]
+  end
+  UV -->|도구 설치| BU
+  CHROME -->|기존 로그인·탭| BU
+  BU --> CC
+  BU --> CODEX
+
   subgraph sgTunnel["터널"]
     CF["cloudflared<br/>Cloudflare Tunnel"]
   end
@@ -74,8 +84,8 @@ flowchart LR
   classDef use fill:#ffffff,stroke:#d1d5db,color:#333
 
   class BREW,CC,CODEX,PNPM script
-  class CLT,NODE,NPM,VM,VERCEL bundled
-  class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP brew
+  class CLT,NODE,NPM,VM,VERCEL,BU bundled
+  class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP,CHROME,UV brew
   class PP,NP,GIT,HOOK,LOCAL use
 ```
 
@@ -127,11 +137,16 @@ flowchart LR
 | Codex CLI | `agents` 단계 (공식 설치 스크립트) | [learn.chatgpt.com](https://learn.chatgpt.com/docs/codex/cli) | 공식 기본 방법. `~/.local/bin`에 설치되고 스스로 업데이트된다 | 2026-10-07 |
 | ChatGPT 앱 | `cask "chatgpt"` | [learn.chatgpt.com](https://learn.chatgpt.com/docs/app) | 2026-07부터 Codex 앱이 ChatGPT 앱에 합쳐졌다 ([changelog](https://learn.chatgpt.com/docs/changelog)). 업데이트가 잦아 Homebrew가 OpenAI보다 먼저 새 버전으로 올라가 설치가 실패할 때가 있다. 하루쯤 뒤 다시 하거나 공식 페이지에서 받는다 | 2026-10-07 |
 | Paseo | `cask "paseo"` | [paseo.sh/download](https://paseo.sh/download), [paseo.sh/docs](https://paseo.sh/docs) | cask가 앱 안의 `paseo` CLI도 연결한다 | 2026-10-07 |
-| Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 기존 로그인·탭 작업용. 종료 상태에서 디버깅 설정을 병합하며 연결 승인은 별도 | 2026-10-18 |
-| agent-browser (기존 설치) | `brew "agent-browser"` | [공식 설치](https://agent-browser.dev/installation) | 이전 구성의 설치·검사가 남아 있음. 현재 사용 도구는 Browser Use | 2026-10-19 |
-| Browser Use | `brew "uv"` + `uv tool install --python 3.12 browser-use` (`browser` 단계) | [공식 CLI](https://docs.browser-use.com/open-source/browser-use-cli), [uv 설치](https://docs.astral.sh/uv/getting-started/installation/) | 웹 작업 기본 도구. 양쪽 공식 스킬 설치, 기존 CLI·개인 스킬 보존 → [운영 지침](agents/browser.md) | 2026-10-19 |
 
 ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내장 ripgrep으로 대신하고, Codex CLI는 ripgrep을 함께 설치한다.
+
+## 브라우저
+
+| 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
+|---|---|---|---|---|
+| Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 기존 로그인·탭 작업용. 종료 상태에서 디버깅 설정을 병합하며 연결 승인은 별도 | 2026-10-18 |
+| uv | `brew "uv"` | [astral.sh](https://docs.astral.sh/uv/getting-started/installation/) | Homebrew가 공식 방법 중 하나. Browser Use를 Node와 독립된 도구 환경에 설치한다 | 2026-10-19 |
+| Browser Use | `browser` 단계 (`uv tool install --python 3.12 browser-use`) | [공식 CLI](https://docs.browser-use.com/open-source/browser-use-cli) | 브라우저 작업 기본 도구. 공식 스킬을 Codex·Claude에 배치 → [운영 지침](agents/browser.md) | 2026-10-19 |
 
 ## 터널
 

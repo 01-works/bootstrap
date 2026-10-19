@@ -18,10 +18,11 @@ brew "docker"
 cask "claude"
 cask "chatgpt"        # Codex 앱 포함
 cask "paseo"
-cask "google-chrome"  # 기존 로그인·탭을 Browser Use로 직접 조작
-brew "uv"            # Browser Use CLI를 Node와 독립된 도구 환경에 설치
-brew "agent-browser" # 공식 Homebrew 배포. fnm Node 버전과 별도 관리
 cask "tailscale-app"  # 기기 간 원격 접속
+
+# 브라우저: 기존 Chrome 로그인·탭을 Browser Use CLI로 조작한다 (agents/browser.md)
+cask "google-chrome"
+brew "uv"             # Browser Use CLI 설치용 (browser 단계)
 
 # Cloudflare Tunnel
 brew "cloudflared"

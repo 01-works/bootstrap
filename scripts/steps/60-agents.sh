@@ -37,10 +37,4 @@ install_cli() {
 install_cli claude https://claude.ai/install.sh bash
 install_cli codex https://chatgpt.com/codex/install.sh sh
 
-if has paseo; then
-  ok "paseo"
-else
-  warn "paseo 없음 (Brewfile의 cask \"paseo\" 확인)"
-fi
-
 exit "$failed"

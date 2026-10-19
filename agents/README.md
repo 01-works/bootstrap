@@ -4,14 +4,14 @@
 
 | 도구 | 역할 | 설치 | 저장소에 있는 설정 | 로그인 |
 |---|---|---|---|---|
-| [Claude Code](claude-code.md) | 터미널·Paseo 코딩 작업, 지원되는 대화형 CLI의 GUI 작업 | 공식 설치 스크립트 (`agents` 단계) | `CLAUDE.md`, `settings.json` (링크) | `claude` 실행 |
-| Claude 앱 | Cowork·데스크톱 Claude Code와 앱 GUI 작업 | `cask "claude"` | | 앱에서 |
+| [Claude Code](claude-code.md) | 터미널·Paseo 코딩 작업 | 공식 설치 스크립트 (`agents` 단계) | `CLAUDE.md`, `settings.json` (링크) | `claude` 실행 |
+| Claude 앱 | Cowork·데스크톱 Claude Code | `cask "claude"` | | 앱에서 |
 | [Codex CLI](codex.md) | 터미널·Paseo 코딩 작업 | 공식 설치 스크립트 (`agents` 단계) | `AGENTS.md` (링크), `config.toml` (seed) | `codex` 실행 |
-| ChatGPT 앱 (Codex 앱) | Work·Codex와 Computer Use 플러그인 | `cask "chatgpt"` | | 앱에서 |
-| [Paseo](paseo.md) | 작업자·workspace 조율 | `cask "paseo"` | 프로필 (병합), `yw-supervisor` 스킬 (Claude·Codex에 링크) | 앱에서 |
-| [브라우저 작업](browser.md) | 웹 UI·기존 Chrome은 Browser Use CLI 기본 | Chrome·uv·agent-browser (`homebrew` 단계) | 기본 Browser Use CLI(uv)·양쪽 공식 스킬, 기존 Chrome·Paseo 설정 (`browser` 단계) | 지정한 기존 Chrome 프로필의 로그인 사용 |
+| ChatGPT 앱 (Codex 앱) | Work·Codex | `cask "chatgpt"` | | 앱에서 |
+| [Paseo](paseo.md) | 작업자·workspace 조율 | `cask "paseo"` | 프로필·도구 설정 (병합), `yw-supervisor` 스킬 (Claude·Codex에 링크) | 앱에서 |
+| [브라우저 작업](browser.md) | 웹 UI·기존 Chrome 조작 | Chrome·uv (`homebrew` 단계), Browser Use CLI·공식 스킬 (`browser` 단계) | Chrome 원격 디버깅 설정 (병합) | 지정한 기존 Chrome 프로필의 로그인 사용 |
 
-위 앱·CLI는 기존 bootstrap의 Homebrew·`agents`·`browser` 단계에서 이미 자동 설치한다. 앱 설치만으로 Computer Use가 활성화되거나 권한·동작 확인이 끝나지는 않는다. 제품·실행 환경별 지원 범위와 수동 절차는 [기기 GUI 작업](computer-use.md)에 모은다. Paseo 작업자의 GUI 도구 지원은 별도 확인이 필요하다.
+네이티브 앱 GUI 작업(Computer Use)은 앱 설치와 별개로 기기마다 활성화·권한 설정이 필요하다 → [기기 GUI 작업](computer-use.md).
 
 ## ChatGPT 앱과 Codex
 

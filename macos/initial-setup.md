@@ -19,13 +19,13 @@
 
 ## bootstrap 이후
 
-새 기기마다 로그인·기능 활성화·OS 권한을 확인한다. 아래 설정을 매 작업마다 반복하는 것은 아니며, Chrome 새 연결이나 제품의 세션별 승인은 별도로 요구될 수 있다. 권한·인증 상태는 다른 기기에서 복사하지 않는다.
+로그인·권한은 기기마다 새로 한다. 다른 기기에서 복사하지 않는다.
 
 - [ ] `auth` 단계가 마지막에 보여 주는 로그인 목록 처리
-- [ ] Paseo 앱에서 데몬 초기 설정 후 Chrome을 종료하고 `./bootstrap.sh --only browser,paseo`로 브라우저·프로필·공통 스킬 설정
-- [ ] Chrome 직접 연결 시 표시되는 허용 창 승인 ([브라우저 설정](../agents/browser.md))
-- [ ] 인증 작업에 쓸 기존 Chrome 프로필을 정하고, 필요하면 에이전트에게 기기별 기본값 저장 요청 ([선택·확인 절차](../agents/browser.md#chrome-프로필-선택과-확인)); 이번 작업만의 선택은 기본값을 바꾸지 않음
-- [ ] 네이티브 GUI 작업이 필요하면 [Computer Use 수동 활성화·권한·동작 확인](../agents/computer-use.md) 절차 진행
+- [ ] Paseo 앱에서 데몬 초기 설정 후 `./bootstrap.sh --only paseo`
+- [ ] Chrome 설정이 대기로 남았다면 Chrome을 종료하고 `./bootstrap.sh --only browser`. 처음 연결할 때 뜨는 허용 창은 직접 승인 ([브라우저 작업](../agents/browser.md))
+- [ ] 로그인 작업에 쓸 Chrome 프로필을 정하고, 필요하면 에이전트에게 기본값 저장 요청 ([프로필 선택](../agents/browser.md#chrome-프로필-선택과-확인))
+- [ ] 네이티브 GUI 작업이 필요하면 [Computer Use 활성화·권한 설정](../agents/computer-use.md)
 - [ ] 새 터미널에서 `./bootstrap.sh doctor`: 실패·수동 작업 대기 없이 완료 확인
 - [ ] 로그아웃했다가 다시 로그인 (다크 모드 같은 시스템 설정 완전 반영)
 - [ ] 트랙패드가 있다면 세 손가락 드래그 동작 확인 ([설정·미반영 시 확인 방법](system-settings.md#세-손가락-드래그))

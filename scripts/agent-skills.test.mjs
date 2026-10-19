@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, existsSync, readlinkSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, readlinkSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,9 +12,10 @@ test('스킬 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 �
   const source = fileURLToPath(new URL('../agents/skills/yw-supervisor', import.meta.url));
   const codex = join(dir, '.agents/skills/yw-supervisor');
   const claude = join(dir, '.claude/skills/yw-supervisor');
-  const run = (...args) => spawnSync(process.execPath, [script, '--home', dir, ...args], {
-    env: { ...process.env, DRY_RUN: '0' }, encoding: 'utf8'
-  });
+  const env = { ...process.env, DRY_RUN: '0' };
+  delete env.CLAUDE_CONFIG_DIR;
+  delete env.CODEX_HOME;
+  const run = (...args) => spawnSync(process.execPath, [script, '--home', dir, ...args], { env, encoding: 'utf8' });
   try {
     assert.equal(run('--dry-run').status, 0);
     assert.equal(run('--check').status, 1);
@@ -38,5 +39,13 @@ test('스킬 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 �
     assert.equal(run().status, 1);
     assert.equal(existsSync(codex), false);
     assert.equal(existsSync(claude), false);
+    // ~/.claude/skills가 ~/.agents/skills를 가리키는 기기에서는 한 번만 연결한다.
+    rmSync(join(dir, '.codex'), { recursive: true });
+    rmSync(join(dir, '.claude'), { recursive: true });
+    mkdirSync(join(dir, '.claude'));
+    symlinkSync(join(dir, '.agents/skills'), join(dir, '.claude/skills'));
+    assert.equal(run().status, 0);
+    assert.equal(readlinkSync(codex), source);
+    assert.equal(run('--check').status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

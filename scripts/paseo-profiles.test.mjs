@@ -59,10 +59,15 @@ test('CLI 병합: dry-run·check 무변경, 백업 권한, 타 설정 보존, �
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
-require('node:assert/strict').deepEqual(args.slice(0, 4), ['daemon', 'config', 'set', 'daemon.agentProfiles']);
+require('node:assert/strict').deepEqual(args.slice(0, 3), ['daemon', 'config', 'set']);
 const target = path.join(args[6], 'config.json');
+fs.appendFileSync(path.join(path.dirname(args[6]), 'calls'), args[3] + '\\n');
+if (process.env.FAIL_KEY === args[3]) process.exit(1);
 const config = JSON.parse(fs.readFileSync(target, 'utf8'));
-config.daemon.agentProfiles = JSON.parse(args[4]);
+const keys = args[3].split('.');
+let node = config;
+for (const key of keys.slice(0, -1)) node = node[key] ??= {};
+node[keys.at(-1)] = JSON.parse(args[4]);
 fs.writeFileSync(target, JSON.stringify(config));
 `, { mode: 0o755 });
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, PASEO_HOME: home, XDG_STATE_HOME: state, DRY_RUN: '0' };
@@ -76,7 +81,9 @@ fs.writeFileSync(target, JSON.stringify(config));
     assert.equal(applied.status, 0, applied.stderr);
     const actual = JSON.parse(readFileSync(configPath, 'utf8'));
     assert.equal(actual.daemon.agentProfiles.length, manifest.profiles.length);
+    assert.equal(actual.daemon.mcp.injectIntoAgents, true);
     delete actual.daemon.agentProfiles;
+    delete actual.daemon.mcp;
     assert.deepEqual(actual, original);
     const backupRoot = join(state, 'bootstrap/backup');
     const backups = readdirSync(backupRoot);
@@ -92,5 +99,17 @@ fs.writeFileSync(target, JSON.stringify(config));
     writeFileSync(configPath, '{bad json');
     assert.equal(run().status, 1);
     assert.equal(readFileSync(configPath, 'utf8'), '{bad json');
+
+    // 프로필은 맞고 도구만 꺼진 기기: 도구 값만 저장. 저장 실패는 실패로 보고하고 재실행으로 마무리한다.
+    const calls = join(dir, 'calls');
+    writeFileSync(configPath, JSON.stringify({ daemon: { agentProfiles: manifest.profiles } }));
+    rmSync(calls, { force: true });
+    assert.equal(run('--check').status, 1);
+    const failed = spawnSync(process.execPath, [script], { env: { ...env, FAIL_KEY: 'daemon.mcp.injectIntoAgents' }, encoding: 'utf8' });
+    assert.equal(failed.status, 1);
+    assert.match(failed.stderr, /injectIntoAgents/);
+    assert.equal(run().status, 0);
+    assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), ['daemon.mcp.injectIntoAgents', 'daemon.mcp.injectIntoAgents']);
+    assert.equal(run('--check').status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

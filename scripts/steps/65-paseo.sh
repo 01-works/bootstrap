@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 사용자 스킬 연결 후 앱 설정에 빠진 프로필만 추가한다. 기존 프로필 수정은 --update.
+# 사용자 스킬 연결 후 Paseo 설정에 빠진 프로필을 추가하고 에이전트용 Paseo 도구를 켠다. 기존 프로필 수정은 --update.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
 if ! has node; then
   if [[ "$DRY_RUN" == 1 ]]; then
-    info '[dry-run] Node 설치 후 사용자 스킬 연결 및 Paseo 프로필 병합'
+    info '[dry-run] Node 설치 후 사용자 스킬 연결, Paseo 프로필·도구 설정'
     exit 0
   fi
   die 'Node 없음. ./bootstrap.sh --only runtimes,paseo 로 다시 실행하세요'

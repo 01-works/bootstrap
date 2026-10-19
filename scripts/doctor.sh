@@ -27,12 +27,9 @@ step "명령어"
 for cmd in git gh gitleaks fnm node pnpm colima docker paseo; do
   if has "$cmd"; then pass "$cmd"; else miss "$cmd 없음"; fi
 done
-for cmd in claude codex agent-browser; do
+for cmd in claude codex; do
   if cli_works "$cmd"; then pass "$cmd 실행"; else miss "$cmd 없음 또는 실행 실패 ($(command -v "$cmd" || true))"; fi
 done
-if [[ "$(command -v agent-browser)" != /opt/homebrew/bin/agent-browser ]]; then
-  miss 'agent-browser가 Homebrew 경로를 사용하지 않음 (agents/browser.md의 설치 이전 참고)'
-fi
 if vercel --version >/dev/null 2>&1; then pass "vercel"; else miss "vercel 실행 안 됨 (./bootstrap.sh --only runtimes)"; fi
 if has node; then
   major="$(node --version | sed -E 's/^v([0-9]+).*/\1/')"
@@ -60,7 +57,7 @@ for src_root in "$BOOTSTRAP_ROOT"/home/*; do
         fi
         ;;
     esac
-  done < <(find "$src_root" -type f ! -name .DS_Store | sort)
+  done < <(find "$src_root" \( -type f -o -type l \) ! -name .DS_Store | sort)
 done
 
 step "사용자 스킬과 Paseo 프로필"
@@ -71,11 +68,11 @@ if has node; then
     miss "사용자 스킬 연결 확인 필요 (./bootstrap.sh --only paseo)"
   fi
   if [[ ! -f "${PASEO_HOME:-$HOME/.paseo}/config.json" ]]; then
-    wait_for_user 'Paseo 앱 초기 설정 후 ./bootstrap.sh --only browser,paseo'
+    wait_for_user 'Paseo 앱 초기 설정 후 ./bootstrap.sh --only paseo'
   elif node "$BOOTSTRAP_ROOT/scripts/paseo-profiles.mjs" --check; then
-    pass "Paseo 프로필"
+    pass "Paseo 프로필·도구 설정"
   else
-    warn "Paseo 프로필 확인 필요 (agents/paseo.md 참고). 기기별 변경은 유지됩니다"
+    warn "Paseo 프로필·도구 설정 확인 필요 (agents/paseo.md 참고). 기기별 변경은 유지됩니다"
   fi
 else
   warn "Node가 없어 사용자 스킬·Paseo 프로필 확인을 건너뜁니다"
@@ -83,26 +80,19 @@ fi
 
 step "브라우저"
 if has node && node "$BOOTSTRAP_ROOT/scripts/browser-use-setup.mjs" --check; then
-  pass "기본 Browser Use 실행·Codex/Claude 공식 스킬 (연결 검사는 별도)"
+  pass "Browser Use 실행·Codex/Claude 공식 스킬 (연결 검사는 별도)"
 else
-  miss "기본 Browser Use 설치/스킬 확인 필요 (./bootstrap.sh --only homebrew,browser)"
-fi
-agent_browser_claude_skill="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/agent-browser/SKILL.md"
-if [[ -f "$HOME/.agents/skills/agent-browser/SKILL.md" && -f "$agent_browser_claude_skill" ]] &&
-   cmp -s "$HOME/.agents/skills/agent-browser/SKILL.md" "$agent_browser_claude_skill"; then
-  pass "agent-browser 스킬 (Codex·Claude)"
-else
-  miss "agent-browser 스킬 설치 필요 (./bootstrap.sh --only browser)"
+  miss "Browser Use 설치/스킬 확인 필요 (./bootstrap.sh --only homebrew,browser)"
 fi
 if has node; then
   browser_status=0
   node "$BOOTSTRAP_ROOT/scripts/browser-settings.mjs" --check || browser_status=$?
   if [[ "$browser_status" == 0 ]]; then
-    pass "브라우저 설정값 (실제 연결·사용자 승인은 별도 검증)"
+    pass "Chrome 승인형 원격 디버깅 설정 (실제 연결·사용자 승인은 별도 검증)"
   elif [[ "$browser_status" == 2 ]]; then
-    wait_for_user '브라우저 수동 설정 대기 (위 안내 참고)'
+    wait_for_user 'Chrome 설정 대기 (위 안내 참고)'
   else
-    miss "브라우저 설정 확인 필요 (agents/browser.md 참고)"
+    miss "Chrome 설정 확인 필요 (agents/browser.md 참고)"
   fi
 fi
 

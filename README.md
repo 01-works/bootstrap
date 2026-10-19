@@ -19,14 +19,12 @@
    ./bootstrap.sh
    ```
 
-3. `auth` 단계의 로그인 목록 처리 (Claude, Codex, Vercel, Paseo, Tailscale). Paseo 앱 초기 설정 후 Chrome을 종료하고 `./bootstrap.sh --only browser,paseo` 재실행
+3. `auth` 단계의 로그인 목록 처리 (Claude, Codex, Vercel, Paseo, Tailscale). Paseo 앱 초기 설정 후 `./bootstrap.sh --only paseo` 재실행. Chrome 설정이 대기로 남았다면 Chrome을 종료하고 `./bootstrap.sh --only browser`
 4. 새 터미널을 열고 `./bootstrap.sh doctor`로 최종 확인. 실패·수동 작업 대기가 모두 없어야 완료
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
-브라우저 상호작용은 개발 UI와 기존 Chrome 모두 **Browser Use가 기본**이다. `browser` 단계가 uv 기반 CLI와 Codex·Claude 공식 스킬을 준비한다. 설치·연결 재사용·Chrome 프로필 선택은 [브라우저 운영 지침](agents/browser.md)을 따른다.
-
-CLI·API·MCP를 우선하고 그 밖의 네이티브 GUI는 제품별 Computer Use를 사용하는 [기기 GUI 설정·수동 활성화](agents/computer-use.md)를 따르며, 앱 설치와 권한 설정·실제 동작 확인은 구분한다.
+브라우저 작업은 [Browser Use](agents/browser.md), 네이티브 앱 GUI 작업은 [Computer Use](agents/computer-use.md)를 쓴다. Computer Use는 앱 설치와 별개로 기기마다 활성화·권한 설정이 필요하다.
 
 ## 모든 기기가 같은 세팅
 
@@ -54,8 +52,8 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
-| browser | uv 기반 Browser Use CLI·양쪽 공식 스킬, 기존 agent-browser·Chrome·Paseo 설정 유지 | [agents/browser.md](agents/browser.md) |
-| paseo | 사용자 스킬을 Claude·Codex에 연결하고 없는 Paseo 프로필 추가 | [agents/paseo.md](agents/paseo.md) |
+| browser | Browser Use CLI(uv)와 공식 스킬, Chrome 승인형 원격 디버깅 설정 | [agents/browser.md](agents/browser.md) |
+| paseo | 사용자 스킬을 Claude·Codex에 연결, 없는 Paseo 프로필 추가, Paseo 도구 켜기 | [agents/paseo.md](agents/paseo.md) |
 | auth | GitHub 로그인, 기기별 SSH 키, 남은 로그인 안내 | [development/git.md](development/git.md) |
 
 ## 자주 쓰는 명령
@@ -81,9 +79,9 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
 - `.seed`로 끝나는 파일은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용.
+- 같은 내용을 두 도구가 쓰는 파일은 저장소 안에서 링크한다. Codex `AGENTS.md`는 Claude Code `CLAUDE.md`를 가리킨다.
 - Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 앱을 처음 실행한 뒤 `./bootstrap.sh --only paseo`를 실행한다. 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.
-- 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude·Codex 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다.
-- `Browser Use` CLI와 공식 스킬은 `browser` 단계에서 Codex·Claude의 기본/실제 설정 경로에 준비한다. 기존 CLI는 갱신하지 않고 다른 내용의 개인 스킬·깨진 링크 등 충돌은 보존하고 중단한다. 기존 agent-browser 설치도 유지한다. 공통 스킬은 양쪽에 제공하고, 제공자 전용 내장 기능은 복제하지 않는다. Chrome 설정은 종료 상태에서 백업 후 병합한다([브라우저 설정](agents/browser.md)).
+- 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude(`~/.claude/skills`)·Codex(`~/.agents/skills`) 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다. 같은 이름의 다른 스킬이 있으면 덮어쓰지 않고 멈춘다.
 - 기존 파일은 `~/.local/state/bootstrap/backup/<시각>-<번호>/`로 옮긴 뒤 연결한다. 되돌리려면 링크(`~/.zshrc` 등)를 지우고 백업 폴더의 파일을 제자리로 옮긴다.
 - 기기마다 다른 설정은 `~/.zshrc.local`, `~/.gitconfig.local`에 둔다. 저장소에 넣지 않는다.
 - API 키 같은 비밀값은 `~/.zsh_secrets`에 `export`로 두고 권한은 600으로 한다. `.zshrc`가 있으면 읽는다. 저장소에는 넣지 않고, 커밋 전에 gitleaks가 한 번 더 검사한다.
@@ -97,9 +95,12 @@ Brewfile              설치 목록
 TOOLS.md              도구별 공식 문서 링크, 설치 방법을 고른 이유
 home/                 ~에 연결할 설정 파일 (묶음별)
 scripts/steps/        단계별 스크립트
+scripts/*.mjs         설정 병합·스킬 배치 (같은 이름의 *.test.mjs가 테스트)
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
 macos/                첫 부팅, 시스템 설정
 development/          Homebrew, Node, git, 터미널, 컨테이너
-agents/               코딩 에이전트별 설치·설정
+agents/               코딩 에이전트별 설치·설정, 브라우저·GUI 작업
+agents/skills/        직접 만든 스킬 (yw-*)
+.githooks/            커밋 전 비밀값 검사
 ```

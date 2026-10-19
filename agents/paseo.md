@@ -12,6 +12,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 
 - `~/.paseo/`: 데몬 설정, 키, 에이전트 기록, 로그가 섞여 있어서 저장소에 넣지 않는다.
 - 예외적으로 공유할 프로필의 기본값만 [paseo-profiles.json](paseo-profiles.json)에 보관한다. `config.json` 전체를 복사하거나 링크하지 않는다.
+- 에이전트에 Paseo 도구를 제공하는 설정(`daemon.mcp.injectIntoAgents`, 앱의 Enable Paseo tools)은 `paseo` 단계가 켠다. Supervisor가 작업자를 만들 때 필요하다.
 - 기본 스킬: Paseo가 `~/.claude/skills/paseo*`(Claude Code)와 `~/.agents/skills/paseo*`에 설치한다. 각 폴더의 `.paseo-managed-files.json`이 Paseo가 관리한다는 표시다. 저장소에 넣지 않는다.
 - 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md)는 이 저장소에서 관리한다. `paseo` 단계가 같은 원본 폴더를 `~/.agents/skills/yw-supervisor`와 `~/.claude/skills/yw-supervisor`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
 
@@ -43,7 +44,7 @@ Paseo에서 Supervisor 프로필로 새 대화를 열고 다음처럼 요청한�
 
 > yw-supervisor 스킬로 다음 작업들을 총괄해줘: A 프로젝트의 새 화면, B 프로젝트의 API 수정, C 프로젝트의 회귀 조사. 직접 구현하지 말고 적절한 작업자에게 할당하고 진행·검증·완료를 관리해줘.
 
-프로필 선택만으로 스킬이 실행되지는 않는다. 스킬이 실제 작업 지시를 작업자의 `initialPrompt`에 전달한다. Paseo 도구가 없다면 Settings → 해당 host → Agents에서 Enable Paseo tools를 켜고 새 에이전트를 연다. CLI로도 운영할 수 있다.
+프로필 선택만으로 스킬이 실행되지는 않는다. 스킬이 실제 작업 지시를 작업자의 `initialPrompt`에 전달한다. Paseo 도구가 보이지 않으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다. CLI로도 운영할 수 있다.
 
 스킬은 작업 기록을 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor/<관리 세션 ID>/tasks.md`에 남기고 완료 알림에 따라 다음 조치를 진행한다. 실행 중인 작업을 반복 조회하거나 요청하지 않은 상시 감시를 만들지 않는다. 재개·인계 때 기록과 실제 상태를 대조하고 기존 작업자를 중복 생성하지 않는다. 기존 자식의 자동 알림 수신자가 새 감독자로 바뀌는 것은 아니므로 인계 시 후속 보고 경로도 정한다.
 
@@ -53,7 +54,7 @@ Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 �
 
 ## 설치와 갱신
 
-`paseo` 단계는 먼저 사용자 스킬을 연결하고, `$PASEO_HOME/config.json`(기본 `~/.paseo/config.json`)의 `daemon.agentProfiles`에 없는 프로필만 추가한다. 이름 또는 ID가 일치하는 기존 프로필과 개인 프로필은 유지한다. 예전 `Cross Reviewer`는 `Deep Reviewer`의 이전 이름으로 인식한다. Paseo 설정이 아직 없어도 스킬은 연결된다.
+`paseo` 단계는 먼저 사용자 스킬을 연결하고, `$PASEO_HOME/config.json`(기본 `~/.paseo/config.json`)의 `daemon.agentProfiles`에 없는 프로필만 추가하며, 꺼져 있으면 Paseo 도구 제공을 켠다. 이름 또는 ID가 일치하는 기존 프로필과 개인 프로필은 유지한다. 예전 `Cross Reviewer`는 `Deep Reviewer`의 이전 이름으로 인식한다. Paseo 설정이 아직 없어도 스킬은 연결된다.
 
 ```sh
 ./bootstrap.sh --only paseo --dry-run
@@ -69,14 +70,12 @@ node scripts/paseo-profiles.mjs --update
 
 변경 전 전체 설정을 `~/.local/state/bootstrap/backup/paseo-*/config.json`에 권한 600으로 백업한다(`XDG_STATE_HOME` 지정 시 해당 경로 사용). Paseo CLI가 설정을 검증·저장하고 실행 중인 데몬에 reload한다. 재시작은 하지 않는다. CLI가 `saved; not applied`를 보고하면 다음 데몬 시작 때 적용되며, reload 실패 시 원인을 해결한 뒤 `paseo reload`한다.
 
-`doctor`는 프로필 누락·차이를 경고만 하고, 사용자 스킬 연결 누락·충돌은 실패로 표시한다. 스킬만 설치하거나 검사하려면 `node scripts/agent-skills.mjs` 또는 `node scripts/agent-skills.mjs --check`를 쓴다. 기본값의 모델 ID를 바꿨을 때 기존 기기는 위 `--update` 명령으로 갱신한다. 모델과 추론 옵션이 해당 기기에서 지원되는지는 Paseo 모델 선택기에서 확인한다.
+`doctor`는 프로필·도구 설정의 누락·차이를 경고만 하고, 사용자 스킬 연결 누락·충돌은 실패로 표시한다. 스킬만 설치하거나 검사하려면 `node scripts/agent-skills.mjs` 또는 `node scripts/agent-skills.mjs --check`를 쓴다. 기본값의 모델 ID를 바꿨을 때 기존 기기는 위 `--update` 명령으로 갱신한다. 모델과 추론 옵션이 해당 기기에서 지원되는지는 Paseo 모델 선택기에서 확인한다.
 
 공식 문서: [프로필](https://paseo.sh/docs/agent-profiles.md), [설정과 reload](https://paseo.sh/docs/configuration.md).
 
 ## 새 기기에서
 
-앱을 실행하고 안내에 따라 데몬을 설정한 뒤 `./bootstrap.sh --only browser,paseo`를 실행한다. 아직 설정 파일이 없으면 bootstrap은 프로필 설치를 건너뛰고 이 순서를 안내한다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
+앱을 실행하고 안내에 따라 데몬을 설정한 뒤 `./bootstrap.sh --only paseo`를 실행한다. 아직 설정 파일이 없으면 bootstrap은 프로필 설치를 건너뛰고 이 순서를 안내한다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
 
-UI 개발 검증과 기존 Chrome 로그인·탭 작업은 공식 `browser-use` 스킬을 읽고 uv로 설치한 Browser Use CLI를 기본으로 사용한다. Supervisor는 같은 default daemon/runtime 환경과 작업자별 own target·조작 차례를 인계하고 브라우저 조작을 순차 배정한다. 완료 시 own 탭만 정리하고 공유 연결은 자동 종료하지 않는다. 다른 브라우저 도구가 필요하면 이유를 알리고 사용자와 선택을 조율한다. 설치·자동 설정·연결 승인 범위는 [브라우저 작업](browser.md)에 정리한다.
-
-Paseo 작업자에서 Computer Use가 지원·노출된다는 보장은 없으며 현재 미검증이다. 네이티브 GUI를 기본 배정하지 말고 실제 도구를 확인한 뒤 기기·대상 앱·담당자·조작 순서를 조율한다. 도구가 없으면 [공식 지원 대화형 CLI·앱 경로](computer-use.md)를 안내한다. 브라우저와 GUI가 같은 앱을 동시에 조작하지 않게 하고 공통 OS 화면 잠금은 가정하지 않는다.
+작업자의 브라우저 작업은 [브라우저 작업](browser.md)의 운영 규칙(공유 연결, own 탭, 순서대로 조작)을, 네이티브 GUI 작업은 [기기 GUI 작업](computer-use.md)을 따른다. Paseo 작업자의 Computer Use 지원은 확인되지 않았으므로 GUI 작업을 기본으로 배정하지 않는다.

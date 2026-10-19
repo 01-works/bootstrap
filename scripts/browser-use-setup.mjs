@@ -1,57 +1,22 @@
 // Browser Use 설치·공식 스킬 배치/검사만 수행한다. daemon/Chrome에는 연결하지 않는다.
-import { lstatSync, realpathSync, readFileSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { physical, present, skillDestinations } from './skill-paths.mjs';
 
-function present(path) {
-  try { lstatSync(path); return true; }
-  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
-}
-function physical(path) {
-  if (present(path)) return realpathSync(path); // 깨진 링크도 충돌로 취급
-  return join(physical(dirname(path)), path.split('/').at(-1));
-}
-
+// 공식 스킬이 없는 경로만 돌려준다. 다른 내용·파일·깨진 링크는 덮어쓰지 않고 중단한다.
 export function skillPlan({ home, env, official }) {
-  const canonicalCodex = join(home, '.codex/skills/browser-use');
-  const canonicalClaude = join(home, '.claude/skills/browser-use');
-  const codex = join(env.CODEX_HOME || join(home, '.codex'), 'skills/browser-use');
-  const claude = join(env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'skills/browser-use');
-  const shared = join(home, '.agents/skills/browser-use');
-  const paths = [...new Set([canonicalCodex, canonicalClaude, codex, claude, shared])];
-  for (const path of paths.filter(present)) {
-    if (readFileSync(join(path, 'SKILL.md'), 'utf8') !== official) {
-      throw new Error(`기존 스킬이 공식 CLI 내용과 다릅니다: ${path}. 덮어쓰지 않았습니다. 차이를 검토하세요.`);
+  const destinations = skillDestinations('browser-use', { home, env });
+  for (const path of destinations.filter(present)) {
+    let text = null;
+    try { text = readFileSync(join(path, 'SKILL.md'), 'utf8'); } catch {}
+    if (text !== official) {
+      throw new Error(`기존 스킬이 공식 CLI 내용과 다릅니다: ${path}. 덮어쓰지 않았습니다. CLI를 갱신했다면 이 폴더를 지우고 다시 실행하세요.`);
     }
   }
-  // Codex가 함께 검색하는 shared/전용 경로에 중복 스킬을 추가하지 않는다.
-  for (const path of [canonicalCodex, codex]) {
-    if (present(shared) && present(path) && physical(shared) !== physical(path)) {
-      throw new Error(`Codex 중복 스킬: ${shared}, ${path}. 기존 항목을 유지했습니다.`);
-    }
-  }
-  // provider 간에도 상위 skills 링크가 같은 실제 디렉터리를 가리킬 수 있다.
-  // 아직 없는 shared 스킬도 Claude 경로를 통해 생성될 예정이면 함께 계획한다.
-  const usesShared = [canonicalCodex, codex, canonicalClaude, claude]
-    .some(path => physical(path) === physical(shared));
-  if (usesShared && !present(shared) &&
-      new Set([canonicalCodex, codex].filter(present).map(physical)).size > 1) {
-    throw new Error(`Codex 중복 스킬: shared 생성 시 기존 원본이 충돌합니다: ${canonicalCodex}, ${codex}. 기존 항목을 유지했습니다.`);
-  }
-  const codexGroup = present(shared) ? [shared]
-    : usesShared ? [canonicalCodex, codex, shared] : [canonicalCodex, codex];
-  const planned = new Map();
-  for (const group of [codexGroup, [canonicalClaude, claude]]) {
-    const unique = [...new Map(group.map(path => [physical(path), path])).values()];
-    const source = unique.find(present) || unique.find(path => planned.has(physical(path))) || unique[0];
-    if (!present(source) && !planned.has(physical(source))) planned.set(physical(source), { path: source, official });
-    for (const path of unique) {
-      if (path !== source && !present(path) && !planned.has(physical(path))) planned.set(physical(path), { path, source });
-    }
-  }
-  return { plan: [...planned.values()], paths: paths.filter(present) };
+  return { plan: destinations.filter(path => !present(path)), paths: destinations.filter(present) };
 }
 
 export function setup({ home = homedir(), env = process.env, check = false, dryRun = false, run = spawnSync } = {}) {
@@ -78,7 +43,7 @@ export function setup({ home = homedir(), env = process.env, check = false, dryR
     }
     if (dryRun) {
       console.log('[dry-run] uv tool install --python 3.12 browser-use (기존 CLI는 설치/갱신하지 않음)');
-      console.log('[dry-run] 설치 후 공식 스킬과 양쪽 기본/실제 provider 경로 충돌 검사·누락만 배치');
+      console.log('[dry-run] 설치 후 공식 스킬을 ~/.agents/skills(Codex)와 ~/.claude/skills(Claude)에 충돌 검사 후 배치');
       return;
     }
     checked('uv', ['--version']);
@@ -94,16 +59,12 @@ export function setup({ home = homedir(), env = process.env, check = false, dryR
   const { plan, paths } = skillPlan({ home, env, official });
   console.log(`Browser Use CLI 실행: ${version.stdout.trim()} (daemon 연결 없음)`);
   for (const path of paths) console.log(`공식 스킬 확인: ${path} → ${physical(path)}`);
-  for (const item of plan) {
-    console.log(`${check ? '누락' : dryRun ? '[dry-run] 설치' : '설치'}: ${item.path}`);
+  for (const path of plan) {
+    console.log(`${check ? '누락' : dryRun ? '[dry-run] 설치' : '설치'}: ${path}`);
     if (check || dryRun) continue;
-    mkdirSync(dirname(item.path), { recursive: true });
-    if (item.source) symlinkSync(item.source, item.path, 'dir');
-    else {
-      // 공식 설치기는 기존 파일을 덮어쓴다. 같은 CLI의 skill 출력만 새 디렉터리에 배치한다.
-      mkdirSync(item.path); // 동시 설치/충돌 시 실패하며 기존 항목 보존
-      writeFileSync(join(item.path, 'SKILL.md'), item.official, { flag: 'wx' });
-    }
+    mkdirSync(dirname(path), { recursive: true });
+    mkdirSync(path); // 동시 설치/충돌 시 실패하며 기존 항목 보존
+    writeFileSync(join(path, 'SKILL.md'), official, { flag: 'wx' });
   }
   if (check && plan.length) throw new Error('Browser Use 공식 스킬 누락. ./bootstrap.sh --only browser');
 }

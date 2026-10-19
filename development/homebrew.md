@@ -2,7 +2,7 @@
 
 설치 목록은 Brewfile이 기준이다.
 
-- [`Brewfile`](../Brewfile) 하나에 모든 기기가 설치할 것을 적는다: gh, gitleaks, fnm, colima·docker, Claude·ChatGPT·Paseo·Tailscale 앱, cloudflared
+- [`Brewfile`](../Brewfile) 하나에 모든 기기가 설치할 것을 적는다. 항목별 이유는 [TOOLS.md](../TOOLS.md).
 
 ## 추가·삭제
 

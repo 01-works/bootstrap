@@ -3,13 +3,9 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, symlinkSyn
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { present, skillDestinations } from './skill-paths.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../agents/skills/', import.meta.url));
-
-function present(path) {
-  try { lstatSync(path); return true; }
-  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
-}
 
 function main() {
   const args = process.argv.slice(2);
@@ -28,10 +24,7 @@ function main() {
     if (!entry.isDirectory()) continue;
     const src = join(sourceRoot, entry.name);
     if (!existsSync(join(src, 'SKILL.md'))) throw new Error(`SKILL.md 없음: ${src}`);
-    const legacy = join(targetHome, '.codex/skills', entry.name);
-    if (present(legacy)) throw new Error(`Codex 중복 스킬 확인 필요: ${legacy}. 기존 스킬은 유지했습니다.`);
-    for (const scope of ['.agents/skills', '.claude/skills']) {
-      const dst = join(targetHome, scope, entry.name);
+    for (const dst of skillDestinations(entry.name, { home: targetHome, env: process.env })) {
       if (present(dst)) {
         if (lstatSync(dst).isSymbolicLink() && resolve(dirname(dst), readlinkSync(dst)) === src) continue;
         throw new Error(`스킬 경로 충돌: ${dst}. 기존 스킬은 유지했습니다.`);

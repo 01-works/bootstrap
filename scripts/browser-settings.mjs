@@ -1,4 +1,4 @@
-// Chrome 승인형 디버깅과 Paseo Browser 설정. 인증·프로필 데이터는 저장소에 복사하지 않는다.
+// Chrome 승인형 원격 디버깅 설정. 인증·프로필 데이터는 저장소에 복사하지 않는다.
 import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -20,12 +20,12 @@ export function enableChromeDebugging(config) {
 
 const defaultStateHome = () => process.env.XDG_STATE_HOME || join(homedir(), '.local/state');
 
-function backup(path, stateHome, label) {
+function backup(path, stateHome) {
   if (!existsSync(path)) return;
   const root = join(stateHome, 'bootstrap/backup');
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  const dir = mkdtempSync(join(root, `browser-${label}-`));
-  const dst = join(dir, label === 'chrome' ? 'Local State' : 'config.json');
+  const dir = mkdtempSync(join(root, 'browser-chrome-'));
+  const dst = join(dir, 'Local State');
   copyFileSync(path, dst);
   chmodSync(dst, 0o600);
   writeFileSync(join(dir, 'source-path.txt'), `${path}\n`, { mode: 0o600 });
@@ -69,7 +69,7 @@ export function configureChrome({ home = homedir(), stateHome = defaultStateHome
     if ((existsSync(path) ? readFileSync(path, 'utf8') : null) !== before.text) throw new Error('Chrome 설정이 변경되었습니다. 다시 실행하세요.');
   };
   assertUnchanged();
-  backup(path, stateHome, 'chrome');
+  backup(path, stateHome);
   mkdirSync(dirname(path), { recursive: true });
   const temp = `${path}.bootstrap-${process.pid}`;
   const fd = openSync(temp, 'wx', 0o600);
@@ -87,40 +87,10 @@ export function configureChrome({ home = homedir(), stateHome = defaultStateHome
   return 0;
 }
 
-export function configurePaseo({ home = process.env.PASEO_HOME || join(homedir(), '.paseo'), stateHome = defaultStateHome(), check = false, dryRun = false, run = spawnSync } = {}) {
-  const path = join(home, 'config.json');
-  if (!existsSync(path)) {
-    console.log('Paseo 설정 대기: 앱 초기 설정 후 ./bootstrap.sh --only browser,paseo');
-    return dryRun ? 0 : 2;
-  }
-  const { value } = readObject(path);
-  const wanted = ['daemon.mcp.injectIntoAgents', 'daemon.browserTools.enabled'];
-  const missing = wanted.filter(key => key.split('.').reduce((v, k) => v?.[k], value) !== true);
-  if (!missing.length) { console.log('Paseo 도구·Browser 설정: 켜짐'); return 0; }
-  if (check) { console.error(`Paseo 설정 필요: ${missing.join(', ')}`); return 1; }
-  if (dryRun) { console.log(`[dry-run] Paseo 설정·reload: ${missing.join(', ')}`); return 0; }
-  backup(path, stateHome, 'paseo');
-  for (const key of missing) {
-    const result = run('paseo', ['daemon', 'config', 'set', key, 'true', '--home', home], { stdio: 'inherit' });
-    if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error('Paseo 설정 적용 실패. 일부 값이 저장되었을 수 있습니다. 저장 실패는 재실행, 저장 후 reload 실패는 해당 home으로 paseo reload를 실행하세요.');
-  }
-  return 0;
-}
-
 function main() {
   const args = process.argv.slice(2);
-  if (args.some(arg => !['--check', '--dry-run', '--chrome', '--paseo'].includes(arg))) throw new Error('지원 인자: --check --dry-run --chrome --paseo');
-  const options = { check: args.includes('--check'), dryRun: args.includes('--dry-run') || process.env.DRY_RUN === '1' };
-  const targets = [];
-  if (args.includes('--chrome') || !args.includes('--paseo')) targets.push(configureChrome);
-  if (args.includes('--paseo') || !args.includes('--chrome')) targets.push(configurePaseo);
-  const statuses = targets.map(configure => {
-    try { return configure(options); }
-    catch (error) { console.error(error.message); return 1; }
-  });
-  // 한쪽의 실패로 다른 쪽 적용을 막지 않는다. 실패가 수동 대기보다 우선한다.
-  process.exitCode = statuses.includes(1) ? 1 : statuses.includes(2) ? 2 : 0;
+  if (args.some(arg => !['--check', '--dry-run'].includes(arg))) throw new Error('지원 인자: --check --dry-run');
+  process.exitCode = configureChrome({ check: args.includes('--check'), dryRun: args.includes('--dry-run') || process.env.DRY_RUN === '1' });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

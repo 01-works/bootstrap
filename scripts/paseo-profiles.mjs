@@ -1,4 +1,4 @@
-// 프로필만 병합한다. 설정 검증·저장·reload는 Paseo CLI에 맡긴다.
+// Paseo 프로필 병합과 에이전트 도구 제공 설정. 설정 검증·저장·reload는 Paseo CLI에 맡긴다.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -75,17 +75,24 @@ function main() {
   const { profiles, changes, drift } = mergeProfiles(config.daemon?.agentProfiles ?? [], manifest, args.includes('--update'));
   for (const change of changes) console.log(change);
   for (const name of drift) console.log(`기존 설정 유지 (저장소와 다름): ${name}`);
+  // 기존 설정에 쓸 값. 프로필은 바뀐 것이 있을 때만, Paseo 도구(yw-supervisor가 사용)는 꺼져 있을 때만.
+  const settings = [];
+  if (changes.length) settings.push(['daemon.agentProfiles', JSON.stringify(profiles)]);
+  if (config.daemon?.mcp?.injectIntoAgents !== true) {
+    console.log('켜기: 에이전트에 Paseo 도구 제공 (daemon.mcp.injectIntoAgents)');
+    settings.push(['daemon.mcp.injectIntoAgents', 'true']);
+  }
   if (args.includes('--check')) {
-    if (changes.length || drift.length) process.exitCode = 1;
-    else console.log('Paseo 프로필이 저장소와 일치합니다.');
+    if (settings.length || drift.length) process.exitCode = 1;
+    else console.log('Paseo 프로필·도구 설정이 저장소와 일치합니다.');
     return;
   }
-  if (!changes.length) {
-    console.log('추가로 저장할 프로필이 없습니다.');
+  if (!settings.length) {
+    console.log('추가로 저장할 설정이 없습니다.');
     return;
   }
   if (args.includes('--dry-run') || process.env.DRY_RUN === '1') {
-    console.log('[dry-run] 프로필만 병합하고 Paseo CLI로 검증·저장·reload 예정');
+    console.log('[dry-run] Paseo CLI로 검증·저장·reload 예정');
     return;
   }
   if (readFileSync(configPath, 'utf8') !== original) throw new Error('Paseo 설정이 변경되었습니다. 다시 실행하세요.');
@@ -96,9 +103,11 @@ function main() {
   copyFileSync(configPath, backup);
   chmodSync(backup, 0o600);
   console.log(`기존 설정 백업: ${backup}`);
-  const result = spawnSync('paseo', ['daemon', 'config', 'set', 'daemon.agentProfiles', JSON.stringify(profiles), '--home', home], { stdio: 'inherit' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error('Paseo 설정 적용 실패. CLI 출력의 저장·reload 상태를 확인하세요.');
+  for (const [key, value] of settings) {
+    const result = spawnSync('paseo', ['daemon', 'config', 'set', key, value, '--home', home], { stdio: 'inherit' });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`Paseo 설정 적용 실패 (${key}). 앞의 값은 저장되었을 수 있습니다. CLI 출력의 저장·reload 상태를 확인하고 다시 실행하세요.`);
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

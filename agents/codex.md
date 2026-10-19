@@ -12,16 +12,14 @@ ChatGPT 앱(Codex 앱 포함)은 따로 `cask "chatgpt"`로 설치한다. 둘의
 
 | 파일 | 저장소 | 이유 |
 |---|---|---|
-| `~/.codex/AGENTS.md` | [링크](../home/codex/.codex/AGENTS.md) | 모든 프로젝트 공통 지시 |
+| `~/.codex/AGENTS.md` | [링크](../home/codex/.codex/AGENTS.md) | 모든 프로젝트 공통 지시. Claude Code의 `CLAUDE.md`와 같은 파일(저장소 안 링크) |
 | `~/.codex/config.toml` | [seed](../home/codex/.codex/config.toml.seed): 없을 때만 복사 | Codex가 이 파일에 계속 써넣는다 |
 | `~/.codex/hooks.json` | 넣지 않음 | 훅이 부르는 도구가 기기마다 다르다 |
 | `auth.json`, 세션, 기록 | 넣지 않음 | 인증·기기 상태 |
 
 ### config.toml을 링크하지 않는 이유
 
-Codex는 새 폴더에서 실행될 때마다 신뢰 폴더 목록(`[projects."/Users/..."]`)을 이 파일에 추가한다. 그래서 기기마다 다르고, 링크하면 커밋할 때마다 의미 없는 변경이 생기고 프로젝트 경로가 저장소에 남는다. 플러그인 목록, ChatGPT 앱 내부 경로, `node_repl` MCP 설정도 앱이 관리한다.
-
-앱이 생성·관리한 `config.toml` 항목과 `notify` 명령은 로컬 상태로 보존한다. 앱 내부 경로나 알림 명령을 임의로 지우거나 공통 seed로 옮기지 않는다. Computer Use의 TCC·앱 승인 목록 등도 [기기별 설정](computer-use.md)으로 남긴다.
+Codex는 새 폴더에서 실행될 때마다 신뢰 폴더 목록(`[projects."/Users/..."]`)을 이 파일에 추가한다. 그래서 기기마다 다르고, 링크하면 커밋할 때마다 의미 없는 변경이 생기고 프로젝트 경로가 저장소에 남는다. 플러그인 목록, ChatGPT 앱 내부 경로, `node_repl` MCP 설정, `notify` 명령도 앱이 관리한다. 이런 항목은 각 기기에 그대로 두고 seed로 옮기지 않는다.
 
 seed에는 직접 고른 값만 넣었다: 모델, 추론 강도, 성격, 에이전트 수, 기능 플래그, 데스크톱 설정, Figma MCP.
 

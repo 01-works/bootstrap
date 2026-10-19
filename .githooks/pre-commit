@@ -1,5 +1,5 @@
 #!/bin/sh
-# 커밋 전에 staged 변경에서 비밀값을 찾는다. core.hooksPath는 preflight 단계가 설정한다.
+# 커밋 전에 staged 변경에서 비밀값을 찾는다. core.hooksPath는 xcode 단계가 설정한다.
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "pre-commit: gitleaks가 없어서 커밋을 막습니다 (brew install gitleaks)" >&2
   exit 1

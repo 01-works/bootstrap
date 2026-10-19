@@ -10,9 +10,9 @@
 
 | 파일 | 저장소 | 내용 |
 |---|---|---|
-| `~/.claude/CLAUDE.md` | [링크](../home/claude/.claude/CLAUDE.md) | 모든 프로젝트 공통 지시 (한국어로 답하기) |
+| `~/.claude/CLAUDE.md` | [링크](../home/claude/.claude/CLAUDE.md) | 모든 프로젝트 공통 지시 (한국어, 브라우저·GUI 작업 원칙). Codex `AGENTS.md`와 같은 파일 |
 | `~/.claude/settings.json` | [링크](../home/claude/.claude/settings.json) | 모델, 권한, 알림 |
-| `~/.claude/skills/` | 넣지 않음 | Paseo가 설치하는 스킬, 동기화되는 스킬 |
+| `~/.claude/skills/` | 넣지 않음 | Paseo·Browser Use가 설치하는 스킬, 동기화되는 스킬. 직접 만든 스킬만 `agents/skills/`에서 링크 |
 | 그 외 `~/.claude/*` | 넣지 않음 | 세션, 기록, 캐시, 플러그인 |
 
 링크된 파일이라 Claude Code가 `settings.json`에 저장한 변경은 저장소에도 바로 반영된다. `git diff`로 확인하고 커밋한다.
