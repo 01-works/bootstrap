@@ -5,19 +5,13 @@
 ## 새 Mac에서
 
 1. 첫 부팅과 손으로 할 설정 → [macos/initial-setup.md](macos/initial-setup.md)
-2. 터미널을 열고 순서대로:
+2. 터미널을 열고 한 줄로 설치한다. Xcode 명령줄 도구가 없으면 설치 창이 뜨니 끝날 때까지 기다린다. 저장소를 `~/dev/bootstrap`에 받고 `bootstrap.sh`를 실행한다.
 
    ```sh
-   xcode-select --install          # 설치 창이 뜨면 끝날 때까지 기다린다
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   eval "$(/opt/homebrew/bin/brew shellenv)"
-   brew install gh
-   gh auth login --web --git-protocol https   # 비공개 저장소라 clone 전에 로그인이 필요하다
-   gh repo clone 01-works/bootstrap ~/dev/bootstrap
-   cd ~/dev/bootstrap
-   ./bootstrap.sh --dry-run   # 할 일 미리 보기
-   ./bootstrap.sh
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/01-works/bootstrap/main/install.sh)"
    ```
+
+   할 일만 미리 보려면 끝에 ` install --dry-run`을 붙인다. 다른 위치에 받으려면 앞에 `BOOTSTRAP_DIR=<경로>`를 붙인다. 이미 받은 기기에서 다시 실행하면 저장소를 갱신(fast-forward)한 뒤 실행한다. 저장소는 공개라 받을 때 로그인이 필요 없고, 커밋을 올리려면 `auth` 단계의 GitHub 로그인이 필요하다.
 
 3. `auth` 단계의 로그인 목록 처리 (Claude, Codex, Vercel, Paseo, Tailscale). Paseo 앱 초기 설정 후 `./bootstrap.sh --only paseo` 재실행. 에이전트 Chrome(Chrome Beta)에서 에이전트가 쓸 서비스에 로그인
 4. 새 터미널을 열고 `./bootstrap.sh doctor`로 최종 확인. 실패·수동 작업 대기가 모두 없어야 완료
@@ -91,6 +85,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 ## 구조
 
 ```text
+install.sh            새 Mac 한 줄 설치 (저장소 받기 → bootstrap.sh)
 bootstrap.sh          진입점
 Brewfile              설치 목록
 TOOLS.md              도구별 공식 문서 링크, 설치 방법을 고른 이유
