@@ -77,4 +77,6 @@ node scripts/paseo-profiles.mjs --update
 
 앱을 실행하고 안내에 따라 데몬을 설정한 뒤 `./bootstrap.sh --only browser,paseo`를 실행한다. 아직 설정 파일이 없으면 bootstrap은 프로필 설치를 건너뛰고 이 순서를 안내한다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
 
-UI 개발 검증은 Paseo Browser, 기존 Chrome 로그인·탭이 필요한 작업은 agent-browser를 사용한다. 설치·자동 설정·연결 승인 범위는 [브라우저 작업](browser.md)에 정리한다.
+UI 개발 검증과 기존 Chrome 로그인·탭 작업은 공식 `browser-use` 스킬을 읽고 uv로 설치한 Browser Use CLI를 기본으로 사용한다. Supervisor는 같은 default daemon/runtime 환경과 작업자별 own target·조작 차례를 인계하고 브라우저 조작을 순차 배정한다. 완료 시 own 탭만 정리하고 공유 연결은 자동 종료하지 않는다. 다른 브라우저 도구가 필요하면 이유를 알리고 사용자와 선택을 조율한다. 설치·자동 설정·연결 승인 범위는 [브라우저 작업](browser.md)에 정리한다.
+
+Paseo 작업자에서 Computer Use가 지원·노출된다는 보장은 없으며 현재 미검증이다. 네이티브 GUI를 기본 배정하지 말고 실제 도구를 확인한 뒤 기기·대상 앱·담당자·조작 순서를 조율한다. 도구가 없으면 [공식 지원 대화형 CLI·앱 경로](computer-use.md)를 안내한다. 브라우저와 GUI가 같은 앱을 동시에 조작하지 않게 하고 공통 OS 화면 잠금은 가정하지 않는다.

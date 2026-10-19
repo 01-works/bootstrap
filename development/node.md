@@ -38,4 +38,4 @@ npm 전역 패키지는 Node 버전별로 따로 깔린다. 기본 버전을 바
 
 - 공식 설치 스크립트가 있으면 그것을 쓴다 (Claude Code, Codex).
 - 패키지 관리자로만 설치하는 CLI는 pnpm 전역으로 설치한다 (Vercel CLI). Node 버전과 상관없는 `~/Library/pnpm`에 깔린다.
-- agent-browser는 공식 Homebrew 배포를 사용한다. 이전 npm 설치를 옮기는 방법은 [브라우저 작업](../agents/browser.md#기존-npm-설치에서-이전)을 참고한다.
+- 기본 브라우저 도구 Browser Use는 uv 도구 환경을 사용하므로 Node 버전과 독립적이다. 이전 agent-browser의 npm 설치가 남아 경로 충돌이 발생하면 [기존 설치 정리](../agents/browser.md#기존-설치-정리)를 참고한다.

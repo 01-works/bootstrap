@@ -82,8 +82,14 @@ else
 fi
 
 step "브라우저"
-if [[ -f "$HOME/.agents/skills/agent-browser/SKILL.md" && -f "$HOME/.claude/skills/agent-browser/SKILL.md" ]] &&
-   cmp -s "$HOME/.agents/skills/agent-browser/SKILL.md" "$HOME/.claude/skills/agent-browser/SKILL.md"; then
+if has node && node "$BOOTSTRAP_ROOT/scripts/browser-use-setup.mjs" --check; then
+  pass "기본 Browser Use 실행·Codex/Claude 공식 스킬 (연결 검사는 별도)"
+else
+  miss "기본 Browser Use 설치/스킬 확인 필요 (./bootstrap.sh --only homebrew,browser)"
+fi
+agent_browser_claude_skill="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/agent-browser/SKILL.md"
+if [[ -f "$HOME/.agents/skills/agent-browser/SKILL.md" && -f "$agent_browser_claude_skill" ]] &&
+   cmp -s "$HOME/.agents/skills/agent-browser/SKILL.md" "$agent_browser_claude_skill"; then
   pass "agent-browser 스킬 (Codex·Claude)"
 else
   miss "agent-browser 스킬 설치 필요 (./bootstrap.sh --only browser)"

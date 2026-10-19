@@ -1,6 +1,6 @@
 # 도구와 공식 문서
 
-이 저장소가 설치하는 도구와 그 관계, 도구마다 공식 문서 링크와 설치 방법을 고른 이유를 적는다. 설치 명령은 Brewfile과 `scripts/`에만 둔다. 명령어를 문서에 복사해 두면 그 복사본이 먼저 낡기 때문이다.
+이 저장소가 설치하는 도구와 그 관계, 도구마다 공식 문서 링크와 설치 방법을 고른 이유를 적는다. 자동 설치 명령은 Brewfile과 `scripts/`에서 관리한다. 브라우저 기본값과 설치 범위는 [브라우저 가이드](agents/browser.md)에, 자동화 밖의 대안과 과거 시험은 같은 문서에 확인일·버전·지원 옵션과 함께 기록한다.
 
 ## 전체 구조
 
@@ -128,8 +128,8 @@ flowchart LR
 | ChatGPT 앱 | `cask "chatgpt"` | [learn.chatgpt.com](https://learn.chatgpt.com/docs/app) | 2026-07부터 Codex 앱이 ChatGPT 앱에 합쳐졌다 ([changelog](https://learn.chatgpt.com/docs/changelog)). 업데이트가 잦아 Homebrew가 OpenAI보다 먼저 새 버전으로 올라가 설치가 실패할 때가 있다. 하루쯤 뒤 다시 하거나 공식 페이지에서 받는다 | 2026-10-07 |
 | Paseo | `cask "paseo"` | [paseo.sh/download](https://paseo.sh/download), [paseo.sh/docs](https://paseo.sh/docs) | cask가 앱 안의 `paseo` CLI도 연결한다 | 2026-10-07 |
 | Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 기존 로그인·탭 작업용. 종료 상태에서 디버깅 설정을 병합하며 연결 승인은 별도 | 2026-10-18 |
-| agent-browser | `brew "agent-browser"` | [공식 설치](https://agent-browser.dev/installation) | 공식 Homebrew 배포로 fnm 버전별 npm 설치를 피한다. `browser` 단계가 공식 스킬을 Codex·Claude 양쪽에 설치 | 2026-10-18 |
-| Paseo Browser | Paseo 앱 내장 | [브라우저 문서](https://paseo.sh/docs/browser.md) | 개발 UI 검증용. `browser` 단계에서 도구와 MCP 주입을 활성화 | 2026-10-18 |
+| agent-browser (기존 설치) | `brew "agent-browser"` | [공식 설치](https://agent-browser.dev/installation) | 이전 구성의 설치·검사가 남아 있음. 현재 사용 도구는 Browser Use | 2026-10-19 |
+| Browser Use | `brew "uv"` + `uv tool install --python 3.12 browser-use` (`browser` 단계) | [공식 CLI](https://docs.browser-use.com/open-source/browser-use-cli), [uv 설치](https://docs.astral.sh/uv/getting-started/installation/) | 웹 작업 기본 도구. 양쪽 공식 스킬 설치, 기존 CLI·개인 스킬 보존 → [운영 지침](agents/browser.md) | 2026-10-19 |
 
 ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내장 ripgrep으로 대신하고, Codex CLI는 ripgrep을 함께 설치한다.
 

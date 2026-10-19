@@ -1,69 +1,74 @@
 # 브라우저 작업
 
-개발 화면·UI 흐름 검증은 **Paseo Browser**를 우선한다. 사용 중인 Chrome의 로그인·탭이 필요한 작업은 **agent-browser로 기존 Chrome에 직접 연결**한다. 이 기준은 Codex `AGENTS.md`, Claude `CLAUDE.md`, `yw-supervisor`의 작업 배정 지침에 함께 명시한다.
+웹 UI 검증과 기존 Chrome 로그인·탭 작업은 **uv로 설치한 Browser Use CLI(`browser-use`)**를 사용한다. 먼저 설치된 공식 `browser-use` 스킬을 읽는다. 공개 정보의 단순 HTTP fetch에는 브라우저가 필요 없다. 다른 도구가 필요하면 이유를 알리고 사용자와 선택을 조율한다.
 
-## 설치와 자동 설정
+동명인 ChatGPT Browser 플러그인과 구분한다. 네이티브 앱의 GUI 조작은 [Computer Use](computer-use.md)를 따른다. 과거 도구 비교는 [검증 기록](browser-validation.md)에만 남기며 작업 지침으로 사용하지 않는다.
+
+## 설치와 확인
 
 ```sh
-# Chrome을 정상 종료한 상태에서 실행
+# 새 기기: Paseo 앱 초기 설정을 마치고 Chrome이 종료된 상태에서 실행
 ./bootstrap.sh --only browser,paseo
+node scripts/browser-use-setup.mjs --check
 node scripts/browser-settings.mjs --check
 ```
 
-`Brewfile`은 Google Chrome과 공식 Homebrew `agent-browser`를 설치한다. CLI 경로는 `/opt/homebrew/bin/agent-browser`로, fnm의 Node 버전을 바꿔도 유지된다. Homebrew가 필요한 런타임 의존성을 함께 관리하며 개발용 기본 Node는 fnm이 선택한다. `browser` 단계는 CLI 실행과 경로를 확인하고, 공식 설치기로 같은 스킬을 Codex·Claude 양쪽에 제공한다.
+- Homebrew로 Chrome·uv를 준비한다. `browser` 단계는 Browser Use가 없을 때만 `uv tool install --python 3.12 browser-use`로 설치한다. [공식 CLI](https://docs.browser-use.com/open-source/browser-use-cli)
+- 공식 스킬을 Codex·Claude의 기본/실제 설정 경로에 준비한다. 기존 CLI와 개인 스킬은 보존하고 충돌 시 중단한다. 제공자 전용 플러그인은 복제하지 않는다.
+- Chrome 종료 상태에서 디버깅 설정만 백업 후 병합한다. 실행 중에는 수정하지 않으며, 운영 중 Chrome을 강제 종료하지 않는다. **연결 시 Chrome이 요구하는 Allow는 사용자가 직접 승인한다.**
+- 설치·doctor 검사는 브라우저 연결이나 사이트 로그인을 확인하지 않는다. 동작 확인은 아래 운영 규칙에 따라 별도로 한다.
+
+현재 설치 스크립트에는 이전 구성의 agent-browser 설치·스킬 검사와 Paseo Browser 활성화도 남아 있다. 이는 Browser Use의 사용 요건이나 대안 선택 지침이 아니다. 이번 문서 정리에서는 설치 동작·기존 앱을 변경하지 않았다. agent-browser 경로 충돌이 설치를 막으면 [기존 설치 정리](#기존-설치-정리)를 따른다.
+
+## 설정 보존과 복구
+
+Chrome은 `Local State`의 `devtools.remote_debugging.user-enabled`만 병합하며, 이 설정이 연결 승인을 없애지는 않는다. 공개된 안정적 설정 CLI가 아니므로 Chrome 업데이트 후 연결을 확인한다. Paseo의 기존 설정은 `daemon.mcp.injectIntoAgents`와 `daemon.browserTools.enabled`만 반영한다.
+
+백업은 `${XDG_STATE_HOME:-$HOME/.local/state}/bootstrap/backup/` 아래 `browser-chrome-*`·`browser-paseo-*`에 저장하고 `source-path.txt`에 원본 위치를 기록한다. Chrome 복원은 종료 후 수행한다. Paseo는 이후 변경을 보존하도록 관련 키만 복원한다. CLI 저장 후 reload만 실패했다면 대상 home을 확인해 `paseo reload`한다.
+
+`browser-settings.mjs`는 `--chrome`·`--paseo`로 대상을 지정할 수 있다. 종료 코드 `0`은 완료, `1`은 실패, `2`는 수동 작업 대기다. 인증·권한·프로필 원본은 저장소에 복사하지 않는다.
+
+## Browser Use 기본 운영
+
+
+로컬 작업은 **default daemon (`BU_NAME` 생략)**과 같은 runtime 환경을 작업 묶음 동안 유지한다. `BH_HOME`/`BROWSER_HARNESS_HOME`, socket 경로, 확인된 CDP 설정을 인계하고 task/agent마다 새 runtime·daemon을 만들지 않는다. 이미 건강하게 provisioned된 연결은 같은 환경에서 다음처럼 기존 연결만 허용한다.
 
 ```sh
-npx --yes skills add vercel-labs/agent-browser --global --agent codex claude-code --skill agent-browser --yes
+# 담당자가 확인한 동일 runtime 환경에서 사용. 새 연결/발견은 허용하지 않는다.
+BH_REQUIRE_EXISTING_DAEMON=1 browser-use <<'PY'
+print(page_info())  # 조작 차례와 own target을 먼저 확인한 경우
+PY
 ```
 
-공식 스킬 원본은 저장소에 복사하지 않는다. `~/.agents/skills/agent-browser`와 `~/.claude/skills/agent-browser`에 설치되며, 실제 사용법은 설치된 CLI의 `agent-browser skills get core`에서 읽는다. 공통 사용자 스킬도 양쪽에 연결하되 제공자 전용 내장 기능·플러그인은 임의로 복제하지 않는다. `agent-browser install`로 별도 테스트 브라우저를 다운로드하는 단계는 포함하지 않는다.
+`BH_REQUIRE_EXISTING_DAEMON=1`은 설치본 0.1.13에서 IPC ping과 실제 `Target.getTargets`를 확인하고 실패 시 자동 시작·재연결 없이 중단하는 옵션이다. bootstrap용 복구 옵션이 아니다. daemon 하나는 mutable current target을 공유하므로 **다른 탭이라도 조작은 순차 진행**한다. Supervisor/담당자가 소유자·own target·조작 차례를 지정한다. 작업자는 `current_tab()`/`list_tabs()`로 소유 target을 확인하고 `switch_tab()`으로 선택한다. 새 작업 탭은 필요한 때 `new_tab()`으로 한 번 만들고 후속 CLI에서 재사용한다. 사용자 탭을 탐색·이동·닫지 않고 완료 시 불필요한 own 탭만 닫는다. 공유 daemon을 작업 종료마다 자동 종료하지 않는다.
 
-`scripts/browser-settings.mjs`가 다음 설정을 적용한다.
+닫힌 own 탭, daemon 종료, 살아 있는 daemon의 CDP 연결 끊김을 구분한다. PID/socket 존재나 IPC ping만으로 건강한 연결을 주장하지 않는다. healthy transport에서 target을 다시 선택하는 것과 새 browser WebSocket을 여는 것은 다르다. timeout/결과 불명 명령은 취소되었다고 가정하거나 중복 실행하지 않는다. 소유 환경의 상태·로그로 실패 층을 확인하고 자동 재연결을 반복하지 않는다.
 
-- **Chrome**: 종료 상태에서 `~/Library/Application Support/Google/Chrome/Local State`의 `devtools.remote_debugging.user-enabled`만 `true`로 병합한다. 기존 설정을 권한 600으로 백업하고 파일을 원자적으로 교체한다. 다음 Chrome 실행부터 적용된다. 실행 중이면 파일을 유지하고 재실행 방법을 안내한다.
-- **Paseo**: 초기 설정이 존재할 때 CLI로 `daemon.mcp.injectIntoAgents`와 `daemon.browserTools.enabled`를 켜고 reload한다. 데몬을 재시작하지 않는다. 설정 파일이 없으면 Paseo 앱 초기 설정 후 같은 단계를 다시 실행한다.
+새 연결이 필요하면 담당자가 **현재 Chrome 프로세스와 확인된 `BU_CDP_URL`/`BU_CDP_WS`**, 새 Allow에 대한 사용자 대응을 한 번 조율한다. 기본 local 발견은 이 Mac에서 실패한 이력이 있으므로 성공을 가정하지 않는다. 기존 승인형 Chrome만 대상으로 하는 작업은 Chrome 자동 실행/inspect 복구를 그대로 실행하지 말고 기존의 검토된 프로세스 실행 차단 조건을 유지한다. 실패 시 이유를 알리고 지정된 인증 환경을 cloud·프로필 복사·임시 브라우저로 대체하지 않는다. endpoint·PID·target·임시 runtime은 전역 설정에 고정하지 않는다.
 
-백업은 `${XDG_STATE_HOME:-$HOME/.local/state}/bootstrap/backup/` 아래 `browser-chrome-*/Local State`, `browser-paseo-*/config.json`에 저장한다. 같은 폴더의 `source-path.txt`가 원래 경로를 기록한다. 이전 버전의 `browser-*/settings.json` 백업도 그대로 남는다. Chrome은 종료 후 원래 Local State 경로로 복원할 수 있다. Paseo는 관련 두 키를 원래 값으로 돌리는 편이 이후 다른 설정 변경을 보존한다.
+공식 스킬의 `mac-approve` 자동 클릭·접근성 권한 추가·보안 완화는 이번 기본값 변경 범위에 포함되지 않는다. 승인 대기 중 원래 요청을 중복 실행하지 않는다. 탭을 자동 전면 전환하지 않고 공유 로그인·로그아웃은 조율한다. 재부팅·장기 유지·인증 지속성은 [검증 기록](browser-validation.md)의 확인 범위 이상으로 보장하지 않는다.
 
-Paseo CLI가 실패하면 일부 설정이 이미 저장되었을 수 있다. 저장 실패는 같은 설정 단계를 다시 실행하면 빠진 값만 적용한다. 저장은 됐지만 reload가 실패했다면 해당 home을 지정해 `paseo reload`를 실행한다. 설정값이 맞다는 것만으로 실행 중인 데몬의 반영까지 확인된 것은 아니다.
+### Chrome 프로필 선택과 확인
 
-Chrome 설정 자동화는 [Chromium의 설정 키](https://github.com/chromium/chromium/blob/main/chrome/common/pref_names.h)와 [승인형 서버 구현](https://github.com/chromium/chromium/blob/main/chrome/browser/devtools/remote_debugging_server.cc)에 근거한다. 공개된 안정적 설정 CLI는 아니므로 Chrome 업데이트 후 실제 연결을 재검증한다. 이 설정은 Chrome 전체에 적용되며 연결마다 표시되는 사용자 허용 절차를 없애지 않는다. Chrome이 실행 중이면 `chrome://inspect/#remote-debugging`에서 직접 켜는 방법도 있다.
+이 절은 **로그인 상태가 필요한 작업 또는 사용자가 Chrome 프로필을 지정한 작업**에 적용한다. 공개 페이지·localhost의 일반 UI 검증에 프로필 대조를 일괄 요구하지 않는다. 브라우저 작업자가 적용하며, Supervisor 없이도 사용할 수 있다. Supervisor가 배정한다면 요청받은 프로필과 조작 차례를 기존 인계 항목으로 전달하면 충분하다.
 
-`--check`와 `doctor`는 설정값·설치 상태만 검사한다. 실제 Chrome 연결 승인이나 Paseo 데스크톱 연결까지 보장하지 않는다. `--chrome`, `--paseo`로 대상별 적용·검사도 가능하다. 종료 코드는 `0` 완료, `1` 실패, `2` 수동 작업 대기이며 한쪽 실패가 다른 쪽 설정 시도를 막지 않는다.
+#### 기본값과 이번 작업의 선택
 
-## 기존 npm 설치에서 이전
+- 우선순위는 **이번 작업에 명시한 Chrome 프로필 → 기기별 기본값**이다. 둘 다 없으면 사용할 프로필을 확인한다. 현재 연결이나 Chrome의 최근 사용 기록을 임의로 기본값으로 채택하지 않는다.
+- 기본값은 `${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/browser-profile.json`에 둔다. 필수 문자열은 `user_data_dir`(실제 Chrome 사용자 데이터 폴더의 절대 경로), `profile_directory`(그 아래 프로필 폴더 이름)이며, `display_name`은 선택적인 표시명이다. 표시명은 중복·변경될 수 있으므로 경로로 식별한다.
+- 에이전트는 “이 Chrome 프로필을 기본으로 지정/변경해줘”라는 명시 요청을 받았을 때 후보 경로를 확인하고 해당 파일을 저장한다. “이번에는 이 프로필로 해줘”는 이번 작업에만 적용하며 파일을 만들거나 갱신하지 않는다. 모호한 요청도 영구 변경으로 해석하지 않는다.
+- 기본값 파일이 없거나 파싱·경로 확인에 실패하면 기본값을 추측하지 않는다. 이번 작업의 명시 선택이 있으면 그것을 확인해 사용하고, 없으면 누락·불일치를 보고해 선택을 확인한다. 기본값 저장 자체가 Chrome 전환을 실행하지는 않는다.
+- bootstrap은 이 파일을 생성·seed·doctor 검사하지 않는다. 기기별 실제 경로·표시명과 로그인·쿠키·계정 정보는 저장소에 넣지 않으며, 이 선호 파일에도 인증 정보·endpoint·PID·target을 넣지 않는다. 필요한 서비스의 로그인은 기존 실제 Chrome 프로필에 유지하고 별도 자동화·복사 프로필로 대체하지 않는다.
 
-먼저 Homebrew 버전을 설치하고 `/opt/homebrew/bin/agent-browser --version`으로 동작을 확인한다. `command -v agent-browser`가 fnm 경로를 가리키면 해당 Node 버전의 `npm list -g agent-browser --depth=0`로 패키지를 확인한 뒤 `npm uninstall -g agent-browser`로 그 설치만 제거한다. 새 셸에서 경로가 `/opt/homebrew/bin/agent-browser`인지 확인한다. 다른 Node 버전에도 설치되어 있다면 그 버전에서도 같은 확인이 필요하다. bootstrap은 다른 경로의 기존 패키지를 임의로 삭제하지 않고 충돌을 알려 준다.
+#### 작업 대상 확인과 전환
 
-갱신은 Homebrew 또는 설치 방식을 인식하는 `agent-browser upgrade`로 수행한다. 기존 Chrome에 붙는 구성에서는 `agent-browser install`을 실행할 필요가 없다.
+1. 기존 runtime·조작 차례를 확인하고 위의 연결 재사용 규칙을 따른다. Chrome `Local State`의 프로필 목록은 후보 이름·폴더 확인에만 쓴다. `last_used`나 일반 탭 목록은 연결된 작업 탭의 프로필 증거가 아니다.
+2. 새 own 작업 탭에서 먼저 `chrome://version/`의 프로필 경로(`profile_path`)를 읽고 선택한 `user_data_dir/profile_directory`의 실제 경로와 대조한 뒤, **같은 target**에서 작업 URL로 이동하는 절차를 권장한다. 별도 진단 탭에서 읽은 값은 그 탭만 증명한다. 사용자 기존 탭을 확인용으로 이동시키거나 새 탭의 결과·browserContextId로 기존 탭의 프로필을 추정하지 않는다.
+3. 일치하지 않거나 확인할 수 없으면 해당 프로필에 의존하는 작업을 중단하고 이유를 보고한다. 사용자와 실제 프로필 전환을 조율한 뒤 다시 대조한다. 창 선택이나 프로필 이름 지정만으로 CDP 대상이 바뀌었다고 가정하지 않는다. 강제 종료·재실행·자동 전면 전환이나 복사·임시 프로필로 문제를 해결하지 않는다. 새 연결이 필요할 때만 endpoint와 수동 Allow를 한 번 조율한다.
+4. 프로필 일치는 사이트 로그인 유효성의 증거가 아니다. 목적 사이트의 필요한 인증 상태는 별도로 확인하고 비밀번호·MFA·동의가 필요하면 사용자에게 인계한다. 확인용으로 만든 불필요한 own 탭만 정리하고 사용자 탭과 공유 연결은 유지한다.
 
-## 작업별 사용
+**검증 범위:** 기존 연결에서 새 백그라운드 진단 탭의 프로필 경로 조회·탭 정리는 확인했다. 위의 같은 작업 target 대조 후 이동 절차 전체, 기존 사용자 탭의 프로필 판별, 실제 프로필 전환은 미검증이다. 설치된 CLI에 로컬 프로필 선택 기능이 있다고 가정하지 않으며, 기본값 파일은 에이전트가 읽는 운영 선호이지 Browser Use가 자동 적용하는 설정이 아니다.
 
-Paseo Browser는 연결된 **데스크톱 앱**이 있어야 한다. 새 에이전트에서 Browser 도구를 사용하고, 자신이 만든 탭의 `browserId`만 조작한다. 로그인은 Paseo 브라우저 자체에 저장되며 기존 Chrome 로그인과 별도다. 브라우저를 실행하는 데스크톱과 개발 서버의 머신이 다르면 `localhost`도 다르므로 실제로 도달 가능한 개발 서버 주소가 필요하다.
+## 기존 설치 정리
 
-Chrome은 작업별 세션과 탭을 분리한다.
-
-```sh
-agent-browser skills get core
-agent-browser --session <작업별-고유-ID> --auto-connect --pin-tab tab new about:blank
-```
-
-자동 탐색이 실패하면 Chrome 설정 화면이나 해당 Chrome 프로세스의 리스닝 포트로 실제 주소를 확인한다. 승인 모드는 `/json/version`이 404여도 정상일 수 있다. **확인된 포트가 9222인 경우에만** 다음처럼 직접 연결한다.
-
-```sh
-agent-browser --session <작업별-고유-ID> --cdp ws://127.0.0.1:9222/devtools/browser --pin-tab tab new about:blank
-```
-
-허용 창을 사용자에게 알리고 승인 후 진행한다. 승인 대기 중 명령이 타임아웃되면 명령이 실행되었을 가능성이 있으므로 상태를 확인한 뒤 재시도한다. `--profile 이름`은 프로필 복사 방식이므로 기존 Chrome 직접 연결의 대체로 쓰지 않는다. 인증 작업이 막혀도 임시·테스트 브라우저로 자동 전환하지 않는다.
-
-같은 탭의 병렬 조작을 피하고, 공유 프로필의 로그인·로그아웃은 다른 작업과 조율한다. Supervisor는 도구·주소·탭/세션 소유자를 지정한다. 완료 후 담당 탭만 닫고 미검증 항목을 보고한다.
-
-## 실제 확인 (2026-10-18)
-
-- Paseo 0.11.2: Browser 설정 적용·reload, 새 탭 생성, 페이지 탐색, 임시 폼 입력·클릭, 390px 너비 변경·스크린샷 확인. 임시 폼 기준 가로 넘침 없음. 실제 앱의 전체 기능·로그인 검증은 별도다.
-- agent-browser 0.39.1 / Chrome 155.0.8059.80: 종료 상태에서 설정 병합·백업, Chrome 재실행, 사용자 승인 후 기본 데이터 디렉터리의 실행 중인 Chrome에 직접 연결 성공. 로컬 임시 폼 입력·클릭 결과와 저장 상태를 확인하고 검증용 데이터를 제거했다.
-- 이 기기에서는 `DevToolsActivePort` 파일이 없어 `--auto-connect`가 실패했고, Chrome의 리스닝 포트를 확인한 뒤 위 WebSocket 주소로 연결했다.
-- GitHub 확인 페이지는 로그인 화면으로 이동했다. 현재 연결된 프로필의 GitHub 로그인 유지·인증된 서비스 접근은 미검증이다. 로그인·로그아웃이나 인증 정보 복사는 하지 않았다.
-- 리뷰 후 CLI를 같은 버전의 Homebrew 배포로 이전했다. 설정·세션 데이터는 유지하며, 설정 적용의 실패 경로는 임시 디렉터리 테스트로 검증한다.
-
-근거: [Paseo Browser](https://paseo.sh/docs/browser.md), [agent-browser 설치](https://agent-browser.dev/installation), [CDP 직접 연결](https://agent-browser.dev/cdp-mode), [Chrome 승인형 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect).
+이 절은 현재 설치 단계의 과거 agent-browser 경로 검사를 통과하기 위한 유지보수 안내다. Homebrew 버전이 정상 실행되는지 확인한 뒤, PATH 앞에 있는 fnm/npm 설치가 문제일 때만 해당 Node 환경의 `npm uninstall -g agent-browser`로 중복 설치를 제거한다. 다른 설치나 개인 스킬은 자동 삭제하지 않는다. Browser Use는 uv 기반이므로 이 Node 전역 설치 이전과 무관하다.

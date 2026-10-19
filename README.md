@@ -24,6 +24,10 @@
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
+브라우저 상호작용은 개발 UI와 기존 Chrome 모두 **Browser Use가 기본**이다. `browser` 단계가 uv 기반 CLI와 Codex·Claude 공식 스킬을 준비한다. 설치·연결 재사용·Chrome 프로필 선택은 [브라우저 운영 지침](agents/browser.md)을 따른다.
+
+CLI·API·MCP를 우선하고 그 밖의 네이티브 GUI는 제품별 Computer Use를 사용하는 [기기 GUI 설정·수동 활성화](agents/computer-use.md)를 따르며, 앱 설치와 권한 설정·실제 동작 확인은 구분한다.
+
 ## 모든 기기가 같은 세팅
 
 직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 세 가지뿐이다.
@@ -50,7 +54,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
-| browser | Homebrew agent-browser 실행 확인·양쪽 스킬, Chrome 승인형 디버깅·Paseo Browser 설정 | [agents/browser.md](agents/browser.md) |
+| browser | uv 기반 Browser Use CLI·양쪽 공식 스킬, 기존 agent-browser·Chrome·Paseo 설정 유지 | [agents/browser.md](agents/browser.md) |
 | paseo | 사용자 스킬을 Claude·Codex에 연결하고 없는 Paseo 프로필 추가 | [agents/paseo.md](agents/paseo.md) |
 | auth | GitHub 로그인, 기기별 SSH 키, 남은 로그인 안내 | [development/git.md](development/git.md) |
 
@@ -79,7 +83,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 - `.seed`로 끝나는 파일은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용.
 - Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 앱을 처음 실행한 뒤 `./bootstrap.sh --only paseo`를 실행한다. 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.
 - 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude·Codex 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다.
-- `agent-browser` 공식 스킬은 `browser` 단계에서 Codex·Claude에 함께 설치한다. 공통 스킬은 양쪽에 제공하고, 제공자 전용 내장 기능은 복제하지 않는다. Chrome 설정은 종료 상태에서 백업 후 병합한다([브라우저 설정](agents/browser.md)).
+- `Browser Use` CLI와 공식 스킬은 `browser` 단계에서 Codex·Claude의 기본/실제 설정 경로에 준비한다. 기존 CLI는 갱신하지 않고 다른 내용의 개인 스킬·깨진 링크 등 충돌은 보존하고 중단한다. 기존 agent-browser 설치도 유지한다. 공통 스킬은 양쪽에 제공하고, 제공자 전용 내장 기능은 복제하지 않는다. Chrome 설정은 종료 상태에서 백업 후 병합한다([브라우저 설정](agents/browser.md)).
 - 기존 파일은 `~/.local/state/bootstrap/backup/<시각>-<번호>/`로 옮긴 뒤 연결한다. 되돌리려면 링크(`~/.zshrc` 등)를 지우고 백업 폴더의 파일을 제자리로 옮긴다.
 - 기기마다 다른 설정은 `~/.zshrc.local`, `~/.gitconfig.local`에 둔다. 저장소에 넣지 않는다.
 - API 키 같은 비밀값은 `~/.zsh_secrets`에 `export`로 두고 권한은 600으로 한다. `.zshrc`가 있으면 읽는다. 저장소에는 넣지 않고, 커밋 전에 gitleaks가 한 번 더 검사한다.
