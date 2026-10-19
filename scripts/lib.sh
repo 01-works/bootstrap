@@ -198,6 +198,23 @@ sharing_enabled() {
   launchctl print-disabled system 2>/dev/null | grep -q "\"$1\" => enabled"
 }
 
+# Tailscale 앱(Standalone)에 든 명령어. PATH에 설치하지 않고 검사에만 쓴다 (TOOLS.md).
+TAILSCALE_APP_CLI="${TAILSCALE_APP_CLI:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
+
+# Tailscale 상태를 "<연결 상태> <키 만료 시각>" 한 줄로 출력한다. 연결 상태는 Running·Stopped·NeedsLogin 등이고,
+# 앱이 꺼져 있거나 없으면 아무것도 출력하지 않는다. 만료 시각이 없으면(관리 콘솔에서 키 만료를 껐거나 로그인 전) -.
+tailscale_status() {
+  local json state
+  json="$("$TAILSCALE_APP_CLI" status --json 2>/dev/null)"
+  state="$(plutil -extract BackendState raw -o - - <<<"$json" 2>/dev/null)" || return 0
+  printf '%s %s\n' "$state" "$(plutil -extract Self.KeyExpiry raw -o - - <<<"$json" 2>/dev/null || echo -)"
+}
+
+# Tailscale 앱 설정의 "로그인 시 실행". 공개되지 않은 앱 내부 설정값이라 앱이 바뀌면 틀릴 수 있다.
+tailscale_starts_on_login() {
+  [[ "$(defaults read io.tailscale.ipn.macsys TailscaleStartOnLogin 2>/dev/null)" == 1 ]]
+}
+
 # CPU에 맞는 Homebrew 기본 경로. Intel은 /usr/local, Apple Silicon은 /opt/homebrew.
 case "$(uname -m)" in
   x86_64) BOOTSTRAP_BREW_PREFIX=/usr/local ;;

@@ -129,10 +129,41 @@ else
   if filevault_off; then pass 'FileVault 끔 (무인 재시동용)'; else wait_for_user 'FileVault 켜짐 → 데스크톱은 sudo fdesetup disable 후 ./bootstrap.sh --only auth'; fi
   if autologin_on; then pass "자동 로그인 ($(id -un))"; else wait_for_user '자동 로그인 꺼짐 → ./bootstrap.sh --only auth'; fi
 fi
+
+step "원격 접속"
 if ! is_laptop; then
   for svc in com.openssh.sshd:원격\ 로그인 com.apple.screensharing:화면\ 공유; do
     if sharing_enabled "${svc%%:*}"; then pass "${svc#*:}"; else wait_for_user "${svc#*:} 꺼짐 → 시스템 설정 > 일반 > 공유에서 켜기"; fi
   done
+fi
+# 노트북은 로그인만 되어 있으면 된다(앱은 쓸 때 켠다). 데스크톱은 재시동 뒤에도 밖에서 붙도록
+# 로그인과 함께 떠서 연결되어 있고 키가 만료되지 않아야 한다.
+read -r ts_state ts_expiry <<<"$(tailscale_status)"
+if is_laptop; then
+  case "$ts_state" in
+    Running | Stopped) pass "Tailscale 로그인" ;;
+    '') info 'Tailscale 앱이 꺼져 있어 로그인 여부는 확인하지 않음' ;;
+    *) wait_for_user "Tailscale $ts_state → 앱에서 로그인" ;;
+  esac
+else
+  case "$ts_state" in
+    Running) pass "Tailscale 연결" ;;
+    '') wait_for_user 'Tailscale 앱이 꺼져 있음 → 앱을 열고 로그인' ;;
+    *) wait_for_user "Tailscale $ts_state → 앱에서 로그인·연결" ;;
+  esac
+  # 만료 시각은 로그인된 상태에서만 의미가 있다. 로그인 전에는 값이 없어 -로 나온다.
+  if [[ "$ts_state" == Running || "$ts_state" == Stopped ]]; then
+    if [[ "$ts_expiry" == - ]]; then
+      pass "Tailscale 키 만료 꺼짐"
+    else
+      wait_for_user "Tailscale 키가 ${ts_expiry%%T*}에 만료 → 관리 콘솔 Machines에서 이 기기 Disable key expiry"
+    fi
+  fi
+  if tailscale_starts_on_login; then
+    pass "Tailscale 로그인 시 실행"
+  else
+    warn 'Tailscale 로그인 시 실행이 꺼진 것으로 보임 → 앱 설정에서 켜기 (앱 내부 설정값으로 판단해 틀릴 수 있음)'
+  fi
 fi
 
 step "인증"
@@ -177,7 +208,6 @@ printf '    - %s\n' \
   'Chrome Beta(에이전트 전용 창)에서 에이전트가 쓸 서비스 로그인'
 if ! is_laptop; then
   printf '    - %s\n' \
-    'Tailscale 앱 로그인, 로그인 시 실행 켜기. 외부에서는 Tailscale을 켠 기기에서 vnc://<이 기기 Tailscale 이름>' \
     'Computer Use: Claude 앱 설정 > 이 컴퓨터에서 켜고, ChatGPT 앱 Plugins > Computer Use 설치' \
     '권한: 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용·화면 녹음에서 Claude, Codex Computer Use 허용'
 fi

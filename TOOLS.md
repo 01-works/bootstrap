@@ -112,7 +112,7 @@ flowchart LR
 | Brewfile | `brew bundle` | [docs.brew.sh](https://docs.brew.sh/Brew-Bundle-and-Brewfile) | | 2026-10-07 |
 | gh | `Brewfile` | [GitHub](https://github.com/cli/cli/blob/trunk/docs/install_macos.md) | Homebrew가 공식 권장 방법 | 2026-10-07 |
 | gitleaks | `Brewfile` | [GitHub](https://github.com/gitleaks/gitleaks) | 이 저장소의 커밋 전 비밀값 검사용. 기능 추가는 끝났고 보안 패치만 나온다 (후속 도구는 Betterleaks) | 2026-10-07 |
-| Tailscale 앱 | `cask "tailscale-app"` | [tailscale.com](https://tailscale.com/docs/install/mac) | Standalone 버전, 공식 권장. `tailscale` 명령어는 쓰지 않는다 (필요하면 앱 설정 → [CLI integration](https://tailscale.com/docs/reference/tailscale-cli)) | 2026-10-07 |
+| Tailscale 앱 | `cask "tailscale-app"` | [tailscale.com](https://tailscale.com/docs/install/mac) | Standalone 버전, 공식 권장. `tailscale` 명령어는 PATH에 두지 않는다. doctor는 앱에 든 명령어로 연결·키 만료를 확인한다 (명령어가 필요하면 앱 설정 → [CLI integration](https://tailscale.com/docs/reference/tailscale-cli)) | 2026-10-20 |
 
 ## Node
 

@@ -35,6 +35,7 @@
 늘 켜두는 기기(데스크톱)만:
 
 - [ ] 원격 로그인·화면 공유 켜기: 시스템 설정 > 일반 > 공유. 외부에서는 Tailscale을 켠 기기에서 `vnc://<이 기기 Tailscale 이름>`으로 접속 ([원격 접속](system-settings.md#원격-접속))
+- [ ] Tailscale 관리 콘솔 Machines에서 이 기기 Disable key expiry. 그대로 두면 180일 뒤 밖에서 붙을 수 없다
 - [ ] Computer Use: Claude 앱 설정 > 이 컴퓨터에서 켜고, ChatGPT 앱 Plugins > Computer Use를 설치한다. 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용·화면 녹음에서 Claude와 Codex Computer Use를 허용한다 ([Computer Use](../agents/computer-use.md))
 
 doctor가 실패·수동 작업 대기 없이 끝나고 위 항목을 처리했으면 완료다. 막혔던 부분은 이 문서나 스크립트에 반영한다.

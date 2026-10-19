@@ -81,6 +81,22 @@ test('CLI 기동 검사는 실행 성공 여부로 판단', t => {
   assert.equal(run('healthy() { return 0; }; cli_works healthy').status, 0);
 });
 
+test('Tailscale 상태는 연결 상태와 키 만료를 한 줄로, 앱이 꺼져 있으면 빈 값', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'bootstrap-tailscale-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const status = (body) => {
+    const cli = join(dir, 'Tailscale');
+    writeFileSync(cli, `#!/bin/bash\n${body}\n`, { mode: 0o755 });
+    return spawnSync('/bin/bash', ['-c', `source ${quote(join(repo, 'scripts/lib.sh'))}\ntailscale_status`], {
+      env: { ...process.env, TAILSCALE_APP_CLI: cli }, encoding: 'utf8'
+    }).stdout;
+  };
+  assert.equal(status(`echo '{"BackendState":"Running","Self":{"KeyExpiry":"2026-12-23T16:26:36Z","Tags":null}}'`), 'Running 2026-12-23T16:26:36Z\n');
+  assert.equal(status(`echo '{"BackendState":"Running","Self":{"Online":true}}'`), 'Running -\n', '만료를 끄면 KeyExpiry가 없다');
+  assert.equal(status(`echo '{"BackendState":"NeedsLogin","Self":null}'`), 'NeedsLogin -\n');
+  assert.equal(status(`echo 'The Tailscale GUI failed to start' >&2; exit 1`), '', '앱이 꺼져 있음');
+});
+
 test('auth 단계는 묻지 않고, SSH 키를 만들지 않으며, 로그인할 앱은 처음 한 번만 연다', t => {
   const mocks = `
 gh() { if [[ "$1 $2" == "auth status" ]]; then return 1; fi; printf 'gh %s\\n' "$*" >> "$BOOTSTRAP_ROOT/calls"; }
