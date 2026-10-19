@@ -114,9 +114,15 @@ node scripts/paseo-profiles.mjs --update
 
 ### 플러그인 개발
 
-개발 중에는 폴더에서 설치한다. 폴더 설치는 bootstrap이 건드리지 않는다. 절차는 [paseo-plugin의 개발 안내](https://github.com/01-works/paseo-plugin#개발).
+개발 중에는 폴더에서 설치한다. 폴더 설치는 bootstrap이 건드리지 않는다. 절차는 [paseo-plugin의 개발 안내](https://github.com/01-works/paseo-plugin#개발). ZeroSub의 계정 로그인·전환 설정은 [ZeroSub 안내](https://github.com/01-works/paseo-plugin/blob/main/docs/plugins/zerosub.md).
 
-플러그인의 요구 Paseo 버전(`paseo-plugin.json`의 `requirements.paseo`)을 넘는 Paseo 업데이트가 나오면 모든 기기에서 함께 멈출 수 있다. Paseo를 올리기 전에 paseo-plugin에서 요구 버전을 올리고 위 절차로 배포한다. ZeroSub의 계정 로그인·전환 설정은 [ZeroSub 안내](https://github.com/01-works/paseo-plugin/blob/main/docs/plugins/zerosub.md).
+### Paseo 새 버전
+
+Paseo는 bootstrap이 올리지 않지만(`brew bundle --no-upgrade`) 앱이 스스로 업데이트한다(정식은 36시간에 걸쳐 단계 배포). 플러그인의 요구 버전(`paseo-plugin.json`의 `requirements.paseo`)은 데몬이 설치·시작·reload 때, 앱이 client 실행 전에 각자 검사해서, 범위를 벗어나면 업데이트된 기기마다 플러그인이 멈춘다.
+
+- 자체 플러그인은 최소 버전만 적고 상한을 두지 않는다. 새 Paseo가 나와도 미리 할 일은 없다.
+- paseo-plugin의 [Paseo 새 버전 검사](https://github.com/01-works/paseo-plugin/blob/main/.github/workflows/paseo-next.yml)가 `latest`·`beta` SDK로 조기 경보를 낸다. 정식 전 발견이나 실제 호스트 동작을 보장하지는 않는다. 실패하거나 새 마이너가 나오면 [paseo-plugin의 대응 절차](https://github.com/01-works/paseo-plugin#paseo-새-버전)를 따르고 [새 버전 배포](#새-버전-배포) 절차로 배포한다.
+- 이미 올라간 기기에서 깨지면 상한을 붙인 버전은 그 기기에서 거부되므로 수정본을 배포한다. `doctor`는 데몬 쪽 실행 실패만 경고하고, 앱 화면의 실패는 잡지 못한다.
 
 ## 새 기기에서
 
