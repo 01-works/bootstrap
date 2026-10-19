@@ -38,10 +38,12 @@ brew install <이름>              # 설치하고
 
 ## 기존 앱 옮기기
 
-Brewfile에 있는 앱을 이미 직접 설치해 둔 기기에서는 `brew bundle`이 "이미 앱이 있다"며 실패한다. Homebrew 관리로 옮기려면:
+Brewfile에 있는 앱을 이미 Homebrew 밖에서 설치한 기기(직접 받았거나 스스로 업데이트하는 앱)에서는 `homebrew` 단계가 그 앱을 설치하지 않고 그대로 둔다. `/Applications`·`~/Applications`의 앱이나 pkg 설치 기록으로 판단하며(`scripts/brew-outside-casks.sh`), `doctor`도 검사에서 빼고 "유지"로 표시한다. 덮어쓰면 실행 중인 앱(예: Paseo 데몬)이 바뀌고, 무인 자동 갱신에서는 관리자 비밀번호를 받을 수 없기 때문이다.
+
+Homebrew 관리로 옮기고 싶으면 기기 앞에서 직접 한다:
 
 ```sh
 brew install --cask --adopt <이름>
 ```
 
-설치된 앱과 버전이 달라서 adopt가 안 되면, 앱을 종료한 뒤 `--force`로 덮어쓴다. 앱 데이터(`~/Library`)는 그대로 남는다.
+설치된 앱과 버전이 달라서 adopt가 안 되면, 앱을 종료한 뒤 `--force`로 덮어쓴다. 앱 데이터(`~/Library`)는 그대로 남는다. pkg로 설치되는 앱(예: Tailscale)은 관리자 비밀번호를 묻고, 다시 설치하는 동안 연결이 잠깐 끊길 수 있어 원격으로 쓰는 중에는 하지 않는다.

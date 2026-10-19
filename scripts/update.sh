@@ -58,6 +58,7 @@ steps_for_paths() {
       scripts/skill-paths.mjs) out="$out browser paseo" ;;
       scripts/agent-skills.mjs | scripts/paseo-profiles.mjs | scripts/paseo-plugins.mjs) out="$out paseo" ;;
       scripts/browser-use-setup.mjs) out="$out browser" ;;
+      scripts/brew-outside-casks.sh) out="$out homebrew" ;;
       scripts/steps/[0-9]*-*.sh)
         path="${path##*/}"
         path="${path%.sh}"

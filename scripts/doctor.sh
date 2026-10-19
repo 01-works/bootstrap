@@ -13,12 +13,19 @@ wait_for_user() { warn "$*"; pending=$((pending + 1)); }
 step "Homebrew"
 if has brew; then
   pass "brew"
+  # homebrew 단계와 같이 Homebrew 밖에서 설치된 앱은 검사에서 뺀다.
+  outside="$("$BOOTSTRAP_ROOT/scripts/brew-outside-casks.sh" "$BOOTSTRAP_ROOT/Brewfile" || true)"
+  HOMEBREW_BUNDLE_CASK_SKIP="$(cut -f1 <<<"$outside" | tr '\n' ' ')"
+  export HOMEBREW_BUNDLE_CASK_SKIP
   if brew bundle check --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade >/dev/null 2>&1; then
     pass "Brewfile"
   else
-    miss "Brewfile 설치·등록 상태 불일치 (앱이 있어도 Homebrew 미등록이면 표시됨):"
+    miss "Brewfile 설치·등록 상태 불일치:"
     brew bundle check --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade --verbose 2>&1 | grep '→' | sed 's/^/      /' | head -30
   fi
+  while IFS=$'\t' read -r cask where; do
+    [[ -n "$cask" ]] && info "Homebrew 밖에서 설치된 앱 (유지): $cask ($where)"
+  done <<<"$outside"
 else
   miss "brew 없음"
 fi

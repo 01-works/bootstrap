@@ -32,14 +32,24 @@ if [[ "$(uname -m)" == x86_64 ]]; then
   ensure_standalone_uv "$HOME/.local/bin" || uv_status=3
 fi
 
-# 하나가 실패해도(예: brew 밖에서 깔린 같은 앱) 나머지 단계는 계속한다. 빠진 항목은 doctor가 알려준다.
+# Homebrew 밖에서 이미 설치된 앱(직접 받았거나 스스로 업데이트하는 앱)은 설치하지 않고 그대로 둔다.
+# 덮어쓰면 실행 중인 앱(예: Paseo 데몬)이 바뀌고, 옮기기(--adopt)는 버전이 같아야 하며 pkg는 관리자 비밀번호가 필요하다.
+outside="$("$BOOTSTRAP_ROOT/scripts/brew-outside-casks.sh" "$BOOTSTRAP_ROOT/Brewfile" || true)"
+if [[ -n "$outside" ]]; then
+  while IFS=$'\t' read -r cask where; do
+    info "직접 설치된 앱 유지: $cask ($where)"
+  done <<<"$outside"
+  HOMEBREW_BUNDLE_CASK_SKIP="$(cut -f1 <<<"$outside" | tr '\n' ' ')"
+  export HOMEBREW_BUNDLE_CASK_SKIP
+fi
+
+# 하나가 실패해도 나머지 단계는 계속한다. 빠진 항목은 doctor가 알려준다.
 # --no-upgrade: 이미 깔린 건 업그레이드하지 않는다. 다시 실행해도 아무것도 바뀌지 않게.
 if [[ "$DRY_RUN" == 1 ]]; then
   brew bundle check --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade --verbose 2>&1 | grep '→' | sed 's/^/      /' || true
 fi
 if ! run brew bundle --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade; then
   warn "Brewfile 일부 항목 설치 실패. 실패해도 이미 설치된 것은 바뀌지 않는다"
-  info "이미 직접 설치한 앱이면: development/homebrew.md의 '기존 앱 옮기기'"
   info "다운로드 실패(404 등)면: 하루쯤 뒤 ./bootstrap.sh --only homebrew, 급하면 TOOLS.md의 공식 링크에서 받기"
   exit 3  # Homebrew 자체는 준비됨. 나머지 단계는 진행하되 최종 실패로 집계.
 fi
