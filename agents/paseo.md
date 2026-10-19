@@ -120,7 +120,7 @@ node scripts/paseo-profiles.mjs --update
 
 ## 새 기기에서
 
-`paseo` 단계가 설정이 없으면 앱의 첫 실행 화면 대신 공식 CLI로 첫 설정을 하고 데몬을 띄운다: `paseo onboard --relay --voice disable`. 고정값은 원격(릴레이) 연결 켬, 음성 기능 끔이다. 이어서 같은 단계에서 프로필과 Paseo 도구 설정까지 끝난다. 다른 기기의 앱에서 이 데몬에 붙으려면 `paseo daemon pair`로 연결 코드를 받는다.
+`paseo` 단계가 설정이 없으면 앱의 첫 실행 화면 대신 공식 CLI로 첫 설정을 하고 데몬을 띄운다: `paseo onboard --relay --voice disable`. 고정값은 원격(릴레이) 연결 켬, 음성 기능 끔이다. 이어서 같은 단계에서 프로필과 Paseo 도구 설정까지 끝난다. 다른 기기(노트북·휴대폰)의 앱은 데스크톱 데몬에서 `paseo daemon pair`로 받은 연결 링크로 붙는다(릴레이). 에이전트는 같은 링크를 `paseo --host '<링크>' ls`처럼 CLI에 준다. 링크는 데몬 접속 권한 자체라 저장소·공유 문서에 넣지 않는다. 노트북 데몬은 다른 기기에 페어링하지 않는다 ([원격 접속](../macos/system-settings.md#원격-접속)).
 
 늘 켜두는 기기(배터리 없음)는 LaunchAgent `local.bootstrap.paseo`가 로그인할 때 `paseo daemon start`를 실행한다. 이미 실행 중이면 아무것도 하지 않는다. 노트북은 앱을 열 때 데몬이 함께 뜬다. 데스크톱에서 끄려면 `launchctl bootout gui/$(id -u)/local.bootstrap.paseo` 후 `~/Library/LaunchAgents/local.bootstrap.paseo.plist`를 지운다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
 
