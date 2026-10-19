@@ -1,35 +1,40 @@
-# 첫 부팅
+# 새 Mac 체크리스트
 
-자동화할 수 없는 것들. 끝나면 [README](../README.md)의 터미널 단계로 넘어간다.
+고를 것 없이 아래 값 그대로 진행한다. 로그인·권한은 기기마다 새로 하고 다른 기기에서 복사하지 않는다.
 
-## 설정 도우미
+## 1. 첫 부팅 (설정 도우미)
 
 - [ ] 언어·지역: 한국어, 대한민국
 - [ ] Wi-Fi 또는 이더넷 연결
 - [ ] Apple 계정 로그인
-- [ ] iCloud 사진·메시지 끄기: 로그인 후 시스템 설정 > Apple 계정 > iCloud에서 끈다. 공식 설정 명령이 없어 자동화하지 않는다
-- [ ] FileVault 켜기. 복구 키를 Apple 계정에 맡길지 따로 보관할지 정하기
-- [ ] 위치 서비스, 분석 정보 공유: 원하는 대로
-- [ ] Touch ID (해당 키보드가 있을 때)
+- [ ] FileVault: 노트북은 켜고 복구 키를 Apple 계정에 보관. 늘 켜두는 데스크톱은 켜지 않는다(정전 뒤 혼자 로그인까지 되도록 bootstrap이 자동 로그인을 켠다)
+- [ ] 위치 서비스 켬, 분석 정보 공유 끔
+- [ ] Touch ID: 지원 키보드가 있으면 등록
+- [ ] 데스크톱에 들어오면 소프트웨어 업데이트 최신으로
 
-## 데스크톱에 들어와서
+## 2. 한 줄 설치
 
-- [ ] 소프트웨어 업데이트 최신으로
-- [ ] 컴퓨터 이름: 시스템 설정 > 일반 > 정보 (SSH·Tailscale에서 이 이름으로 보인다)
-- [ ] 디스플레이: 시스템 설정 > 디스플레이에서 가장 작은 배율("더 많은 공간") 선택. 모니터마다 선택지가 달라 자동화하지 않는다
-- [ ] 늘 켜두는 기기라면: 시스템 설정 > 일반 > 공유에서 원격 로그인, 화면 공유 켜기 ([system-settings.md](system-settings.md))
+[README](../README.md#새-mac에서)의 한 줄을 터미널에 붙여 넣는다. 처음에 관리자 비밀번호를 한 번 묻고, 끝날 때 GitHub 로그인 코드를 클립보드에 복사해 브라우저를 연다. 데스크톱은 마지막에 자동 로그인을 켜면서 로그인 비밀번호를 한 번 더 묻는다.
 
-## bootstrap 이후
+## 3. 로그인
 
-로그인·권한은 기기마다 새로 한다. 다른 기기에서 복사하지 않는다.
+설치가 끝나면 로그인할 앱이 열린다. 다시 설치를 돌릴 필요는 없다.
 
-- [ ] `auth` 단계가 마지막에 보여 주는 로그인 목록 처리
-- [ ] Paseo 앱에서 데몬 초기 설정 후 `./bootstrap.sh --only paseo`
-- [ ] 에이전트 Chrome(Chrome Beta)에서 에이전트가 쓸 서비스에 로그인 ([브라우저 작업](../agents/browser.md)). 노트북은 먼저 `launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome`
-- [ ] 노트북에서도 Paseo를 로그인 시 띄우고 싶으면 시스템 설정 > 일반 > 로그인 항목에 Paseo 추가 (데스크톱은 자동)
-- [ ] 개인 Chrome 설정이 대기로 남았다면 Chrome을 종료하고 `./bootstrap.sh --only browser`. 개인 Chrome은 요청할 때만 연결되며, 그때 뜨는 허용 창은 직접 승인
-- [ ] 네이티브 GUI 작업이 필요하면 [Computer Use 활성화·권한 설정](../agents/computer-use.md)
-- [ ] 새 터미널에서 `./bootstrap.sh doctor`: 실패·수동 작업 대기 없이 완료 확인
-- [ ] 로그아웃했다가 다시 로그인 (다크 모드 같은 시스템 설정 완전 반영)
-- [ ] 트랙패드가 있다면 세 손가락 드래그 동작 확인 ([설정·미반영 시 확인 방법](system-settings.md#세-손가락-드래그))
-- [ ] 이번에 막혔던 부분을 이 문서나 스크립트에 반영
+- [ ] 터미널에서 `claude`, `codex`를 한 번씩 실행해 로그인 (`vercel login`은 쓸 때)
+- [ ] Claude 앱, ChatGPT 앱, Tailscale 앱 로그인. Tailscale은 설정에서 로그인 시 실행을 켠다
+- [ ] Chrome Beta(에이전트 전용 창)에서 에이전트가 쓸 서비스 로그인 ([브라우저 작업](../agents/browser.md)). Dock 아이콘으로 새로 띄운 Chrome Beta는 전용 프로필이 아니니 열려 있는 창을 쓴다. 노트북에서 창이 없으면 `launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome`
+
+## 4. 화면 설정
+
+새 터미널에서 `./bootstrap.sh doctor`를 실행하면 실패·대기 항목과 함께 아래 "직접 확인할 것"이 나온다.
+
+- [ ] iCloud 사진·메시지 끄기: 시스템 설정 > Apple 계정 > iCloud
+- [ ] 디스플레이: 시스템 설정 > 디스플레이에서 가장 작은 배율("더 많은 공간")
+- [ ] 로그아웃했다가 다시 로그인 (다크 모드·세 손가락 드래그 반영, [확인 방법](system-settings.md#세-손가락-드래그))
+
+늘 켜두는 기기(데스크톱)만:
+
+- [ ] 원격 로그인·화면 공유 켜기: 시스템 설정 > 일반 > 공유. 외부에서는 Tailscale을 켠 기기에서 `vnc://<이 기기 Tailscale 이름>`으로 접속 ([원격 접속](system-settings.md#원격-접속))
+- [ ] Computer Use: Claude 앱 설정 > 이 컴퓨터에서 켜고, ChatGPT 앱 Plugins > Computer Use를 설치한다. 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용·화면 녹음에서 Claude와 Codex Computer Use를 허용한다 ([Computer Use](../agents/computer-use.md))
+
+doctor가 실패·수동 작업 대기 없이 끝나고 위 항목을 처리했으면 완료다. 막혔던 부분은 이 문서나 스크립트에 반영한다.

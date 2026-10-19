@@ -48,10 +48,10 @@ test('전체 실행은 doctor 실패·수동 대기를 보존하고 부분 실�
 function mockStep(t, name, mocks) {
   const { root } = sandbox(t);
   writeFileSync(join(root, 'scripts/lib.sh'), readFileSync(join(root, 'scripts/lib.sh'), 'utf8') + '\n' + mocks);
-  const result = spawnSync('/bin/bash', [join(repo, 'scripts/steps', name)], {
-    env: { ...process.env, BOOTSTRAP_ROOT: root, DRY_RUN: '0', ASSUME_YES: '0' }, encoding: 'utf8'
+  const rerun = () => spawnSync('/bin/bash', [join(repo, 'scripts/steps', name)], {
+    env: { ...process.env, BOOTSTRAP_ROOT: root, DRY_RUN: '0', ASSUME_YES: '0', XDG_STATE_HOME: join(root, 'state') }, encoding: 'utf8'
   });
-  return { root, result };
+  return { root, result: rerun(), rerun };
 }
 
 test('Homebrew bundle 실패는 부분 실패 코드로 전달', t => {
@@ -75,35 +75,49 @@ curl() { echo 'unexpected installer download'; return 99; }
   assert.doesNotMatch(result.stdout + result.stderr, /unexpected installer/);
 });
 
-test('CLI 기동 검사와 SSH 기본키 상태를 실제 임시 파일로 검사', t => {
-  const { root } = sandbox(t);
-  const key = join(root, 'id_ed25519');
+test('CLI 기동 검사는 실행 성공 여부로 판단', t => {
   const run = expr => spawnSync('/bin/bash', ['-c', `source ${quote(join(repo, 'scripts/lib.sh'))}\n${expr}`], { encoding: 'utf8' });
-  const state = () => run(`ssh_key_state ${quote(key)}`).status;
-  assert.equal(state(), 1);
-  writeFileSync(`${key}.pub`, 'test public key');
-  assert.equal(state(), 2);
-  writeFileSync(key, '');
-  assert.equal(state(), 2);
-  writeFileSync(key, 'test private key placeholder');
-  assert.equal(state(), 0);
-  rmSync(key); rmSync(`${key}.pub`);
-  writeFileSync(`${key}.backup`, 'backup is not the configured key');
-  assert.equal(state(), 1);
   assert.equal(run('broken() { return 1; }; cli_works broken').status, 1);
   assert.equal(run('healthy() { return 0; }; cli_works healthy').status, 0);
 });
 
-test('공개키만 있는 auth 단계는 키를 덮어쓰지 않고 수동 대기를 반환', t => {
-  const { result } = mockStep(t, '70-auth.sh', `
+test('auth 단계는 묻지 않고, SSH 키를 만들지 않으며, 로그인할 앱은 처음 한 번만 연다', t => {
+  const mocks = `
+gh() { if [[ "$1 $2" == "auth status" ]]; then return 1; fi; printf 'gh %s\\n' "$*" >> "$BOOTSTRAP_ROOT/calls"; }
+git() { :; }
+open() { printf 'open %s\\n' "$*" >> "$BOOTSTRAP_ROOT/calls"; }
+launchctl() { printf 'launchctl %s\\n' "$*" >> "$BOOTSTRAP_ROOT/calls"; }
+ssh-keygen() { printf 'unexpected ssh-keygen\\n' >> "$BOOTSTRAP_ROOT/calls"; return 99; }
+is_laptop() { return 0; }
+`;
+  const { root, result, rerun } = mockStep(t, '70-auth.sh', mocks);
+  assert.equal(result.status, 0, result.stderr);
+  let calls = readFileSync(join(root, 'calls'), 'utf8');
+  assert.match(calls, /gh auth login --web --clipboard --git-protocol https/);
+  assert.match(calls, /open -a Claude/);
+  assert.match(calls, /launchctl kickstart gui\/\d+\/local\.bootstrap\.agent-chrome/);
+  assert.doesNotMatch(calls, /ssh-keygen/);
+  rmSync(join(root, 'calls'));
+  assert.equal(rerun().status, 0);
+  assert.doesNotMatch(readFileSync(join(root, 'calls'), 'utf8'), /open -a/, '두 번째부터는 앱을 열지 않음');
+});
+
+test('데스크톱 auth: FileVault가 켜져 있으면 대기, 꺼져 있으면 자동 로그인을 켠다', t => {
+  const base = `
 gh() { return 0; }
 git() { echo 'gh auth git-credential'; }
-ssh_key_state() { return 2; }
-ssh-keygen() { echo 'unexpected key overwrite'; return 99; }
-`);
-  assert.equal(result.status, 2, result.stderr);
-  assert.match(result.stderr, /불완전/);
-  assert.doesNotMatch(result.stdout + result.stderr, /unexpected key overwrite/);
+open() { :; }
+launchctl() { :; }
+is_laptop() { return 1; }
+sudo() { printf 'sudo %s\\n' "$*" >> "$BOOTSTRAP_ROOT/calls"; }
+`;
+  const locked = mockStep(t, '70-auth.sh', base + 'filevault_off() { return 1; }\nautologin_on() { return 1; }\n');
+  assert.equal(locked.result.status, 2, locked.result.stderr);
+  assert.match(locked.result.stderr, /fdesetup disable/);
+  assert.equal(existsSync(join(locked.root, 'calls')), false, 'FileVault가 켜져 있으면 자동 로그인을 시도하지 않음');
+  const open = mockStep(t, '70-auth.sh', base + 'filevault_off() { return 0; }\nautologin_on() { return 1; }\n');
+  assert.equal(open.result.status, 0, open.result.stderr);
+  assert.match(readFileSync(join(open.root, 'calls'), 'utf8'), /sudo sysadminctl -autologin set -userName \S+ -password -/);
 });
 
 

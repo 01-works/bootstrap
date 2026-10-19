@@ -129,9 +129,8 @@ test('browser 단계 dry-run은 Node 없는 PATH에서도 성공', () => fixture
   assert.match(result.stdout, /Browser Use/);
 }));
 
-test('browser 단계는 Browser Use 실패에도 Chrome 설정을 실행하고 실패를 대기보다 우선한다', () => {
-  // [Browser Use 결과, Chrome 결과, 단계 종료 코드]
-  for (const [setupStatus, chromeStatus, expected] of [[0, 0, 0], [0, 2, 2], [1, 2, 1], [0, 1, 1]]) fixture(home => {
+test('browser 단계는 Browser Use 실패에도 에이전트 Chrome 설정을 실행하고 실패로 끝난다', () => {
+  for (const [setupStatus, agentStatus, expected] of [[0, 0, 0], [1, 0, 1], [0, 1, 1]]) fixture(home => {
     mkdirSync(join(home, 'scripts'));
     writeFileSync(join(home, 'scripts/lib.sh'), `
 has() { return 0; }
@@ -139,11 +138,11 @@ die() { exit 1; }
 device_flag() { printf '%s' --desktop; }
 node() {
   printf '%s\\n' "$1" >> "$BOOTSTRAP_ROOT/calls"
-  case "$1" in *browser-use-setup.mjs) return ${setupStatus} ;; *launch-agents.mjs) return 0 ;; *) return ${chromeStatus} ;; esac
+  case "$1" in *browser-use-setup.mjs) return ${setupStatus} ;; *) return ${agentStatus} ;; esac
 }
 `);
     const result = spawnSync('/bin/bash', [step], { env: { ...process.env, BOOTSTRAP_ROOT: home, DRY_RUN: '0' }, encoding: 'utf8' });
     assert.equal(result.status, expected, result.stderr);
-    assert.match(readFileSync(join(home, 'calls'), 'utf8'), /browser-settings\.mjs/);
+    assert.match(readFileSync(join(home, 'calls'), 'utf8'), /launch-agents\.mjs/);
   });
 });

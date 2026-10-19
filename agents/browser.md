@@ -22,7 +22,6 @@
 ./bootstrap.sh --only homebrew,browser
 node scripts/browser-use-setup.mjs --check
 node scripts/launch-agents.mjs --check --only agent-chrome --desktop   # 노트북은 --laptop
-node scripts/browser-settings.mjs --check
 ```
 
 - uv는 Apple Silicon에서는 Brewfile, Intel에서는 `homebrew` 단계의 공식 바이너리 설치기로 준비한다 (`~/.local/bin`, 기존 CLI·셸 설정 유지).
@@ -30,12 +29,10 @@ node scripts/browser-settings.mjs --check
 - 공식 스킬(`browser-use skill` 출력)을 Codex용 `~/.agents/skills/browser-use`와 Claude용 `~/.claude/skills/browser-use`에 둔다. 다른 내용의 같은 이름 스킬이 있으면 덮어쓰지 않고 중단한다. Codex 이전 경로 `~/.codex/skills/browser-use`가 있으면 중복으로 보이므로 중단한다. 내용을 확인하고 지우거나 `~/.agents/skills`로 옮긴다.
 - **에이전트 Chrome**: LaunchAgent `local.bootstrap.agent-chrome`으로 등록한다. 늘 켜두는 기기(배터리 없음)는 로그인할 때 시작하고 비정상 종료 시 다시 띄운다. 노트북은 필요할 때 시작한다. 시작 명령은 `launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome`. 자동 시작을 없애려면 `launchctl bootout gui/$(id -u)/local.bootstrap.agent-chrome` 후 `~/Library/LaunchAgents/local.bootstrap.agent-chrome.plist`를 지운다(doctor는 실패로 표시한다).
 - **기본 연결**: Browser Use의 `.env`(`~/.config/browser-harness/agent-workspace/.env`)에 `BU_CDP_URL=http://127.0.0.1:9333`을 넣는다. 그래서 별도 설정 없이 실행하면 에이전트 Chrome에 연결된다. 같은 파일의 다른 값은 보존하고, 다른 `BU_CDP_URL`이 있으면 덮어쓰지 않는다.
-- **개인 Chrome**: Chrome이 종료되어 있으면 `Local State`의 `devtools.remote_debugging.user-enabled`만 백업 후 병합한다. 실행 중이면 수정하지 않고 수동 작업 대기(종료 코드 2)로 알린다. 이 설정은 연결을 가능하게 할 뿐이고, 연결할 때마다 사용자가 Allow를 눌러야 한다.
+- **개인 Chrome**: bootstrap은 건드리지 않는다. 개인 Chrome의 설정 파일을 밖에서 쓰면 macOS가 막거나 Chrome 업데이트로 형식이 바뀔 수 있어서다. 처음 사용할 때 한 번 직접 켠다 ([개인 Chrome 사용](#개인-chrome-사용-요청-시)).
 - 설치·doctor 검사는 사이트 로그인을 확인하지 않는다.
 
 갱신: `uv tool upgrade browser-use` 후 `browser-use skill` 내용이 바뀌면 doctor가 스킬 불일치를 알린다. 두 스킬 폴더를 지우고 `./bootstrap.sh --only browser`로 다시 배치한다.
-
-개인 Chrome 설정 백업은 `${XDG_STATE_HOME:-$HOME/.local/state}/bootstrap/backup/browser-chrome-*`에 있고 `source-path.txt`에 원본 위치가 적혀 있다. Chrome을 종료한 뒤 복원한다.
 
 ### 이전 구성을 쓰던 기기
 
@@ -76,6 +73,7 @@ node scripts/browser-settings.mjs --check
 
 사용자가 "내 Chrome으로", "로그인된 내 계정으로"처럼 **개인 Chrome 사용을 명시적으로 요청한 경우에만** 연결한다. 에이전트 Chrome에 로그인이 없다는 이유만으로 개인 Chrome으로 바꾸지 않는다. 그럴 때는 에이전트 Chrome에 로그인해 달라고 하거나 개인 Chrome 사용 여부를 묻는다.
 
+- 처음 한 번: 사용자가 개인 Chrome 주소창에 `chrome://inspect/#remote-debugging`을 열고 원격 디버깅 허용을 켠다. 켠 상태는 유지된다. 에이전트가 대신 켜지 않는다.
 - 에이전트 Chrome의 기본 연결과 섞이지 않게 이름 있는 daemon을 쓰고 `BU_CDP_URL`을 비운다.
 
   ```sh

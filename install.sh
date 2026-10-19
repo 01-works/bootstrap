@@ -28,11 +28,25 @@ case "$(uname -m)" in
 esac
 [[ "$(id -u)" != 0 ]] || die 'sudo 없이 실행하세요. 관리자 권한이 필요한 곳에서만 따로 묻습니다'
 
-# git은 Xcode 명령줄 도구에 들어 있다. 없으면 설치 창을 띄우고 끝날 때까지 기다린다.
+# git은 Xcode 명령줄 도구에 들어 있다. 설치 창 대신 softwareupdate로 설치한다 (Homebrew 설치 스크립트와 같은 방식).
+# 목록에서 찾지 못하면 설치 창을 띄우고 끝날 때까지 기다린다.
 if ! xcode-select -p >/dev/null 2>&1; then
-  say 'Xcode 명령줄 도구 설치: 뜨는 창에서 설치를 누르고 끝날 때까지 기다립니다 (중단: Ctrl-C)'
-  xcode-select --install >/dev/null 2>&1 || true
-  until xcode-select -p >/dev/null 2>&1; do sleep 5; done
+  say 'Xcode 명령줄 도구 설치 (관리자 비밀번호가 필요합니다)'
+  sudo -v
+  placeholder=/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  sudo touch "$placeholder"
+  label="$(/usr/sbin/softwareupdate -l 2>/dev/null | grep -B 1 -E 'Command Line Tools' |
+    awk -F'*' '/^ *\*/ {print $2}' | sed -e 's/^ *Label: //' -e 's/^ *//' | sort -V | tail -n1)"
+  if [[ -n "$label" ]]; then
+    sudo /usr/sbin/softwareupdate -i "$label"
+    sudo /usr/bin/xcode-select --switch /Library/Developer/CommandLineTools
+  fi
+  sudo rm -f "$placeholder"
+  if ! xcode-select -p >/dev/null 2>&1; then
+    say '설치 창에서 설치를 누르고 끝날 때까지 기다립니다 (중단: Ctrl-C)'
+    xcode-select --install >/dev/null 2>&1 || true
+    until xcode-select -p >/dev/null 2>&1; do sleep 5; done
+  fi
 fi
 
 if [[ -d "$dir/.git" ]]; then

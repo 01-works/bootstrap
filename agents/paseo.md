@@ -4,7 +4,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 
 ## 설치
 
-`Brewfile`의 `cask "paseo"`. 앱은 `/Applications/Paseo.app`, CLI는 Apple Silicon의 `/opt/homebrew/bin/paseo`, Intel의 `/usr/local/bin/paseo`에 링크된다. 앱이 데몬을 함께 띄우므로 따로 설치할 것은 없다.
+`Brewfile`의 `cask "paseo"`. 앱은 `/Applications/Paseo.app`, CLI는 Apple Silicon의 `/opt/homebrew/bin/paseo`, Intel의 `/usr/local/bin/paseo`에 링크된다. 데몬은 앱 안에 들어 있고, 앱과 별개로 실행된다. 앱은 데몬에 붙어서 보는 화면이다.
 
 앱 없이 서버에서 CLI와 데몬만 쓸 때는 공식 문서의 npm 패키지(`@getpaseo/cli`)를 쓴다 ([공식 문서](https://paseo.sh/docs)).
 
@@ -76,6 +76,8 @@ node scripts/paseo-profiles.mjs --update
 
 ## 새 기기에서
 
-앱을 실행하고 안내에 따라 데몬을 설정한 뒤 `./bootstrap.sh --only paseo`를 실행한다. 늘 켜두는 기기(배터리 없음)는 이 단계가 LaunchAgent `local.bootstrap.paseo`를 등록해 로그인할 때 Paseo 앱(데몬 포함)을 띄운다. 노트북은 선택 사항이라 필요하면 시스템 설정 > 일반 > 로그인 항목에 Paseo를 추가한다. 데스크톱에서 끄려면 `launchctl bootout gui/$(id -u)/local.bootstrap.paseo` 후 `~/Library/LaunchAgents/local.bootstrap.paseo.plist`를 지운다. 아직 설정 파일이 없으면 bootstrap은 프로필 설치를 건너뛰고 이 순서를 안내한다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
+`paseo` 단계가 설정이 없으면 앱의 첫 실행 화면 대신 공식 CLI로 첫 설정을 하고 데몬을 띄운다: `paseo onboard --relay --voice disable`. 고정값은 원격(릴레이) 연결 켬, 음성 기능 끔이다. 이어서 같은 단계에서 프로필과 Paseo 도구 설정까지 끝난다. 다른 기기의 앱에서 이 데몬에 붙으려면 `paseo daemon pair`로 연결 코드를 받는다.
+
+늘 켜두는 기기(배터리 없음)는 LaunchAgent `local.bootstrap.paseo`가 로그인할 때 `paseo daemon start`를 실행한다. 이미 실행 중이면 아무것도 하지 않는다. 노트북은 앱을 열 때 데몬이 함께 뜬다. 데스크톱에서 끄려면 `launchctl bootout gui/$(id -u)/local.bootstrap.paseo` 후 `~/Library/LaunchAgents/local.bootstrap.paseo.plist`를 지운다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
 
 작업자의 브라우저 작업은 [브라우저 작업](browser.md)의 운영 규칙(공유 연결, own 탭, 순서대로 조작)을, 네이티브 GUI 작업은 [기기 GUI 작업](computer-use.md)을 따른다. Paseo 작업자의 Computer Use 지원은 확인되지 않았으므로 GUI 작업을 기본으로 배정하지 않는다.

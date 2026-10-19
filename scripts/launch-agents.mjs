@@ -1,4 +1,4 @@
-// 로그인 시 실행할 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 앱.
+// 로그인 시 실행할 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬.
 // plist에는 이 기기의 절대 경로가 들어가므로 저장소에 두지 않고 여기서 만든다.
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -9,11 +9,13 @@ import { spawnSync } from 'node:child_process';
 export const AGENT_CHROME_PORT = 9333;
 export const AGENT_CHROME_URL = `http://127.0.0.1:${AGENT_CHROME_PORT}`;
 export const CHROME_BETA = '/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta';
+// cask는 /opt/homebrew/bin에, 앱 직접 설치는 다른 곳에 링크하므로 앱 안의 CLI를 직접 쓴다.
+export const PASEO_CLI = '/Applications/Paseo.app/Contents/Resources/bin/paseo';
 export const LABELS = { 'agent-chrome': 'local.bootstrap.agent-chrome', paseo: 'local.bootstrap.paseo' };
 
 const escape = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function plist({ label, args, runAtLoad, keepAlive, interactive }) {
+export function plist({ label, args, runAtLoad, keepAlive, interactive, env }) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -26,6 +28,11 @@ export function plist({ label, args, runAtLoad, keepAlive, interactive }) {
     '  </array>',
     `  <key>RunAtLoad</key><${runAtLoad}/>`,
   ];
+  if (env) {
+    lines.push('  <key>EnvironmentVariables</key>', '  <dict>');
+    for (const [key, value] of Object.entries(env)) lines.push(`    <key>${escape(key)}</key><string>${escape(value)}</string>`);
+    lines.push('  </dict>');
+  }
   // 비정상 종료만 다시 띄운다. 사용자가 직접 종료하면 다음 로그인까지 그대로 둔다.
   if (keepAlive) lines.push('  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>');
   if (interactive) lines.push('  <key>ProcessType</key><string>Interactive</string>');
@@ -45,8 +52,11 @@ export function definitions({ home, laptop, env = {} }) {
       runAtLoad: !laptop, keepAlive: !laptop, interactive: true, dirs: [profile],
     },
     // 노트북의 Paseo 자동 시작은 선택 사항이라 만들지 않는다 (시스템 설정 > 일반 > 로그인 항목).
+    // 데몬만 띄운다(앱 불필요). 이미 실행 중이면 그대로 둔다. 데몬이 claude·codex를 찾을 수 있게 PATH를 준다.
     paseo: laptop ? null : {
-      label: LABELS.paseo, args: ['/usr/bin/open', '-g', '-a', 'Paseo'], runAtLoad: true, keepAlive: false,
+      label: LABELS.paseo, args: [PASEO_CLI, 'daemon', 'start'], runAtLoad: true, keepAlive: false,
+      env: { PATH: [join(home, '.local/bin'), join(home, 'Library/pnpm/bin'), join(home, '.local/share/fnm/aliases/default/bin'),
+        '/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':') },
     },
   };
 }

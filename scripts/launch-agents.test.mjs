@@ -32,7 +32,8 @@ test('기기 종류별 정의: 데스크톱은 로그인 시 시작, 노트북�
   assert.match(plist(desktop['agent-chrome']), /<key>RunAtLoad<\/key><true\/>/);
   assert.match(plist(desktop['agent-chrome']), /SuccessfulExit/);
   assert.match(plist(desktop['agent-chrome']), /--user-data-dir=\/h\/.local\/share\/bootstrap\/agent-chrome/);
-  assert.match(plist(desktop.paseo), /<string>Paseo<\/string>/);
+  assert.match(plist(desktop.paseo), /<string>\/Applications\/Paseo\.app\/Contents\/Resources\/bin\/paseo<\/string>\s*<string>daemon<\/string>\s*<string>start<\/string>/);
+  assert.match(plist(desktop.paseo), /<key>PATH<\/key><string>\/h\/.local\/bin:/);
   const laptop = definitions({ home: '/h', laptop: true });
   assert.match(plist(laptop['agent-chrome']), /<key>RunAtLoad<\/key><false\/>/);
   assert.doesNotMatch(plist(laptop['agent-chrome']), /KeepAlive/);

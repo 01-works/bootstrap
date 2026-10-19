@@ -86,6 +86,14 @@ printf '%s단계:%s %s' "$_bold" "$_reset" "$selected"
 [[ "$DRY_RUN" == 1 ]] && printf '   %s(dry-run)%s' "$_yellow" "$_reset"
 printf '\n'
 
+# 관리자 비밀번호는 처음에 한 번만 묻고 끝날 때까지 유지한다 (Homebrew 설치·전원 설정·일부 앱 설치).
+# 터미널이 아니면 묻지 않는다. 그때 sudo가 필요한 단계는 각자 실패로 알린다.
+if [[ "$DRY_RUN" != 1 && -t 0 ]] && { contains homebrew $selected || contains power $selected; }; then
+  info '관리자 비밀번호를 한 번 확인합니다. 설치가 끝날 때까지 다시 묻지 않습니다'
+  sudo -v
+  while kill -0 "$$" 2>/dev/null; do sudo -n true; sleep 50; done >/dev/null 2>&1 &
+fi
+
 # 종료 코드: 0 완료, 1 실패, 2 수동 작업 대기. 단계의 3은 부분 실패(계속 진행 후 최종 실패).
 failed=''
 pending=''

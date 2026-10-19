@@ -146,7 +146,7 @@ ripgrep은 따로 설치하지 않는다. Claude Code는 `rg`가 없으면 내�
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
-| Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 개인용. 사용자가 요청할 때만 에이전트가 연결하며 연결마다 사용자 승인. 종료 상태에서 디버깅 설정을 병합 | 2026-10-18 |
+| Google Chrome | `cask "google-chrome"` | [Chrome](https://www.google.com/chrome/), [승인형 직접 연결](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) | 개인용. 사용자가 요청할 때만 에이전트가 연결하며 연결마다 사용자 승인. 원격 디버깅 허용은 처음 쓸 때 사용자가 Chrome에서 켠다 | 2026-10-18 |
 | Google Chrome Beta | `cask "google-chrome@beta"` | [Chrome Beta](https://www.google.com/chrome/beta/) | 에이전트 전용. 개인 Chrome과 앱이 달라야 Dock·링크 열기가 섞이지 않는다. 전용 프로필·고정 포트(9333)로 띄워 승인 없이 연결 | 2026-10-19 |
 | uv | Apple Silicon: `brew "uv"`. Intel: `homebrew` 단계의 공식 설치기 | [astral.sh](https://docs.astral.sh/uv/getting-started/installation/) | Intel은 Rust·LLVM 소스 빌드를 피하고 `~/.local/bin`에 공식 바이너리를 설치한다. 기존 CLI·셸 설정 유지. Browser Use를 Node와 독립된 도구 환경에 설치한다 | 2026-10-19 |
 | Browser Use | `browser` 단계 (`uv tool install --python 3.12 browser-use`) | [공식 CLI](https://docs.browser-use.com/open-source/browser-use-cli) | 브라우저 작업 기본 도구. 공식 스킬을 Codex·Claude에 배치 → [운영 지침](agents/browser.md) | 2026-10-19 |

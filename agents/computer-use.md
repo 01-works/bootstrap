@@ -16,6 +16,16 @@ CLI·API·MCP로 처리할 수 있으면 그것을 우선한다. 웹 작업은 [
 | Codex CLI / 터미널 | 공식 문서에 CLI 지원이 명시되어 있지 않음. 실제 노출된 도구로 확인 | 미확인 |
 | Paseo 작업자 | 지원이 확인되지 않음. 기본으로 배정하지 않고, 도구가 없으면 위의 대화형 CLI·앱 경로를 안내 | 실행 경로 확인 전 가정하지 않음 |
 
+## 늘 켜두는 기기 (맥미니 등)
+
+설치는 bootstrap이 하고(Claude 앱, ChatGPT 앱), 활성화와 권한은 처음 한 번 손으로 한다. macOS가 화면 기록·손쉬운 사용 권한을 프로그램이 스스로 허용하지 못하게 막고, 각 앱의 켜기 스위치도 공식 설정 명령이 없기 때문이다. doctor가 마지막에 이 항목을 "직접 확인할 것"으로 보여 준다.
+
+- Claude 앱: 설정 > 이 컴퓨터에서 Computer use 켜기. 원격에서 Dispatch로 시킬 때 이 경로를 쓴다.
+- ChatGPT 앱: Plugins > Computer Use 설치·활성화.
+- 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용·화면 녹음에서 Claude와 Codex Computer Use를 허용.
+
+Claude Code CLI의 Computer Use는 대화형 세션에서만 동작하고 프로젝트마다 `/mcp`로 켜며 세션마다 앱 접근을 승인해야 해서, Paseo 작업자 같은 무인 실행에는 쓰지 않는다.
+
 ## 수동 활성화
 
 ### Claude Code 대화형 CLI

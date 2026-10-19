@@ -64,7 +64,7 @@ function main() {
   home = resolve(home);
   const configPath = join(home, 'config.json');
   if (!existsSync(configPath)) {
-    console.log('Paseo 설정 없음: 앱을 먼저 실행한 뒤 ./bootstrap.sh --only paseo 를 실행하세요.');
+    console.log('Paseo 설정 없음: ./bootstrap.sh --only paseo 가 첫 설정을 합니다.');
     if (!(args.includes('--dry-run') || process.env.DRY_RUN === '1')) process.exitCode = 2;
     return;
   }

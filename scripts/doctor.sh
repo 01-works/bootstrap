@@ -68,7 +68,7 @@ if has node; then
     miss "사용자 스킬 연결 확인 필요 (./bootstrap.sh --only paseo)"
   fi
   if [[ ! -f "${PASEO_HOME:-$HOME/.paseo}/config.json" ]]; then
-    wait_for_user 'Paseo 앱 초기 설정 후 ./bootstrap.sh --only paseo'
+    wait_for_user 'Paseo 첫 설정 필요: ./bootstrap.sh --only paseo'
   elif node "$BOOTSTRAP_ROOT/scripts/paseo-profiles.mjs" --check; then
     pass "Paseo 프로필·도구 설정"
   else
@@ -104,20 +104,22 @@ if has node; then
   else
     miss "에이전트 Chrome이 응답하지 않음 (launchctl kickstart gui/$(id -u)/local.bootstrap.agent-chrome)"
   fi
-  browser_status=0
-  node "$BOOTSTRAP_ROOT/scripts/browser-settings.mjs" --check || browser_status=$?
-  if [[ "$browser_status" == 0 ]]; then
-    pass "개인 Chrome 승인형 원격 디버깅 설정 (요청 시 연결, 승인은 사용자)"
-  elif [[ "$browser_status" == 2 ]]; then
-    wait_for_user '개인 Chrome 설정 대기 (위 안내 참고)'
-  else
-    miss "개인 Chrome 설정 확인 필요 (agents/browser.md 참고)"
-  fi
 fi
 
 step "전원"
-if is_laptop; then label="충전 중에는 잠자기 안 함 (노트북)"; else label="잠자기 꺼짐, 화면 ${DISPLAY_SLEEP_MINUTES}분 뒤 끔, 네트워크로 깨우기 켬"; fi
+if is_laptop; then label="충전 중에는 잠자기 안 함 (노트북)"; else label="잠자기 꺼짐, 화면 ${DISPLAY_SLEEP_MINUTES}분 뒤 끔, 네트워크로 깨우기·정전 후 자동 켜기"; fi
 if power_ok; then pass "$label"; else miss "전원 설정이 다름: $label (./bootstrap.sh --only power)"; fi
+if is_laptop; then
+  if filevault_off; then wait_for_user 'FileVault 꺼짐 → 노트북은 시스템 설정 > 개인정보 보호 및 보안 > FileVault에서 켜기'; else pass 'FileVault 켬'; fi
+else
+  if filevault_off; then pass 'FileVault 끔 (무인 재시동용)'; else wait_for_user 'FileVault 켜짐 → 데스크톱은 sudo fdesetup disable 후 ./bootstrap.sh --only auth'; fi
+  if autologin_on; then pass "자동 로그인 ($(id -un))"; else wait_for_user '자동 로그인 꺼짐 → ./bootstrap.sh --only auth'; fi
+fi
+if ! is_laptop; then
+  for svc in com.openssh.sshd:원격\ 로그인 com.apple.screensharing:화면\ 공유; do
+    if sharing_enabled "${svc%%:*}"; then pass "${svc#*:}"; else wait_for_user "${svc#*:} 꺼짐 → 시스템 설정 > 일반 > 공유에서 켜기"; fi
+  done
+fi
 
 step "인증"
 if gh auth status >/dev/null 2>&1; then pass "GitHub 로그인"; else wait_for_user "GitHub 로그인 확인 필요 (gh auth status)"; fi
@@ -131,6 +133,19 @@ fi
 if [[ -f "$HOME/.zsh_secrets" ]]; then
   perm="$(stat -f '%Lp' "$HOME/.zsh_secrets")"
   if [[ "$perm" == 600 ]]; then pass "~/.zsh_secrets 권한 600"; else miss "~/.zsh_secrets 권한이 $perm (chmod 600 필요)"; fi
+fi
+
+# 공식 확인 방법이 없어 자동으로 검사하지 못하는 것. 새 기기에서 한 번 처리한다 (macos/initial-setup.md).
+printf '\n%s직접 확인할 것%s (자동 검사 불가, 새 기기에서 한 번):\n' "$_bold" "$_reset"
+printf '    - %s\n' \
+  'iCloud 사진·메시지 끄기: 시스템 설정 > Apple 계정 > iCloud' \
+  '디스플레이 가장 작은 배율("더 많은 공간"): 시스템 설정 > 디스플레이' \
+  'Chrome Beta(에이전트 전용 창)에서 에이전트가 쓸 서비스 로그인'
+if ! is_laptop; then
+  printf '    - %s\n' \
+    'Tailscale 앱 로그인, 로그인 시 실행 켜기. 외부에서는 Tailscale을 켠 기기에서 vnc://<이 기기 Tailscale 이름>' \
+    'Computer Use: Claude 앱 설정 > 이 컴퓨터에서 켜고, ChatGPT 앱 Plugins > Computer Use 설치' \
+    '권한: 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용·화면 녹음에서 Claude, Codex Computer Use 허용'
 fi
 
 printf '\n통과 %d, 실패 %d, 수동 작업 대기 %d\n' "$passed" "$failed" "$pending"

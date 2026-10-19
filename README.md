@@ -4,17 +4,19 @@
 
 ## 새 Mac에서
 
-1. 첫 부팅과 손으로 할 설정 → [macos/initial-setup.md](macos/initial-setup.md)
-2. Apple Silicon·Intel Mac에서 터미널을 열고 한 줄로 설치한다. Xcode 명령줄 도구가 없으면 설치 창이 뜨니 끝날 때까지 기다린다. 저장소를 `~/dev/bootstrap`에 받고 `bootstrap.sh`를 실행한다.
+고를 것 없이 정해진 값으로 진행한다. 사람이 할 일은 본인 확인(비밀번호·로그인·macOS 권한 허용)뿐이다. 순서와 값은 [macos/initial-setup.md](macos/initial-setup.md).
+
+1. **첫 부팅**: 언어, Wi-Fi, Apple 계정, FileVault(노트북만) (5분)
+2. **한 줄 설치**: Apple Silicon·Intel Mac 모두 같은 한 줄을 터미널에 붙여 넣는다. 처음에 관리자 비밀번호를 한 번 묻고, 끝날 때 GitHub 로그인을 연다 (20~30분)
 
    ```sh
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/01-works/bootstrap/main/install.sh)"
    ```
 
-   할 일만 미리 보려면 끝에 ` install --dry-run`을 붙인다. 다른 위치에 받으려면 앞에 `BOOTSTRAP_DIR=<경로>`를 붙인다. 이미 받은 기기에서 다시 실행하면 저장소를 갱신(fast-forward)한 뒤 실행한다. 저장소는 공개라 받을 때 로그인이 필요 없고, 커밋을 올리려면 `auth` 단계의 GitHub 로그인이 필요하다.
+3. **로그인**: 설치가 끝나며 열어 준 앱과 Chrome Beta(에이전트 전용)에 로그인, 터미널에서 `claude`·`codex` 첫 실행 (10분)
+4. **화면 설정**: 새 터미널에서 `~/dev/bootstrap/bootstrap.sh doctor`. 실패·대기를 해결하고 마지막의 "직접 확인할 것"을 처리한다 (5분)
 
-3. `auth` 단계의 로그인 목록 처리 (Claude, Codex, Vercel, Paseo, Tailscale). Paseo 앱 초기 설정 후 `./bootstrap.sh --only paseo` 재실행. 에이전트 Chrome(Chrome Beta)에서 에이전트가 쓸 서비스에 로그인
-4. 새 터미널을 열고 `./bootstrap.sh doctor`로 최종 확인. 실패·수동 작업 대기가 모두 없어야 완료
+한 줄 설치는 Xcode 명령줄 도구(설치 창 없이)부터 저장소 받기(`~/dev/bootstrap`), 모든 단계, 최종 doctor까지 이어서 한다. 중간에 멈추면 같은 한 줄을 다시 실행한다. 이미 받은 기기에서는 저장소를 갱신(fast-forward)한 뒤 실행한다. 할 일만 보려면 끝에 ` install --dry-run`, 다른 위치에 받으려면 앞에 `BOOTSTRAP_DIR=<경로>`를 붙인다.
 
 도구별 공식 문서와 설치 방법을 고른 이유는 [TOOLS.md](TOOLS.md). 설치가 실패하면 여기부터 본다.
 
@@ -22,10 +24,11 @@
 
 ## 모든 기기가 같은 세팅
 
-직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 네 가지뿐이다.
+직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 다섯 가지뿐이다.
 
 - 전원: `power` 단계가 배터리 유무로 판단해서, 노트북은 충전 중에만 잠들지 않게 하고 데스크톱은 늘 켜둔다(화면은 가만히 있으면 끈다).
-- 자동 시작: 데스크톱은 로그인할 때 Paseo 앱과 에이전트 Chrome을 띄운다. 노트북은 필요할 때 시작한다.
+- 자동 시작: 데스크톱은 로그인할 때 Paseo 데몬과 에이전트 Chrome을 띄운다. 노트북은 필요할 때 시작한다.
+- 재시동 복구: 데스크톱은 FileVault를 끄고 자동 로그인을 켜서 정전 뒤에도 혼자 켜지고 로그인한다. 노트북은 FileVault를 켠다.
 - 로그인하는 계정 (GitHub, Google, Claude, Codex): 기기마다 로그인한다.
 - git 커밋 작성자: 다른 GitHub 계정을 쓰는 기기는 `~/.gitconfig.local`에 이름·이메일을 적는다.
 
@@ -35,7 +38,7 @@
 
 preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일부 항목 실패와 나머지 단계 실패는 모아 두고 다음 단계로 진행한다. 마지막에 실패한 단계와 재실행 명령을 보여 주며 최종 doctor 실패도 종료 코드에 반영한다.
 
-종료 코드 `0`은 완료, `1`은 실패, `2`는 수동 작업 대기다. 예를 들어 Paseo 앱 초기 설정 전이거나 Chrome을 종료해야 하는 경우는 대기로 표시한다. 실패와 대기가 함께 있으면 `1`을 반환한다. 전체 실행에서는 수동 작업을 마친 뒤 최종 doctor까지 통과해야 완료다.
+종료 코드 `0`은 완료, `1`은 실패, `2`는 수동 작업 대기다. 예를 들어 데스크톱의 화면 공유가 꺼져 있거나 FileVault가 켜져 있으면 대기로 표시한다. 실패와 대기가 함께 있으면 `1`을 반환한다. 전체 실행에서는 수동 작업을 마친 뒤 최종 doctor까지 통과해야 완료다.
 
 | 단계 | 하는 일 | 문서 |
 |---|---|---|
@@ -43,13 +46,13 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | xcode | Xcode 명령줄 도구(git 포함), 이 저장소의 커밋 전 검사 켜기 | |
 | homebrew | Homebrew 설치, Brewfile 설치, Intel용 uv 공식 바이너리 | [development/homebrew.md](development/homebrew.md) |
 | macos | 키보드, 다크 모드, Dock, 트랙패드 세 손가락 드래그, 검정 배경화면, 화면 보호기 끄기 | [macos/system-settings.md](macos/system-settings.md) |
-| power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기(화면은 10분 뒤 끔), 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
+| power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기(화면은 10분 뒤 끔), 정전 후 자동 켜기, 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
-| browser | Browser Use CLI(uv)와 공식 스킬, 에이전트 전용 Chrome 자동 시작, 개인 Chrome 승인형 원격 디버깅 설정 | [agents/browser.md](agents/browser.md) |
-| paseo | 사용자 스킬을 Claude·Codex에 연결, 없는 Paseo 프로필 추가, Paseo 도구 켜기, 데스크톱은 로그인 시 자동 시작 | [agents/paseo.md](agents/paseo.md) |
-| auth | GitHub 로그인, 기기별 SSH 키, 남은 로그인 안내 | [development/git.md](development/git.md) |
+| browser | Browser Use CLI(uv)와 공식 스킬, 에이전트 전용 Chrome 자동 시작 | [agents/browser.md](agents/browser.md) |
+| paseo | 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 없는 프로필 추가, Paseo 도구 켜기, 데스크톱은 로그인 시 데몬 시작 | [agents/paseo.md](agents/paseo.md) |
+| auth | GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내와 로그인할 앱 열기 | [development/git.md](development/git.md) |
 
 ## 자주 쓰는 명령
 

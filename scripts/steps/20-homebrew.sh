@@ -18,7 +18,8 @@ else
     installer_url=https://raw.githubusercontent.com/Homebrew/install/f4aa1b1ca5b256954dbde0315455fb259cdfc45a/install.sh
   fi
   installer="$(curl -fsSL "$installer_url")" || die "Homebrew 설치 스크립트를 받지 못했습니다"
-  /bin/bash -c "$installer"
+  # 비대화형: "RETURN을 누르세요" 없이 설치한다. 관리자 권한은 bootstrap.sh가 시작할 때 받아 둔다.
+  NONINTERACTIVE=1 /bin/bash -c "$installer"
   [[ -x "$BOOTSTRAP_BREW_PREFIX/bin/brew" ]] || die "Homebrew가 설치되지 않았습니다"
   eval "$("$BOOTSTRAP_BREW_PREFIX/bin/brew" shellenv)"
 fi

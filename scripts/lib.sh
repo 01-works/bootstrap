@@ -62,14 +62,6 @@ ensure_standalone_uv() {
   ok 'uv 공식 바이너리 설치됨 (셸 설정 유지)'
 }
 
-# 기본 SSH 키: 0 개인키 있음, 1 없음, 2 공개키만 있거나 불완전한 파일.
-ssh_key_state() {
-  local key="$1"
-  [[ -f "$key" && -s "$key" ]] && return 0
-  [[ -e "$key" || -L "$key" || -e "$key.pub" || -L "$key.pub" ]] && return 2
-  return 1
-}
-
 # $HOME을 ~로 줄여서 보여준다.
 pretty() {
   case "$1" in
@@ -125,15 +117,31 @@ device_flag() {
 # 데스크톱이 가만히 있을 때 화면을 끄는 시간(분). 컴퓨터는 계속 깨어 있다. 화면 보호기는 쓰지 않는다 (macos 단계).
 DISPLAY_SLEEP_MINUTES=10
 
-# 전원 설정이 맞는지. 노트북은 충전 중에만 잠자기 안 함, 데스크톱은 늘 켜두기(잠자기 끔, 화면은 DISPLAY_SLEEP_MINUTES 뒤 끔, 네트워크로 깨우기 켬).
+# 전원 설정이 맞는지. 노트북은 충전 중에만 잠자기 안 함, 데스크톱은 늘 켜두기
+# (잠자기 끔, 화면은 DISPLAY_SLEEP_MINUTES 뒤 끔, 네트워크로 깨우기 켬, 정전 후 전원이 돌아오면 자동으로 켜기).
 power_ok() {
   if is_laptop; then
     [[ "$(pmset -g custom | awk '/^AC Power:/ {ac = 1; next} /^[^ ]/ {ac = 0} ac && $1 == "sleep" {print $2; exit}')" == 0 ]]
     return
   fi
   local s
-  s="$(pmset -g custom | awk '$1 == "sleep" || $1 == "displaysleep" || $1 == "womp" {print $1 "=" $2}' | sort -u | paste -sd ' ' -)"
-  [[ "$s" == "displaysleep=$DISPLAY_SLEEP_MINUTES sleep=0 womp=1" ]]
+  s="$(pmset -g custom | awk '$1 == "sleep" || $1 == "displaysleep" || $1 == "womp" || $1 == "autorestart" {print $1 "=" $2}' | sort -u | paste -sd ' ' -)"
+  [[ "$s" == "autorestart=1 displaysleep=$DISPLAY_SLEEP_MINUTES sleep=0 womp=1" ]]
+}
+
+# FileVault가 완전히 꺼져 있는지 (복호화 중이면 아니다).
+filevault_off() {
+  [[ "$(fdesetup status 2>/dev/null)" == 'FileVault is Off.' ]]
+}
+
+# 자동 로그인이 이 계정으로 켜져 있는지.
+autologin_on() {
+  [[ "$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)" == "$(id -un)" ]]
+}
+
+# 원격 로그인(com.openssh.sshd)·화면 공유(com.apple.screensharing)가 켜져 있는지. 켜기는 시스템 설정 > 일반 > 공유에서 손으로.
+sharing_enabled() {
+  launchctl print-disabled system 2>/dev/null | grep -q "\"$1\" => enabled"
 }
 
 # CPU에 맞는 Homebrew 기본 경로. Intel은 /usr/local, Apple Silicon은 /opt/homebrew.
