@@ -12,10 +12,21 @@ elif [[ "$DRY_RUN" == 1 ]]; then
   exit 0
 else
   # curl | bash는 받기에 실패해도 성공으로 끝나므로, 먼저 받아 두고 확인한 뒤 실행한다.
-  installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || die "Homebrew 설치 스크립트를 받지 못했습니다"
+  installer_url=https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
+  if [[ "$(uname -m)" == x86_64 ]]; then
+    # 2026-09에 최신 설치기에서 Intel 지원이 빠졌다. Intel을 지원하는 이전 공식 설치기 버전을 고정한다.
+    installer_url=https://raw.githubusercontent.com/Homebrew/install/f4aa1b1ca5b256954dbde0315455fb259cdfc45a/install.sh
+  fi
+  installer="$(curl -fsSL "$installer_url")" || die "Homebrew 설치 스크립트를 받지 못했습니다"
   /bin/bash -c "$installer"
-  [[ -x /opt/homebrew/bin/brew ]] || die "Homebrew가 설치되지 않았습니다"
-  eval "$(/opt/homebrew/bin/brew shellenv)"
+  [[ -x "$BOOTSTRAP_BREW_PREFIX/bin/brew" ]] || die "Homebrew가 설치되지 않았습니다"
+  eval "$("$BOOTSTRAP_BREW_PREFIX/bin/brew" shellenv)"
+fi
+
+# Intel은 Homebrew uv의 빌드용 Rust·LLVM까지 컴파일하는 대신 공식 바이너리를 쓴다.
+uv_status=0
+if [[ "$(uname -m)" == x86_64 ]]; then
+  ensure_standalone_uv "$HOME/.local/bin" || uv_status=3
 fi
 
 # 하나가 실패해도(예: brew 밖에서 깔린 같은 앱) 나머지 단계는 계속한다. 빠진 항목은 doctor가 알려준다.
@@ -29,3 +40,4 @@ if ! run brew bundle --file="$BOOTSTRAP_ROOT/Brewfile" --no-upgrade; then
   info "다운로드 실패(404 등)면: 하루쯤 뒤 ./bootstrap.sh --only homebrew, 급하면 TOOLS.md의 공식 링크에서 받기"
   exit 3  # Homebrew 자체는 준비됨. 나머지 단계는 진행하되 최종 실패로 집계.
 fi
+exit "$uv_status"

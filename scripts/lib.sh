@@ -25,6 +25,43 @@ has() { command -v "$1" >/dev/null 2>&1; }
 # 실행 파일의 존재와 실제 기동 성공을 구분한다. 설치 단계와 doctor에서 함께 사용.
 cli_works() { "$1" --version >/dev/null 2>&1; }
 
+# Intel용 uv 공식 바이너리. 이미 있는 CLI와 다른 설치의 uv/uvx 경로는 덮어쓰지 않는다.
+# 설치 경로를 인자로 받아 테스트에서도 실제 홈을 바꾸지 않는다.
+ensure_standalone_uv() {
+  local install_dir="$1" entry installer
+  if has uv; then
+    if ! cli_works uv; then
+      fail "기존 uv 실행 실패. 설치를 유지합니다: $(command -v uv)"
+      return 1
+    fi
+    ok "$(uv --version)"
+    return 0
+  fi
+  for entry in uv uvx; do
+    if [[ -e "$install_dir/$entry" || -L "$install_dir/$entry" ]]; then
+      fail "기존 uv 설치 경로 충돌. 파일을 유지합니다: $install_dir/$entry"
+      return 1
+    fi
+  done
+  if [[ "$DRY_RUN" == 1 ]]; then
+    info "[dry-run] Intel: uv 공식 바이너리를 $install_dir 에 설치 (셸 설정 유지)"
+    return 0
+  fi
+  installer="$(curl -fsSL https://astral.sh/uv/install.sh)" || {
+    fail 'uv 공식 설치기를 받지 못했습니다'
+    return 1
+  }
+  if ! printf '%s\n' "$installer" | UV_INSTALL_DIR="$install_dir" UV_NO_MODIFY_PATH=1 sh; then
+    fail 'uv 공식 바이너리 설치 실패'
+    return 1
+  fi
+  if [[ ! -x "$install_dir/uv" ]] || ! "$install_dir/uv" --version; then
+    fail 'uv 설치 후 실행 실패'
+    return 1
+  fi
+  ok 'uv 공식 바이너리 설치됨 (셸 설정 유지)'
+}
+
 # 기본 SSH 키: 0 개인키 있음, 1 없음, 2 공개키만 있거나 불완전한 파일.
 ssh_key_state() {
   local key="$1"
@@ -99,9 +136,18 @@ power_ok() {
   [[ "$s" == "displaysleep=$DISPLAY_SLEEP_MINUTES sleep=0 womp=1" ]]
 }
 
+# CPU에 맞는 Homebrew 기본 경로. Intel은 /usr/local, Apple Silicon은 /opt/homebrew.
+case "$(uname -m)" in
+  x86_64) BOOTSTRAP_BREW_PREFIX=/usr/local ;;
+  *) BOOTSTRAP_BREW_PREFIX=/opt/homebrew ;;
+esac
+
 # 비대화형 bash에서도 로그인 셸과 같은 도구를 찾을 수 있게 PATH를 맞춘다 (home/zsh/.zprofile과 같은 순서).
-if [[ -x /opt/homebrew/bin/brew ]]; then
-  eval "$(/opt/homebrew/bin/brew shellenv)"
+if [[ -x "$BOOTSTRAP_BREW_PREFIX/bin/brew" ]]; then
+  eval "$("$BOOTSTRAP_BREW_PREFIX/bin/brew" shellenv)"
 fi
 export PNPM_HOME="$HOME/Library/pnpm"  # .zshrc와 같은 값. pnpm 전역 설치에 필요
 export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/Library/pnpm/bin:$PATH"
+if ! has fnm && [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
+  export PATH="$HOME/.local/share/fnm:$PATH"
+fi

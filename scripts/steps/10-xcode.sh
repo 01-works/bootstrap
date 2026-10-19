@@ -16,7 +16,7 @@ else
 fi
 
 # 이 저장소의 커밋 전 비밀값 검사(.githooks/pre-commit)를 켠다. git이 이 단계에서 생기므로 여기서 한다.
-if [[ -d "$BOOTSTRAP_ROOT/.git" ]]; then
+if git -C "$BOOTSTRAP_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if [[ "$(git -C "$BOOTSTRAP_ROOT" config core.hooksPath || true)" == .githooks ]]; then
     ok "커밋 전 검사 훅"
   else

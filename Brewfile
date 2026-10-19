@@ -24,7 +24,8 @@ cask "tailscale-app"  # 기기 간 원격 접속
 # 앱이 달라야 개인 Chrome과 Dock·링크 열기가 섞이지 않는다.
 cask "google-chrome"       # 개인용. 로그인이 필요한 작업에 사용자가 요청할 때만 연결
 cask "google-chrome@beta"  # 에이전트 전용
-brew "uv"                  # Browser Use CLI 설치용 (browser 단계)
+# Intel은 Homebrew 바이너리가 없어 Rust·LLVM까지 소스 빌드된다. homebrew 단계에서 공식 uv 바이너리를 설치한다.
+brew "uv" unless OS.mac? && Hardware::CPU.intel?
 
 # Cloudflare Tunnel
 brew "cloudflared"
