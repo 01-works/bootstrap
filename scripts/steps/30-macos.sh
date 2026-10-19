@@ -27,6 +27,7 @@ set_default NSGlobalDomain KeyRepeat -int 2 "키 반복 속도 빠르게"
 set_default NSGlobalDomain InitialKeyRepeat -int 15 "키 반복 시작 빠르게"
 set_default NSGlobalDomain AppleInterfaceStyle -string Dark "다크 모드 (로그아웃 후 완전히 반영)"
 set_default com.apple.dock tilesize -int 42 "Dock 아이콘 크기 42"
+set_default com.apple.dock show-recents -bool false "Dock 최근 사용한 앱 숨기기"
 
 # 내장·외장 트랙패드 모두 세 손가락 드래그 사용. 다른 드래그 방식은 끈다.
 for domain in com.apple.AppleMultitouchTrackpad com.apple.driver.AppleBluetoothMultitouch.trackpad; do
@@ -34,6 +35,47 @@ for domain in com.apple.AppleMultitouchTrackpad com.apple.driver.AppleBluetoothM
   set_default "$domain" DragLock -bool false "드래그 잠금 끄기 ($domain)"
   set_default "$domain" TrackpadThreeFingerDrag -bool true "세 손가락 드래그 ($domain, 재로그인 후 확인)"
 done
+
+# Dock 고정 항목: 처음 한 번만 저장소 구성으로 맞춘다. 이후 직접 바꾼 Dock은 그대로 두고, 없는 앱은 건너뛴다.
+# 노트북은 에이전트 앱까지, 늘 켜두는 데스크톱은 기본 앱만 둔다. Chrome Beta는 고정하지 않는다
+# (Dock에서 새로 띄우면 에이전트 전용 프로필이 아닌 창이 열린다).
+dock_apps=(/System/Applications/Apps.app "/Applications/Google Chrome.app")
+if is_laptop; then
+  dock_apps+=(/Applications/Claude.app /Applications/ChatGPT.app /Applications/Paseo.app)
+fi
+dock_apps+=(/System/Applications/Utilities/Terminal.app "/System/Applications/System Settings.app")
+dock_tile() {  # dock_tile <경로> [directory]
+  local url="file://${1// /%20}/"
+  if [[ "${2:-}" == directory ]]; then
+    printf '<dict><key>tile-data</key><dict><key>arrangement</key><integer>2</integer><key>displayas</key><integer>0</integer><key>file-data</key><dict><key>_CFURLString</key><string>%s</string><key>_CFURLStringType</key><integer>15</integer></dict><key>file-type</key><integer>2</integer><key>showas</key><integer>1</integer></dict><key>tile-type</key><string>directory-tile</string></dict>' "$url"
+  else
+    printf '<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>%s</string><key>_CFURLStringType</key><integer>15</integer></dict></dict><key>tile-type</key><string>file-tile</string></dict>' "$url"
+  fi
+}
+dock_marker="$BOOTSTRAP_STATE/dock-applied"
+if [[ -e "$dock_marker" ]]; then
+  ok "Dock 고정 항목 (처음 한 번 적용, 이후 변경은 유지)"
+else
+  tiles=()
+  names=''
+  for app in "${dock_apps[@]}"; do
+    if [[ -d "$app" ]]; then
+      tiles+=("$(dock_tile "$app")")
+      names="$names $(basename "$app" .app)"
+    else
+      info "Dock: 없는 앱은 건너뜀 ($app)"
+    fi
+  done
+  if [[ "$DRY_RUN" == 1 ]]; then
+    info "[dry-run] Dock 고정 항목:$names | 다운로드"
+  else
+    defaults write com.apple.dock persistent-apps -array "${tiles[@]}"
+    defaults write com.apple.dock persistent-others -array "$(dock_tile "$HOME/Downloads" directory)"
+    mkdir -p "$BOOTSTRAP_STATE" && touch "$dock_marker"
+    restart_dock=1
+    ok "Dock 고정 항목:$names | 다운로드"
+  fi
+fi
 
 if [[ "$restart_dock" == 1 ]]; then
   run killall Dock

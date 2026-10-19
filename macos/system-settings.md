@@ -8,6 +8,8 @@
 | 키 반복 시작 | 짧게 (`InitialKeyRepeat 15`) | 〃 | `macos` |
 | 화면 모드 | 다크 | | `macos` |
 | Dock 아이콘 크기 | 42 | | `macos` |
+| Dock 최근 사용한 앱 | 숨김 | 고정 항목만 보이게 | `macos` |
+| Dock 고정 항목 | 노트북: 앱, Google Chrome, Claude, ChatGPT, Paseo, 터미널, 시스템 설정 \| 다운로드. 데스크톱: 앱, Google Chrome, 터미널, 시스템 설정 \| 다운로드 | 데스크톱은 원격으로 쓰는 기기라 기본 앱만. Chrome Beta는 고정하지 않는다(Dock에서 띄우면 에이전트 전용 프로필이 아님) | `macos`, 처음 한 번만. 이후 직접 바꾼 Dock은 유지. 다시 적용하려면 `~/.local/state/bootstrap/dock-applied`를 지우고 `./bootstrap.sh --only macos` |
 | 트랙패드 드래그 | 세 손가락으로 드래그하기 | 누른 채로 힘주지 않고 창·파일 이동 | `macos` |
 | 배경화면 | 검정 단색 | | `macos` (처음 바꿀 때 System Events 제어 허용을 한 번 묻는다) |
 | 디스플레이 배율 | 가장 작게 ("더 많은 공간") | 한 화면에 많이 보이게 | 손으로. 모니터마다 선택지가 달라 자동화하지 않는다 |

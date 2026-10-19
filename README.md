@@ -45,7 +45,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | preflight | Apple Silicon/Intel·네트워크 확인 | |
 | xcode | Xcode 명령줄 도구(git 포함), 이 저장소의 커밋 전 검사 켜기 | |
 | homebrew | Homebrew 설치, Brewfile 설치, Intel용 uv 공식 바이너리 | [development/homebrew.md](development/homebrew.md) |
-| macos | 키보드, 다크 모드, Dock, 트랙패드 세 손가락 드래그, 검정 배경화면, 화면 보호기 끄기 | [macos/system-settings.md](macos/system-settings.md) |
+| macos | 키보드, 다크 모드, Dock(크기·고정 항목), 트랙패드 세 손가락 드래그, 검정 배경화면, 화면 보호기 끄기 | [macos/system-settings.md](macos/system-settings.md) |
 | power | 노트북: 충전 중 잠자기 안 함. 데스크톱: 늘 켜두기(화면은 10분 뒤 끔), 정전 후 자동 켜기, 원격 접속 확인 | [macos/system-settings.md](macos/system-settings.md) |
 | dotfiles | `home/`의 설정 파일을 `~`에 연결 | 아래 "설정 파일" |
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
