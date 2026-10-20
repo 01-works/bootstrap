@@ -69,6 +69,12 @@ node scripts/launch-agents.mjs --check --only agent-chrome --desktop   # 노트�
 - 연결하지 못하면 이유와 확인하지 못한 항목을 보고한다. cloud 브라우저나 임시 브라우저로 임의 대체하지 않는다.
 - 공식 스킬의 `mac-approve` 자동 클릭·접근성 권한 추가·보안 완화는 쓰지 않는다.
 
+### Claude Code 명령 권한
+
+- 공통 설정의 `Bash(browser-use:*)`는 명령 인자뿐 아니라 stdin으로 전달하는 Python 코드도 허용한다. 이 코드는 파일·셸·네트워크에 접근할 수 있으므로 브라우저 조작이나 9333 접속만 허용하는 제한이 아니다.
+- `Bash(browser-use mac-approve:*)`는 deny 규칙으로 차단한다. 이 규칙은 해당 명령의 차단이며, Python 전체를 격리하는 샌드박스는 아니다. 위의 자동 승인·보안 완화 금지는 다른 호출 방식에도 적용된다.
+- auto 모드에서 allow 규칙의 실제 적용은 명령 형태와 설정에 따라 달라진다. `BH_REQUIRE_EXISTING_DAEMON=1` 같은 환경변수 접두어가 붙은 명령까지 승인된다고 가정하거나, 심사를 피하려고 접두어를 제거하지 않는다. [Claude 권한 문서](https://code.claude.com/docs/en/permissions), [auto 모드 문서](https://code.claude.com/docs/en/auto-mode-config).
+
 ## 개인 Chrome 사용 (요청 시)
 
 사용자가 "내 Chrome으로", "로그인된 내 계정으로"처럼 **개인 Chrome 사용을 명시적으로 요청한 경우에만** 연결한다. 에이전트 Chrome에 로그인이 없다는 이유만으로 개인 Chrome으로 바꾸지 않는다. 그럴 때는 에이전트 Chrome에 로그인해 달라고 하거나 개인 Chrome 사용 여부를 묻는다.

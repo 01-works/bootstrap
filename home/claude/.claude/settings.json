@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh pr merge:*)"
+      "Bash(gh pr merge:*)",
+      "Bash(browser-use:*)"
+    ],
+    "deny": [
+      "Bash(browser-use mac-approve:*)"
     ]
   },
   "model": "opus[1m]",
