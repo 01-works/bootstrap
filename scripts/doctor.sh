@@ -87,6 +87,11 @@ if has node; then
     else
       warn "Paseo 기본 플러그인 확인 필요 (./bootstrap.sh --only paseo, agents/paseo.md#플러그인)"
     fi
+    if node "$BOOTSTRAP_ROOT/scripts/paseo-skills.mjs" --check; then
+      pass "Paseo 기본 스킬"
+    else
+      warn "Paseo 기본 스킬 설치 필요 (./bootstrap.sh --only paseo)"
+    fi
   fi
   if ! is_laptop; then
     if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only paseo --desktop; then
