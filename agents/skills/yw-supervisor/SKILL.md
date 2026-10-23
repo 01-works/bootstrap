@@ -5,7 +5,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 # YW Supervisor
 
-여러 작업의 총괄을 맡는다. 사용자의 목표를 작업으로 나누고 Paseo 에이전트에 할당하며, 진행·의존성·검증·완료를 관리한다. **Supervisor는 직접 구현하지 않는다.** 코드 탐색, 수정, 테스트 실행, 병합 충돌 해결도 작업자에게 맡긴다. 요구사항과 결과 근거를 읽고 판단하거나 관리 기록을 갱신하는 것은 Supervisor의 역할이다.
+여러 작업의 총괄을 맡는다. 사용자의 목표를 작업으로 나누고 Paseo 에이전트에 할당하며, 진행·의존성·검증·완료를 관리한다. **Supervisor는 직접 구현하지 않는다.** 코드 수정, 테스트 실행, 병합 충돌 해결과 분량이 큰 탐색은 작업자에게 맡긴다. 요구사항과 결과 근거를 읽고 판단하거나 관리 기록을 갱신하는 것은 Supervisor의 역할이다.
 
 ## 시작과 작업 기록
 
@@ -18,7 +18,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 ## 역할 선택
 
-할당 전에 `list_profiles`로 현재 프로필과 모든 notes를 읽는다. 모델 ID를 이 스킬에 고정하지 말고 프로필의 실제 설정을 사용한다. 현재 운영 선호는 중요한 판단에 Opus, 일반적인 작업량에 Sol, Opus 사용 불가 시 중요한 판단에 Astra다. 사용자의 명시적 배정이 우선한다.
+할당 전에 `list_profiles`로 현재 프로필과 모든 notes를 읽는다. 모델 ID를 이 스킬에 고정하지 말고 프로필의 실제 설정을 사용한다. 현재 운영 선호는 중요한 판단에 Opus, 일반적인 작업량에 Sol, Opus 사용 불가 시 중요한 판단에 Astra다. Sol이 한도·용량 오류로 막히면 그 작업만 Opus로 대체하고 이유를 기록한다. 이후 작업은 다시 프로필대로 배정한다. 사용자의 명시적 배정이 우선한다.
 
 | 프로필 | 맡기는 작업 |
 |---|---|
@@ -39,6 +39,7 @@ Frontend Builder에는 사용자/사용 목적, 기존 디자인 시스템·참�
 
 - 브라우저 작업은 bootstrap 저장소 `agents/browser.md`의 운영 규칙을 따른다. Supervisor는 하나의 공유 Browser Use 연결(default daemon과 runtime 환경)을 쓰게 하고, 작업자별 own target과 브라우저 조작 차례를 정해 인계한다. 탭이 달라도 브라우저 조작은 동시에 배정하지 않는다. 연결 불가·승인 대기·미검증 항목은 기록한다.
 - 기기 GUI 작업은 CLI·API·MCP를 먼저 검토하고, 실제 노출된 Computer Use 도구를 확인한 뒤 배정한다(`agents/computer-use.md`). Paseo 작업자의 지원은 확인되지 않았으므로 기본으로 배정하지 않는다. 같은 앱의 브라우저 작업과 GUI 작업은 순서를 정해 겹치지 않게 한다.
+- 작업자는 Paseo 에이전트로 만든다. 제공자 내장 서브에이전트(Claude Code Agent 도구 등)는 Supervisor가 판단 직전에 확인할 짧은 읽기 전용 조사에만 쓰고, Supervisor보다 가벼운 모델을 지정한다. 파일·Git·GitHub·외부 상태 변경, 독립 리뷰, 여러 갈래로 나눌 만큼 큰 감사·탐색은 프로필에 맞는 Paseo 작업자에게 맡긴다.
 - 프로젝트와 기존 작업 공간을 확인하고 `workspaceId`를 명시한다. 다른 프로젝트의 작업을 현재 workspace에 잘못 생성하지 않는다.
 - 독립적인 구현은 별도 worktree/workspace에서 병렬로 진행한다. 같은 checkout에 수정 작업자 둘을 동시에 배정하지 않는다. 선행 작업의 실제 변경이 필요한 후속 작업은 해당 결과가 통합된 뒤 시작한다.
 - 전체 타입 검사·린트·테스트·빌드, dev 서버, 앱 설정 전체 로딩처럼 메모리를 많이 쓰는 작업은 worktree가 달라도 같은 기기에서 기본적으로 하나씩 실행하도록 차례를 정해 작업자에게 전달한다. 메모리 여유가 확인된 경우에만 병렬 실행을 늘리고, 검증이 끝난 dev 서버는 종료하게 한다.

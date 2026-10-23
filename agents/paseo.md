@@ -32,7 +32,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 | Deep Reviewer | Claude Opus 5.5 | xhigh | plan |
 | Deep Reviewer (Astra) | GPT-6 Astra | xhigh | auto-review + plan |
 
-- Supervisor는 여러 작업·프로젝트의 우선순위·의존성·할당·진행·검증·완료를 관리한다. 직접 구현하지 않고 탐색·수정·테스트·통합은 작업자에게 맡긴다.
+- Supervisor는 여러 작업·프로젝트의 우선순위·의존성·할당·진행·검증·완료를 관리한다. 직접 구현하지 않고 수정·테스트·통합과 큰 탐색은 Paseo 작업자에게 맡긴다. 내장 서브에이전트는 짧은 읽기 전용 확인에만 쓴다.
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Astra 프로필과 notes는 선택 지침이며 자동 장애 전환 기능이 아니다. Supervisor를 인계할 때 모든 작업의 상태·의존성·workspace·agent ID·결정·검증·남은 조치를 전달한다. 단순히 작업이 어렵다는 이유로 대체하지 않는다.
