@@ -60,13 +60,21 @@ node scripts/launch-agents.mjs --check --only agent-chrome --desktop   # 노트�
 - daemon 하나는 current target을 공유하므로 **다른 탭이라도 조작은 순서대로** 한다. Supervisor나 담당자가 소유자·own target·조작 차례를 정한다.
 - 작업자는 `current_tab()`/`list_tabs()`로 자기 target을 확인하고 `switch_tab()`으로 선택한다. 작업 탭은 필요할 때 `new_tab()`으로 한 번 만들어 재사용한다.
 - 끝나면 불필요한 own 탭만 닫는다. 다른 작업의 탭은 건드리지 않는다.
+- 닫을 own 탭이 current target이면 같은 호출 안에서 담당자와 정한 살아 있는 인계 탭으로 `switch_tab()`한 뒤 `close_tab(own_target)`으로 닫는다. 인계 탭이 없으면 own `about:blank` 탭 하나를 유지하고 보고한다. 닫힌 target을 남기면 `current_tab()`·doctor가 연결 단절로 오인할 수 있다.
 - 에이전트 Chrome의 로그인·로그아웃은 공유 상태이므로 조율한다. 비밀번호·MFA·동의가 필요하면 사용자에게 넘긴다.
 
 ### 실패와 새 연결
 
-- 닫힌 own 탭, 살아 있는 daemon의 CDP 연결 끊김, daemon 종료를 구분한다. PID·socket 존재나 IPC 응답만으로 연결이 건강하다고 보지 않는다.
+- 닫힌 own 탭, 살아 있는 daemon의 CDP 연결 끊김, daemon 종료를 구분한다. PID·socket 존재, IPC 응답, `browser-use --doctor` 종료 코드 0만으로 연결이 건강하다고 보지 않는다.
+- 9333의 `/json/version`은 정상인데 필수 모드(`BH_REQUIRE_EXISTING_DAEMON=1`)에서 `required daemon 'default' failed its CDP health check`가 나오면 stale daemon을 의심한다. 이 검사는 브라우저 수준의 `Target.getTargets` 응답을 확인한다. Chrome 재시작 뒤에도 생길 수 있지만 자동 업데이트가 원인이라고 단정하지 않는다.
+- `current_tab()` 또는 doctor가 쓰는 `connection_status`의 `cdp_disconnected`는 닫힌 current target 때문일 수도 있다. `Target.getTargets`는 응답하고 기존 target이 목록에서 사라졌다면 탭 종료로 구분하며 daemon을 reload하지 않는다. 필수 모드 health check 통과만으로 own 탭 조작 성공을 대신하지 않는다.
+- `browser-use --doctor`의 `active browser connections`는 같은 runtime의 모든 daemon 합계다. 합계가 양수여도 default 연결이 정상이라는 뜻은 아니며, 닫힌 target 때문에 default가 집계에서 빠질 수도 있다.
 - timeout은 취소의 증거가 아니다. 결과를 모르는 명령이나 승인 대기 중인 요청을 다시 실행하지 않는다. 자동 재연결을 반복하지 않는다.
-- 연결하지 못하면 이유와 확인하지 못한 항목을 보고한다. cloud 브라우저나 임시 브라우저로 임의 대체하지 않는다.
+- 복구 전 `ps`·`lsof` 등으로 default daemon의 PID·소유자·명령행·socket 경로를 확인한다. 다른 실행 중인 `browser-use` 클라이언트, 진행·승인 대기 요청, 외부 IPC 연결이 없어야 한다. 소유·사용 여부가 불명확하면 담당자와 조율하고, 넓은 `pkill`은 쓰지 않는다.
+- 위 조건을 확인한 뒤 `browser-use --reload`를 **한 번만** 실행한다. 같은 runtime(`BH_HOME`·socket 경로), default daemon(`BU_NAME` 생략), 9333 설정을 유지한다.
+- 이어서 필수 모드 환경변수 없이 기본 `browser-use` 실행으로 재연결한다. 연결되면 `BH_REQUIRE_EXISTING_DAEMON=1`로 새 own 탭을 `about:blank`에 열어 `document.readyState`가 `complete`인지 확인한다.
+- **확인 탭을 닫기 전에** doctor의 연결 목록에 `default`가 표시되는지와 해당 daemon PID의 9333 TCP `ESTABLISHED` 연결을 확인한다. 전체 연결 수가 정확히 1일 필요는 없다. 확인 후 위의 [탭 소유와 조작 순서](#탭-소유와-조작-순서)에 따라 닫거나 유지하고 인계한다.
+- 어느 단계든 실패하면 반복 복구하지 말고 이유와 확인하지 못한 항목을 보고한다. 임시·이름 있는 daemon, 다른 runtime, 개인 Chrome·cloud·임시 브라우저로 임의 대체하지 않는다.
 - 공식 스킬의 `mac-approve` 자동 클릭·접근성 권한 추가·보안 완화는 쓰지 않는다.
 
 ### Claude Code 명령 권한
