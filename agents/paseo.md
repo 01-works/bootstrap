@@ -13,7 +13,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 - `~/.paseo/`: 데몬 설정, 키, 에이전트 기록, 로그가 섞여 있어서 저장소에 넣지 않는다.
 - 예외적으로 공유할 프로필의 기본값만 [paseo-profiles.json](paseo-profiles.json)에 보관한다. `config.json` 전체를 복사하거나 링크하지 않는다.
 - 에이전트에 Paseo 도구를 제공하는 설정(`daemon.mcp.injectIntoAgents`, 앱의 Enable Paseo tools)은 `paseo` 단계가 켠다. Supervisor가 작업자를 만들 때 필요하다.
-- 머지된 워크스페이스 자동 아카이브(`daemon.autoArchiveAfterMerge`)도 `paseo` 단계가 켠다. 기기에서 꺼도 다음 `paseo` 단계(자동 갱신 포함)가 다시 켜므로, 끄려면 `scripts/paseo-profiles.mjs`의 목록에서 뺀다.
+- 머지된 워크스페이스 자동 아카이브(`daemon.autoArchiveAfterMerge`)는 `paseo` 단계가 끈다. 이전에 켜진 기기도 다음 `paseo` 단계(자동 갱신 포함)에서 꺼진다. 병합 뒤 워크스페이스는 수동으로 아카이브한다.
 - 기본 스킬: Paseo가 `~/.claude/skills/paseo*`(Claude Code)와 `~/.agents/skills/paseo*`에 설치한다. 각 폴더의 `.paseo-managed-files.json`이 Paseo가 관리한다는 표시다. 저장소에 넣지 않는다. 데몬은 이미 설치된 스킬만 자동 갱신하고 처음 설치는 앱 설정(Orchestration skills)에서 해야 해서, `paseo` 단계가 하나도 없을 때만 데몬에 설치를 요청한다(`scripts/paseo-skills.mjs`). 앱의 내부 모듈을 쓰므로 Paseo 버전이 바뀌어 실패하면 앱 설정에서 설치한다. 앱에서 스킬을 하나도 고르지 않은 기기는 그대로 둔다. 앱의 제거(Uninstall)만 하면 다음 `paseo` 단계가 다시 설치하므로, 빼려면 선택을 비운다.
 - 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md)는 이 저장소에서 관리한다. `paseo` 단계가 같은 원본 폴더를 `~/.agents/skills/yw-supervisor`와 `~/.claude/skills/yw-supervisor`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
 
@@ -55,7 +55,7 @@ Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 �
 
 ## 설치와 갱신
 
-`paseo` 단계는 먼저 사용자 스킬을 연결하고, `$PASEO_HOME/config.json`(기본 `~/.paseo/config.json`)의 `daemon.agentProfiles`에 없는 프로필만 추가하며, 꺼져 있으면 Paseo 도구 제공과 머지된 워크스페이스 자동 아카이브를 켠다. 이름 또는 ID가 일치하는 기존 프로필과 개인 프로필은 유지한다. 예전 `Cross Reviewer`는 `Deep Reviewer`의 이전 이름으로 인식한다. Paseo 설정이 아직 없어도 스킬은 연결된다.
+`paseo` 단계는 먼저 사용자 스킬을 연결하고, `$PASEO_HOME/config.json`(기본 `~/.paseo/config.json`)의 `daemon.agentProfiles`에 없는 프로필만 추가하며, Paseo 도구 제공은 켜고 머지된 워크스페이스 자동 아카이브는 끈다. 이름 또는 ID가 일치하는 기존 프로필과 개인 프로필은 유지한다. 예전 `Cross Reviewer`는 `Deep Reviewer`의 이전 이름으로 인식한다. Paseo 설정이 아직 없어도 스킬은 연결된다.
 
 ```sh
 ./bootstrap.sh --only paseo --dry-run

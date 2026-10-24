@@ -8,10 +8,10 @@ import { isDeepStrictEqual } from 'node:util';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const fields = ['name', 'provider', 'model', 'modeId', 'thinkingOptionId', 'featureValues', 'notes'];
-// 모든 기기에서 켜 두는 데몬 설정.
+// 모든 기기에 적용하는 데몬 설정.
 const switches = [
-  ['daemon.mcp.injectIntoAgents', '에이전트에 Paseo 도구 제공'],  // yw-supervisor가 사용
-  ['daemon.autoArchiveAfterMerge', '머지된 워크스페이스 자동 아카이브'],
+  ['daemon.mcp.injectIntoAgents', '에이전트에 Paseo 도구 제공', true],  // yw-supervisor가 사용
+  ['daemon.autoArchiveAfterMerge', '머지된 워크스페이스 자동 아카이브', false],
 ];
 
 function validate(profiles) {
@@ -80,13 +80,13 @@ function main() {
   const { profiles, changes, drift } = mergeProfiles(config.daemon?.agentProfiles ?? [], manifest, args.includes('--update'));
   for (const change of changes) console.log(change);
   for (const name of drift) console.log(`기존 설정 유지 (저장소와 다름): ${name}`);
-  // 기존 설정에 쓸 값. 프로필은 바뀐 것이 있을 때만, 켜 둘 설정은 꺼져 있을 때만.
+  // 기존 설정에 쓸 값. 프로필과 데몬 설정 모두 바뀐 것이 있을 때만.
   const settings = [];
   if (changes.length) settings.push(['daemon.agentProfiles', JSON.stringify(profiles)]);
-  for (const [key, label] of switches) {
-    if (key.split('.').reduce((node, part) => node?.[part], config) !== true) {
-      console.log(`켜기: ${label} (${key})`);
-      settings.push([key, 'true']);
+  for (const [key, label, value] of switches) {
+    if (key.split('.').reduce((node, part) => node?.[part], config) !== value) {
+      console.log(`${value ? '켜기' : '끄기'}: ${label} (${key})`);
+      settings.push([key, JSON.stringify(value)]);
     }
   }
   if (args.includes('--check')) {

@@ -82,7 +82,7 @@ fs.writeFileSync(target, JSON.stringify(config));
     const actual = JSON.parse(readFileSync(configPath, 'utf8'));
     assert.equal(actual.daemon.agentProfiles.length, manifest.profiles.length);
     assert.equal(actual.daemon.mcp.injectIntoAgents, true);
-    assert.equal(actual.daemon.autoArchiveAfterMerge, true);
+    assert.equal(actual.daemon.autoArchiveAfterMerge, false);
     delete actual.daemon.agentProfiles;
     delete actual.daemon.mcp;
     delete actual.daemon.autoArchiveAfterMerge;
@@ -104,7 +104,7 @@ fs.writeFileSync(target, JSON.stringify(config));
 
     // 프로필은 맞고 도구만 꺼진 기기: 도구 값만 저장. 저장 실패는 실패로 보고하고 재실행으로 마무리한다.
     const calls = join(dir, 'calls');
-    writeFileSync(configPath, JSON.stringify({ daemon: { agentProfiles: manifest.profiles, autoArchiveAfterMerge: true } }));
+    writeFileSync(configPath, JSON.stringify({ daemon: { agentProfiles: manifest.profiles, autoArchiveAfterMerge: false } }));
     rmSync(calls, { force: true });
     assert.equal(run('--check').status, 1);
     const failed = spawnSync(process.execPath, [script], { env: { ...env, FAIL_KEY: 'daemon.mcp.injectIntoAgents' }, encoding: 'utf8' });
@@ -114,15 +114,15 @@ fs.writeFileSync(target, JSON.stringify(config));
     assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), ['daemon.mcp.injectIntoAgents', 'daemon.mcp.injectIntoAgents']);
     assert.equal(run('--check').status, 0);
 
-    // 자동 아카이브를 끈 기기: 그 값만 다시 켠다.
+    // 이전 bootstrap이 자동 아카이브를 켠 기기: 그 값만 끈다.
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
-    config.daemon.autoArchiveAfterMerge = false;
+    config.daemon.autoArchiveAfterMerge = true;
     writeFileSync(configPath, JSON.stringify(config));
     rmSync(calls, { force: true });
     assert.equal(run('--check').status, 1);
     assert.equal(run().status, 0);
     assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), ['daemon.autoArchiveAfterMerge']);
-    assert.equal(JSON.parse(readFileSync(configPath, 'utf8')).daemon.autoArchiveAfterMerge, true);
+    assert.equal(JSON.parse(readFileSync(configPath, 'utf8')).daemon.autoArchiveAfterMerge, false);
     assert.equal(run('--check').status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
