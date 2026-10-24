@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 빠진 프로필 추가와 에이전트용 Paseo 도구 켜기, 기본 플러그인 설치·버전 맞춤, 기본 스킬 첫 설치.
+# 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 빠진 프로필 추가와 에이전트용 Paseo 도구·머지 후 자동 아카이브 켜기, 기본 플러그인 설치·버전 맞춤, 기본 스킬 첫 설치.
 # 늘 켜두는 기기는 로그인할 때 데몬을 자동으로 띄운다. 기존 프로필 수정은 --update.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
