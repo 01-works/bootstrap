@@ -33,7 +33,7 @@ brew install <이름>              # 설치하고
 
 ## 동작 방식
 
-- `homebrew` 단계는 `brew bundle --no-upgrade`로 설치한다. 이미 깔린 건 업그레이드하지 않으므로 다시 실행해도 아무것도 바뀌지 않는다. 업그레이드는 따로 `brew upgrade`.
+- `homebrew` 단계는 `brew bundle --no-upgrade`로 설치한다. 이미 깔린 건 업그레이드하지 않으므로 다시 실행해도 아무것도 바뀌지 않는다. 업그레이드는 따로 `brew upgrade`. 예외로 데스크톱의 Paseo는 `paseo-upgrade`가 올린다 ([Paseo 새 버전](../agents/paseo.md#paseo-새-버전)).
 - 한 항목이 실패해도 다음 단계로 넘어간다. 빠진 항목은 `doctor`가 보여준다.
 
 ## 기존 앱 옮기기

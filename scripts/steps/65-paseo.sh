@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 빠진 프로필 추가와 에이전트용 Paseo 도구 켜기·머지 후 자동 아카이브 끄기, 기본 플러그인 설치·버전 맞춤, 기본 스킬 첫 설치.
-# 늘 켜두는 기기는 로그인할 때 데몬을 자동으로 띄운다. 기존 프로필 수정은 --update.
+# 늘 켜두는 기기는 로그인할 때 데몬을 자동으로 띄우고, 한 시간마다 Paseo 새 버전을 확인해 올린다(scripts/paseo-upgrade.sh).
+# 기존 프로필 수정은 --update.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
@@ -46,6 +47,9 @@ fi
 autostart=0
 # shellcheck disable=SC2046
 node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo "$(device_flag)" $(no_restart_flag) || autostart=$?
+upgrade=0
+# shellcheck disable=SC2046
+node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo-upgrade "$(device_flag)" $(no_restart_flag) || upgrade=$?
 profiles=0
 node "$BOOTSTRAP_ROOT/scripts/paseo-profiles.mjs" || profiles=$?
 plugins=0
@@ -53,7 +57,7 @@ node "$BOOTSTRAP_ROOT/scripts/paseo-plugins.mjs" || plugins=$?
 skills=0
 node "$BOOTSTRAP_ROOT/scripts/paseo-skills.mjs" || skills=$?
 st=0
-for s in "$autostart" "$profiles" "$plugins" "$skills"; do
+for s in "$autostart" "$upgrade" "$profiles" "$plugins" "$skills"; do
   [[ "$s" == 0 || "$s" == 2 ]] || exit 1
   [[ "$s" == 0 ]] || st=2
 done

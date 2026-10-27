@@ -111,20 +111,7 @@ notify() {
   [[ "$AUTO" == 1 && "$DRY_RUN" != 1 ]] || return 0
   [[ "$(cat "$STATE/notified" 2>/dev/null)" != "$1" ]] || return 0
   printf '%s\n' "$1" >"$STATE/notified"
-  osascript -e 'on run argv' -e 'display notification (item 2 of argv) with title (item 1 of argv)' -e 'end run' \
-    "$2" "$3" >/dev/null 2>&1 || warn 'macOS 알림을 띄우지 못했습니다'
-  [[ "${4:-}" == push ]] || return 0
-  # 휴대폰 알림(선택): 주소 한 줄(예: ntfy 주제 주소)을 둔 기기만 보낸다. 저장소에는 넣지 않는다.
-  local file="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/notify-url" url
-  [[ -f "$file" ]] || return 0
-  url="$(head -1 "$file")"
-  if [[ "$url" != https://* ]]; then
-    warn "휴대폰 알림 주소는 https://로 시작해야 합니다: $(pretty "$file")"
-    return 0
-  fi
-  curl -fsS --max-time 10 -H 'Tags: warning' \
-    --data-binary "$(scutil --get ComputerName 2>/dev/null || hostname): $2
-$3" "$url" >/dev/null || warn '휴대폰 알림을 보내지 못했습니다'
+  send_notification "$2" "$3" "${4:-}"
 }
 
 # 저장소를 받지 않고 멈춘다. --auto는 상태로 남기고 알린다: hold <중복 확인 키> <이유> <조치>
