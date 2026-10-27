@@ -27,7 +27,7 @@
 직접 쓰는 노트북이든 늘 켜두는 데스크톱이든 같은 것을 설치하고 같은 설정 파일을 연결한다. 기기마다 다른 것은 다섯 가지뿐이다.
 
 - 전원: `power` 단계가 배터리 유무로 판단해서, 노트북은 충전 중에만 잠들지 않게 하고 데스크톱은 늘 켜둔다(화면은 가만히 있으면 끈다).
-- 자동 시작: 데스크톱은 로그인할 때 Paseo 데몬과 에이전트 Chrome을 띄운다. 노트북은 필요할 때 시작한다.
+- 자동 시작: 데스크톱은 로그인할 때 Paseo 데몬과 에이전트 Chrome을 띄우고, Paseo 새 버전을 한 시간마다 확인해 올린다(앱이 꺼져 있어 앱이 올리지 못함). 노트북은 필요할 때 시작하고 Paseo는 앱이 올린다.
 - 재시동 복구: 데스크톱은 FileVault를 끄고 자동 로그인을 켜서 정전 뒤에도 혼자 켜지고 로그인한다. 노트북은 FileVault를 켠다.
 - 로그인하는 계정 (GitHub, Google, Claude, Codex): 기기마다 로그인한다.
 - git 커밋 작성자: 다른 GitHub 계정을 쓰는 기기는 `~/.gitconfig.local`에 이름·이메일을 적는다.
@@ -51,7 +51,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | runtimes | Node(fnm) 기본 버전, pnpm, Vercel CLI | [development/node.md](development/node.md) |
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
 | browser | Browser Use CLI(uv)와 공식 스킬, 에이전트 전용 Chrome 자동 시작 | [agents/browser.md](agents/browser.md) |
-| paseo | 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 없는 프로필 추가, Paseo 도구 켜기, 기본 플러그인 설치·버전 맞춤, 데스크톱은 로그인 시 데몬 시작 | [agents/paseo.md](agents/paseo.md) |
+| paseo | 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 없는 프로필 추가, Paseo 도구 켜기, 기본 플러그인 설치·버전 맞춤, 데스크톱은 로그인 시 데몬 시작과 Paseo 새 버전 올리기 | [agents/paseo.md](agents/paseo.md) |
 | auth | GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내와 로그인할 앱 열기 | [development/git.md](development/git.md) |
 | autoupdate | 저장소 자동 갱신 등록 (로그인할 때와 10분마다) | 아래 "변경 전파" |
 
@@ -60,6 +60,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 ```sh
 ./bootstrap.sh --only dotfiles     # 한 단계만
 ./bootstrap.sh update              # 저장소를 받아 바뀐 부분만 적용 (수동 작업 대기 처리)
+./bootstrap.sh paseo-upgrade       # (데스크톱) Paseo를 정식 최신 버전으로. 실행 중 에이전트가 있으면 --force
 ./bootstrap.sh doctor              # 세팅 상태 검증
 ./bootstrap.sh snapshot            # 이 Mac에는 있는데 저장소에 없는 것 찾기
 ./bootstrap.sh --list              # 단계 목록
@@ -111,6 +112,7 @@ home/                 ~에 연결할 설정 파일 (묶음별)
 scripts/steps/        단계별 스크립트
 scripts/*.mjs         설정 병합·스킬 배치 (같은 이름의 *.test.mjs가 테스트)
 scripts/update.sh     변경 전파 (./bootstrap.sh update)
+scripts/paseo-upgrade.sh  데스크톱 Paseo 새 버전 올리기 (./bootstrap.sh paseo-upgrade)
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
 macos/                첫 부팅, 시스템 설정

@@ -99,6 +99,16 @@ if has node; then
     else
       miss "Paseo 자동 시작 확인 필요 (./bootstrap.sh --only paseo)"
     fi
+    if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only paseo-upgrade --desktop; then
+      pass "Paseo 새 버전 확인 등록 (한 시간마다)"
+    else
+      miss "Paseo 새 버전 확인 등록 필요 (./bootstrap.sh --only paseo)"
+    fi
+    upgrade_status="$BOOTSTRAP_STATE/paseo-upgrade/status"
+    case "$(sed -n 's/^result=//p' "$upgrade_status" 2>/dev/null)" in
+      failed) miss "$(sed -n 's/^banner=//p' "$upgrade_status")" ;;
+      pending) wait_for_user "$(sed -n 's/^banner=//p' "$upgrade_status")" ;;
+    esac
   fi
 else
   warn "Node가 없어 사용자 스킬·Paseo 프로필 확인을 건너뜁니다"

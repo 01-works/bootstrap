@@ -1,4 +1,4 @@
-// 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬, (모든 기기) 저장소 자동 갱신.
+// 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬·Paseo 업그레이드, (모든 기기) 저장소 자동 갱신.
 // plist에는 이 기기의 절대 경로가 들어가므로 저장소에 두지 않고 여기서 만든다.
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -11,9 +11,12 @@ export const AGENT_CHROME_URL = `http://127.0.0.1:${AGENT_CHROME_PORT}`;
 export const CHROME_BETA = '/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta';
 // cask는 /opt/homebrew/bin에, 앱 직접 설치는 다른 곳에 링크하므로 앱 안의 CLI를 직접 쓴다.
 export const PASEO_CLI = '/Applications/Paseo.app/Contents/Resources/bin/paseo';
-export const LABELS = { 'agent-chrome': 'local.bootstrap.agent-chrome', paseo: 'local.bootstrap.paseo', update: 'local.bootstrap.update' };
+export const LABELS = { 'agent-chrome': 'local.bootstrap.agent-chrome', paseo: 'local.bootstrap.paseo',
+  'paseo-upgrade': 'local.bootstrap.paseo-upgrade', update: 'local.bootstrap.update' };
 // 자동 갱신 주기(초). 잠들어 있던 기기는 깨어나면 놓친 주기를 한 번 실행한다.
 export const UPDATE_INTERVAL = 600;
+// Paseo 업그레이드 확인 주기(초). 최신 버전은 하루에 한 번 확인하고, 올릴 버전이 있으면 에이전트가 쉴 때까지 이 주기로 다시 본다.
+export const PASEO_UPGRADE_INTERVAL = 3600;
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const escape = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -49,7 +52,10 @@ export function plist({ label, args, runAtLoad, keepAlive, processType, startInt
 export function definitions({ home, laptop, env = {}, root = REPO_ROOT }) {
   const dataHome = env.XDG_DATA_HOME || join(home, '.local/share');
   const profile = join(dataHome, 'bootstrap/agent-chrome');
-  const updateState = join(env.XDG_STATE_HOME || join(home, '.local/state'), 'bootstrap/update');
+  const stateHome = join(env.XDG_STATE_HOME || join(home, '.local/state'), 'bootstrap');
+  const updateState = join(stateHome, 'update');
+  const upgradeState = join(stateHome, 'paseo-upgrade');
+  const stateEnv = env.XDG_STATE_HOME ? { XDG_STATE_HOME: env.XDG_STATE_HOME } : undefined;
   return {
     'agent-chrome': {
       label: LABELS['agent-chrome'],
@@ -64,14 +70,20 @@ export function definitions({ home, laptop, env = {}, root = REPO_ROOT }) {
       env: { PATH: [join(home, '.local/bin'), join(home, 'Library/pnpm/bin'), join(home, '.local/share/fnm/aliases/default/bin'),
         '/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':') },
     },
+    // 앱 없이 데몬만 도는 기기는 앱의 자동 업데이트가 돌지 않아 따로 올린다 (scripts/paseo-upgrade.sh). 노트북은 앱이 올린다.
+    // 데몬과 동시에 뜨지 않도록 로그인할 때는 실행하지 않는다.
+    'paseo-upgrade': laptop ? null : {
+      label: LABELS['paseo-upgrade'], args: ['/bin/bash', join(root, 'bootstrap.sh'), 'paseo-upgrade', '--auto'],
+      runAtLoad: false, keepAlive: false, processType: 'Background', startInterval: PASEO_UPGRADE_INTERVAL,
+      log: join(upgradeState, 'upgrade.log'), dirs: [upgradeState], env: stateEnv,
+    },
     // 모든 기기가 같다. 로그인할 때와 주기마다 저장소를 확인해 바뀐 부분만 적용한다 (scripts/update.sh).
     // 다른 일을 방해하지 않게 낮은 우선순위로 돈다. 출력은 update.log에 이어 쓴다.
     // 셸에서 XDG_STATE_HOME을 바꿔 쓰면 launchd에도 같은 값을 줘서 상태·잠금 위치를 맞춘다.
     update: {
       label: LABELS.update, args: ['/bin/bash', join(root, 'bootstrap.sh'), 'update', '--auto'],
       runAtLoad: true, keepAlive: false, processType: 'Background', startInterval: UPDATE_INTERVAL,
-      log: join(updateState, 'update.log'), dirs: [updateState],
-      env: env.XDG_STATE_HOME ? { XDG_STATE_HOME: env.XDG_STATE_HOME } : undefined,
+      log: join(updateState, 'update.log'), dirs: [updateState], env: stateEnv,
     },
   };
 }
@@ -143,7 +155,11 @@ export function apply({ home = homedir(), env = process.env, laptop, only, check
   for (const name of only ? [only] : Object.keys(defs)) {
     if (!(name in defs)) throw new Error(`알 수 없는 대상: ${name}`);
     const def = defs[name];
-    if (!def) { console.log('Paseo 자동 시작: 노트북은 선택 사항 (시스템 설정 > 일반 > 로그인 항목)'); continue; }
+    if (!def) {
+      console.log(name === 'paseo' ? 'Paseo 자동 시작: 노트북은 선택 사항 (시스템 설정 > 일반 > 로그인 항목)'
+        : 'Paseo 업그레이드: 노트북은 앱이 스스로 업데이트');
+      continue;
+    }
     if (name === 'agent-chrome') {
       if (!existsSync(chromeBinary)) {
         console.error('Chrome Beta 없음. ./bootstrap.sh --only homebrew,browser');

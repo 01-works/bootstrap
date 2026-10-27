@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AGENT_CHROME_URL, LABELS, UPDATE_INTERVAL, apply, definitions, harnessEnvPath, plist } from './launch-agents.mjs';
+import { AGENT_CHROME_URL, LABELS, PASEO_UPGRADE_INTERVAL, UPDATE_INTERVAL, apply, definitions, harnessEnvPath, plist } from './launch-agents.mjs';
 
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), 'bootstrap-launch-test-'));
@@ -34,10 +34,16 @@ test('기기 종류별 정의: 데스크톱은 로그인 시 시작, 노트북�
   assert.match(plist(desktop['agent-chrome']), /--user-data-dir=\/h\/.local\/share\/bootstrap\/agent-chrome/);
   assert.match(plist(desktop.paseo), /<string>\/Applications\/Paseo\.app\/Contents\/Resources\/bin\/paseo<\/string>\s*<string>daemon<\/string>\s*<string>start<\/string>/);
   assert.match(plist(desktop.paseo), /<key>PATH<\/key><string>\/h\/.local\/bin:/);
+  const upgrade = plist(desktop['paseo-upgrade']);
+  assert.match(upgrade, /<string>paseo-upgrade<\/string>\s*<string>--auto<\/string>/);
+  assert.match(upgrade, /<key>RunAtLoad<\/key><false\/>/, '로그인할 때 데몬과 함께 뜨지 않음');
+  assert.match(upgrade, new RegExp(`<key>StartInterval</key><integer>${PASEO_UPGRADE_INTERVAL}</integer>`));
+  assert.match(upgrade, /\/h\/.local\/state\/bootstrap\/paseo-upgrade\/upgrade\.log/);
   const laptop = definitions({ home: '/h', laptop: true });
   assert.match(plist(laptop['agent-chrome']), /<key>RunAtLoad<\/key><false\/>/);
   assert.doesNotMatch(plist(laptop['agent-chrome']), /KeepAlive/);
   assert.equal(laptop.paseo, null);
+  assert.equal(laptop['paseo-upgrade'], null, '노트북은 앱이 스스로 업데이트');
   assert.match(plist({ label: 'x', args: ['a&b<c>'], runAtLoad: true }), /a&amp;b&lt;c&gt;/);
 });
 

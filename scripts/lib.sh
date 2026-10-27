@@ -145,6 +145,24 @@ lock_acquire() {
   export BOOTSTRAP_LOCKED="$$"
 }
 
+# macOS 알림을 띄우고, push면 휴대폰 알림(선택)도 보낸다: send_notification <제목> <내용> [push]
+# 휴대폰 알림은 주소 한 줄(예: ntfy 주제 주소)을 둔 기기만 보낸다. 저장소에는 넣지 않는다 (README "변경 전파").
+send_notification() {
+  osascript -e 'on run argv' -e 'display notification (item 2 of argv) with title (item 1 of argv)' -e 'end run' \
+    "$1" "$2" >/dev/null 2>&1 || warn 'macOS 알림을 띄우지 못했습니다'
+  [[ "${3:-}" == push ]] || return 0
+  local file="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/notify-url" url
+  [[ -f "$file" ]] || return 0
+  url="$(head -1 "$file")"
+  if [[ "$url" != https://* ]]; then
+    warn "휴대폰 알림 주소는 https://로 시작해야 합니다: $(pretty "$file")"
+    return 0
+  fi
+  curl -fsS --max-time 10 -H 'Tags: warning' \
+    --data-binary "$(scutil --get ComputerName 2>/dev/null || hostname): $1
+$2" "$url" >/dev/null || warn '휴대폰 알림을 보내지 못했습니다'
+}
+
 # 공백으로 구분된 목록에 값이 있는지 확인한다: contains <값> <목록...>
 contains() {
   local needle="$1"
@@ -215,11 +233,13 @@ tailscale_starts_on_login() {
   [[ "$(defaults read io.tailscale.ipn.macsys TailscaleStartOnLogin 2>/dev/null)" == 1 ]]
 }
 
-# CPU에 맞는 Homebrew 기본 경로. Intel은 /usr/local, Apple Silicon은 /opt/homebrew.
-case "$(uname -m)" in
-  x86_64) BOOTSTRAP_BREW_PREFIX=/usr/local ;;
-  *) BOOTSTRAP_BREW_PREFIX=/opt/homebrew ;;
-esac
+# CPU에 맞는 Homebrew 기본 경로. Intel은 /usr/local, Apple Silicon은 /opt/homebrew. 테스트는 대역 경로를 준다.
+if [[ -z "${BOOTSTRAP_BREW_PREFIX:-}" ]]; then
+  case "$(uname -m)" in
+    x86_64) BOOTSTRAP_BREW_PREFIX=/usr/local ;;
+    *) BOOTSTRAP_BREW_PREFIX=/opt/homebrew ;;
+  esac
+fi
 
 # 비대화형 bash에서도 로그인 셸과 같은 도구를 찾을 수 있게 PATH를 맞춘다 (home/zsh/.zprofile과 같은 순서).
 if [[ -x "$BOOTSTRAP_BREW_PREFIX/bin/brew" ]]; then
