@@ -11,7 +11,8 @@
   "model": "opus[1m]",
   "enabledPlugins": {},
   "extraKnownMarketplaces": {},
+  "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "agentPushNotifEnabled": true,
-  "tui": "fullscreen"
+  "theme": "dark"
 }
