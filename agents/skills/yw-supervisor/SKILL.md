@@ -42,6 +42,7 @@ Frontend Builder에는 사용자/사용 목적, 기존 디자인 시스템·참�
 - 기기 GUI 작업은 CLI·API·MCP를 먼저 검토하고, 실제 노출된 Computer Use 도구를 확인한 뒤 배정한다(`agents/computer-use.md`). Paseo 작업자의 지원은 확인되지 않았으므로 기본으로 배정하지 않는다. 같은 앱의 브라우저 작업과 GUI 작업은 순서를 정해 겹치지 않게 한다.
 - 작업자는 Paseo 에이전트로 만든다. 제공자 내장 서브에이전트(Claude Code Agent 도구 등)는 Supervisor가 판단 직전에 확인할 짧은 읽기 전용 조사에만 쓰고, Supervisor보다 가벼운 모델을 지정한다. 파일·Git·GitHub·외부 상태 변경, 독립 리뷰, 여러 갈래로 나눌 만큼 큰 감사·탐색은 프로필에 맞는 Paseo 작업자에게 맡긴다.
 - 프로젝트와 기존 작업 공간을 확인하고 `workspaceId`를 명시한다. 다른 프로젝트의 작업을 현재 workspace에 잘못 생성하지 않는다.
+- 새 workspace는 `create_workspace`에 소유 프로젝트의 `projectId`를 넘겨 만든다. 브랜치 작업은 `isolation: "worktree"`를 쓴다. 여러 리뷰어가 같은 head를 보려고 `git worktree add --detach`로 만든 경로를 `isolation: "local"`로 등록할 때도 `projectId`가 필요하다. 빠뜨리면 경로마다 별도 프로젝트가 생기고, worktree를 지운 뒤에도 빈 프로젝트가 남는다. 끝난 workspace는 `archive_workspace`로 정리한다.
 - 할당 전에 같은 파일·기능을 바꾸거나 은퇴·대체하는 다른 lane·감독 세션이 있는지 열린·최근 머지 PR, 이슈 claim, 다른 Paseo workspace에서 확인한다. `list_agents`는 기본적으로 호출한 cwd 범위이므로 전체 확인은 `list_workspaces`로 workspace를 찾은 뒤 cwd별로 조회한다.
 - 정체된 claim을 인수할 때는 정체 근거를 공유 조정 기록에 남기고 사용자 승인을 받는다. 원 lane이 다시 나타나면 소유 lane을 하나로 정하는 조정 기록을 남긴다.
 - 독립적인 구현은 별도 worktree/workspace에서 병렬로 진행한다. 같은 checkout에 수정 작업자 둘을 동시에 배정하지 않는다. 선행 작업의 실제 변경이 필요한 후속 작업은 해당 결과가 통합된 뒤 시작한다.
