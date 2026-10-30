@@ -56,7 +56,19 @@ case "$1" in
     exit "$code" ;;
 esac
 `);
-  script(join(bin, 'curl'), `${log}
+  // 릴리스 공개 시각: gh 로그인 토큰을 표준 입력 헤더로 넘긴 curl이 먼저, 실패하면 로그인 없는 curl.
+  // gh-fail(로그인 없음)·curl-auth-fail(토큰 거절)·curl-fail(로그인 없는 한도 소진) 플래그로 실패를 흉내 낸다.
+  script(join(bin, 'gh'), `printf 'gh %s\\n' "$*" >> "$MOCK/calls"
+[[ -f "$MOCK/gh-fail" ]] && exit 1
+[[ "$1 $2" == 'auth token' ]] && echo gho_test
+`);
+  script(join(bin, 'curl'), `if [[ " $* " == *' -H @- '* ]]; then
+  printf 'curl %s [%s]\\n' "$*" "$(cat)" >> "$MOCK/calls"
+  [[ -f "$MOCK/curl-auth-fail" ]] && exit 22
+else
+  printf 'curl %s\\n' "$*" >> "$MOCK/calls"
+  [[ -f "$MOCK/curl-fail" ]] && exit 22
+fi
 [[ "$*" == *api.github.com* ]] && printf '{"published_at":"%s"}\\n' "$(cat "$MOCK/published")"
 `);
   script(join(bin, 'launchctl'), `${log}
@@ -141,6 +153,41 @@ test('공개 뒤 36시간이 안 됐으면 기다리고, --force는 바로 올�
   assert.equal(result.status, 0, output(result));
   assert.ok(f.calls().includes('brew upgrade --cask paseo'));
   assert.equal(f.daemon(), '0.13.2');
+});
+
+test('릴리스 공개 시각은 gh 로그인 토큰으로 받고, 안 되면 로그인 없이, 둘 다 안 되면 다음 주기에 다시 확인한다', t => {
+  const f = fixture(t);
+  const api = 'https://api.github.com/repos/getpaseo/paseo/releases/tags/v0.14.0';
+  const latest = () => readFileSync(join(f.state, 'latest'), 'utf8');
+  const recheck = () => { writeFileSync(join(f.state, 'latest'), '0.13.2 1\n'); f.age('checked', 25); };
+  f.set({ app: '0.13.2', daemon: '0.13.2', cask: '0.14.0', publishedHoursAgo: 10 });
+  let result = f.run(['--auto']);
+  assert.equal(result.status, 0, output(result));
+  let calls = f.calls().filter(call => call.startsWith('curl'));
+  assert.deepEqual(calls, [`curl -fsS --max-time 20 -H @- ${api} [Authorization: Bearer gho_test]`], '토큰은 명령줄이 아닌 표준 입력으로');
+  assert.match(latest(), /^0\.14\.0 \d+\n$/);
+
+  // 토큰이 거절되거나(로그인 만료) gh에 로그인돼 있지 않으면 로그인 없이 받는다.
+  for (const flag of ['curl-auth-fail', 'gh-fail']) {
+    recheck();
+    f.flag(flag);
+    result = f.run(['--auto']);
+    assert.equal(result.status, 0, output(result));
+    assert.ok(f.calls().includes(`curl -fsS --max-time 20 ${api}`), flag);
+    assert.match(latest(), /^0\.14\.0 /, flag);
+    f.flag(flag, false);
+  }
+
+  // 둘 다 안 되면(로그인 없는 API의 시간당 한도 소진 등) 기록을 바꾸지 않고 한 시간 뒤 다시 확인한다.
+  recheck();
+  f.flag('gh-fail');
+  f.flag('curl-fail');
+  result = f.run(['--auto']);
+  assert.match(output(result), /Paseo 0\.14\.0 릴리스 공개 시각을 받지 못했습니다 \(GitHub\)/);
+  assert.equal(latest(), '0.13.2 1\n');
+  f.flag('gh-fail', false);
+  f.run(['--auto']);
+  assert.match(latest(), /^0\.14\.0 /, '다음 주기에 다시 확인');
 });
 
 test('실행 중인 에이전트가 있으면 기다리고, 하루 넘게 이어지면 한 번 알린다', t => {
