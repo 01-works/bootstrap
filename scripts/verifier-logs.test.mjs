@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,7 @@ function fixture(t) {
   writeFileSync(join(root, 'outside/secret'), 'secret\n');
   symlinkSync(join(root, 'outside/secret'), join(logs, 'link.log'));
   symlinkSync(join(root, 'outside'), join(logs, 'outdir'));
+  linkSync(join(root, 'outside/secret'), join(logs, 'hard.log'));
   const ssh = command => spawnSync('/bin/bash', [script], {
     env: { PATH: '/usr/bin:/bin', HOME: home, ...(command === undefined ? {} : { SSH_ORIGINAL_COMMAND: command }) }, encoding: 'utf8',
   });
@@ -46,11 +47,11 @@ test('허용 명령: ls, tail [-n N] <파일>, cat <파일> (하위 디렉터리
   assert.equal(f.ssh('cat -n').stdout, 'dash file\n', '-로 시작하는 이름도 옵션이 아니라 파일');
 });
 
-test('거부(2): 로그 디렉터리 밖, .., 절대 경로, 링크, 디렉터리, 알 수 없는 명령, -n 범위', t => {
+test('거부(2): 로그 디렉터리 밖, .., 절대 경로, 심볼릭·하드링크, 디렉터리, 알 수 없는 명령, -n 범위', t => {
   const f = fixture(t);
   for (const command of [
     undefined, '', 'rm a.log', 'sh -c id', 'ls ..', 'ls -la /', 'cat', 'cat a.log nightly/run-1.log',
-    'cat ../../../.ssh/authorized_keys', 'cat nightly/../a.log', 'cat /etc/passwd', 'cat link.log', 'cat outdir/secret',
+    'cat ../../../.ssh/authorized_keys', 'cat nightly/../a.log', 'cat /etc/passwd', 'cat link.log', 'cat outdir/secret', 'cat hard.log', 'tail hard.log',
     'cat nightly', 'cat missing.log', 'cat a.log;id', 'cat $(id)', 'cat a*', 'cat a.log|id',
     'tail -n 10001 a.log', 'tail -n -5 a.log', 'tail -n abc a.log', 'tail -n 5', 'tail -f a.log', 'tail -n 5 a.log extra',
   ]) {

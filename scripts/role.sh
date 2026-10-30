@@ -77,8 +77,9 @@ key_from_file() {
 auth_line() { printf 'restrict,command="%s" %s %s' "$LOGS_BIN" "$1" "$KEY_COMMENT"; }
 
 # 우리 줄이 아닌데 같은 키 본문이 있는 줄. sshd는 처음 일치한 줄을 쓰므로 그런 줄이 있으면 읽기 전용이 아니게 된다.
+# 읽지 못하면 실패(1)를 돌려준다.
 other_key_lines() {
-  [[ -f "$AUTH_KEYS" ]] || return 0
+  [[ -e "$AUTH_KEYS" ]] || return 0
   WANT="$(auth_line "$1")" KEY="${1#* }" awk '
     BEGIN { want = ENVIRON["WANT"]; key = ENVIRON["KEY"] }
     $0 != want { for (i = 1; i <= NF; i++) if ($i == key) { print NR; break } }' "$AUTH_KEYS"
@@ -106,30 +107,62 @@ colima_memory_set() {
   fi
 }
 
-# 파일을 원자적으로 쓴다: write_atomic <대상> <권한>  (내용은 표준 입력)
+# 파일을 원자적으로 쓴다: write_atomic <대상> <권한> <내용을 출력하는 명령...>
+# 명령 출력을 같은 디렉터리의 임시 파일에 끝까지 쓰고, 명령이 성공했을 때만 mv로 바꾼다.
+# 파이프로 받지 않는다. 앞 단계가 실패해도(예: 원래 파일을 읽지 못함) 빈 내용으로 덮어쓰지 않게 하기 위해서다.
 write_atomic() {
-  local tmp
-  tmp="$(mktemp "$(dirname "$1")/.$(basename "$1").XXXXXX")" || return 1
-  if ! { cat >"$tmp" && chmod "$2" "$tmp" && mv -f "$tmp" "$1"; }; then
+  local target="$1" mode="$2" tmp
+  shift 2
+  tmp="$(mktemp "$(dirname "$target")/.$(basename "$target").XXXXXX")" || return 1
+  if ! { "$@" >"$tmp" && chmod "$mode" "$tmp" && mv -f "$tmp" "$target"; }; then
     rm -f "$tmp"
     return 1
   fi
 }
 
+# 기존 authorized_keys 뒤에 한 줄을 붙인 내용. 읽지 못하면 실패한다.
+keys_with_line() {
+  if [[ -s "$AUTH_KEYS" ]]; then
+    cat "$AUTH_KEYS" || return 1
+    [[ -z "$(tail -c 1 "$AUTH_KEYS")" ]] || echo
+  fi
+  printf '%s\n' "$1"
+}
+
+# 고칠 SSH 경로와 로그 디렉터리는 링크가 아니어야 한다. 링크면 권한 판정(lstat)과 chmod(대상)가 어긋난다.
+# 문제가 있으면 알리고 1을 돌려준다.
+check_paths() {
+  local path
+  for path in "$SSH_DIR" "$AUTH_KEYS" "$LOG_DIR"; do
+    if [[ -L "$path" ]]; then
+      fail "$(pretty "$path")가 링크라 고치지 않습니다. 실제 디렉터리·파일로 바꾼 뒤 다시 실행하세요"
+      return 1
+    fi
+  done
+  if [[ -e "$AUTH_KEYS" && ! -r "$AUTH_KEYS" ]]; then
+    fail "$(pretty "$AUTH_KEYS")를 읽을 수 없어 고치지 않습니다 (권한 확인: ls -l $(pretty "$AUTH_KEYS"))"
+    return 1
+  fi
+}
+
 # launch-agents.mjs로 세 등록을 맞춘다. 상태 파일이 있으면 끄고, 없으면 이 기기 종류의 원래 등록으로 되돌린다.
+# dry-run은 상태 파일을 아직 바꾸지 않았으므로 바꾼 뒤의 역할을 넘긴다: agents <verifier|none>
+# 수동 작업 대기(2)로 끝난 대상은 AGENTS_PENDING에 남는다.
 agents() {
   local name r st=0 extra=''
-  [[ "$DRY_RUN" == 1 ]] && extra=--dry-run
+  [[ "$DRY_RUN" == 1 ]] && extra="--dry-run --roles $1"
+  AGENTS_PENDING=''
   for name in $VERIFIER_AGENTS; do
     r=0
     # shellcheck disable=SC2086
     node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only "$name" "$(device_flag)" $extra || r=$?
     case "$r" in
       0) ;;
-      2) [[ "$st" == 1 ]] || st=2 ;;
+      2) [[ "$st" == 1 ]] || st=2; AGENTS_PENDING="$AGENTS_PENDING $name" ;;
       *) st=1 ;;
     esac
   done
+  AGENTS_PENDING="${AGENTS_PENDING# }"
   return "$st"
 }
 
@@ -165,11 +198,11 @@ verifier_add() {
   memory="${memory:-$(state_get colima_memory)}"
   memory="${memory:-$VERIFIER_DEFAULT_MEMORY}"
   [[ "$memory" =~ ^[1-9][0-9]*$ ]] || { fail "--colima-memory는 GiB 단위 양의 정수여야 합니다: $memory"; return 1; }
-  if [[ -L "$AUTH_KEYS" ]]; then
-    fail "$(pretty "$AUTH_KEYS")가 링크라 고치지 않습니다"
+  check_paths || return 1
+  if ! others="$(other_key_lines "$key")"; then
+    fail "$(pretty "$AUTH_KEYS")를 읽지 못해 고치지 않습니다"
     return 1
   fi
-  others="$(other_key_lines "$key")"
   if [[ -n "$others" ]]; then
     fail "$(pretty "$AUTH_KEYS")의 다른 줄(줄 $(printf '%s' "$others" | paste -sd , -))에 같은 키가 있습니다. sshd는 처음 일치한 줄을 써서 읽기 전용이 되지 않습니다. 그 줄을 정리하거나 다른 키를 쓰세요. 고치지 않았습니다"
     return 1
@@ -185,8 +218,8 @@ verifier_add() {
   added="${added:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   if changing; then
     mkdir -p "$ROLE_DIR" || return 1
-    printf 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\n' "$memory" "$before" "$key" "$added" |
-      write_atomic "$STATE_FILE" 600 || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
+    write_atomic "$STATE_FILE" 600 printf 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\n' \
+      "$memory" "$before" "$key" "$added" || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
     ok "verifier 켬 ($(pretty "$STATE_FILE"))"
   else
     dry "상태 파일 $(pretty "$STATE_FILE") (colima_memory=$memory)"
@@ -214,10 +247,10 @@ verifier_add() {
 
   # 2. 자동 시작 끄기. 이미 떠 있는 Paseo 데몬은 끄지 않는다(이 명령을 Paseo 세션에서 실행 중일 수 있다).
   r=0
-  agents || r=$?
+  agents verifier || r=$?
   case "$r" in
     0) ok '에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작 꺼짐' ;;
-    2) warn '에이전트 Chrome이 실행 중이라 등록이 남았습니다. 끝낸 뒤 다시 실행하거나 다음 로그인부터 꺼집니다'; [[ "$st" == 1 ]] || st=2 ;;
+    2) warn "실행 중이라 등록이 남은 자동 시작: ${AGENTS_PENDING}. 끝낸 뒤 다시 실행하거나 다음 로그인부터 꺼집니다"; [[ "$st" == 1 ]] || st=2 ;;
     *) fail '자동 시작을 끄지 못했습니다 (위 메시지)'; st=1 ;;
   esac
   [[ "$first" == 1 ]] && info '이미 떠 있는 Paseo 데몬은 그대로 둡니다. 이 기기에서 쓰지 않으면 paseo daemon stop'
@@ -237,7 +270,7 @@ verifier_add() {
     ok "verifier-logs ($(pretty "$LOGS_BIN"))"
   elif ! changing; then
     dry "$(pretty "$LOGS_BIN")를 저장소 원본으로 교체 (복사 후 mv)"
-  elif mkdir -p "$(dirname "$LOGS_BIN")" && write_atomic "$LOGS_BIN" 755 <"$LOGS_SRC"; then
+  elif mkdir -p "$(dirname "$LOGS_BIN")" && write_atomic "$LOGS_BIN" 755 cat "$LOGS_SRC"; then
     ok "verifier-logs 설치 ($(pretty "$LOGS_BIN"))"
   else
     fail "verifier-logs 설치 실패: $(pretty "$LOGS_BIN")"
@@ -248,8 +281,7 @@ verifier_add() {
     ok "읽기 전용 SSH 키 ($(pretty "$AUTH_KEYS"))"
   elif ! changing; then
     dry "$(pretty "$AUTH_KEYS")에 읽기 전용 키 한 줄 추가"
-  elif mkdir -p -m 700 "$SSH_DIR" && { if [[ -s "$AUTH_KEYS" ]]; then cat "$AUTH_KEYS"; [[ -z "$(tail -c 1 "$AUTH_KEYS")" ]] || echo; fi; printf '%s\n' "$line"; } |
-    write_atomic "$AUTH_KEYS" 600; then
+  elif mkdir -p -m 700 "$SSH_DIR" && write_atomic "$AUTH_KEYS" 600 keys_with_line "$line"; then
     ok "읽기 전용 SSH 키 추가 ($(pretty "$AUTH_KEYS"))"
   else
     fail "$(pretty "$AUTH_KEYS")에 키를 넣지 못했습니다"
@@ -299,7 +331,8 @@ verifier_status() {
     esac
   done
 
-  if [[ -d "$LOG_DIR" && "$(perm "$LOG_DIR")" == 700 ]]; then s_ok "로그 디렉터리 $(pretty "$LOG_DIR")"; else s_bad "로그 디렉터리 없음 또는 권한이 700이 아님: $(pretty "$LOG_DIR")"; fi
+  if [[ -L "$LOG_DIR" ]]; then s_bad "로그 디렉터리가 링크임: $(pretty "$LOG_DIR") (실제 디렉터리로 바꾼 뒤 ./bootstrap.sh role add verifier)"
+  elif [[ -d "$LOG_DIR" && "$(perm "$LOG_DIR")" == 700 ]]; then s_ok "로그 디렉터리 $(pretty "$LOG_DIR")"; else s_bad "로그 디렉터리 없음 또는 권한이 700이 아님: $(pretty "$LOG_DIR")"; fi
   printf 'log_dir=%s\n' "$LOG_DIR"
 
   if [[ -x "$LOGS_BIN" ]] && cmp -s "$LOGS_SRC" "$LOGS_BIN"; then s_ok "verifier-logs 설치본이 저장소 원본과 같음"; else s_bad "verifier-logs 없음 또는 원본과 다름: $(pretty "$LOGS_BIN")"; fi
@@ -308,9 +341,14 @@ verifier_status() {
   line="$(auth_line "$key")"
   if [[ -z "$key" ]]; then
     s_bad '상태 파일에 SSH 키가 없음 → ./bootstrap.sh role add verifier --ssh-key <공개키 파일>'
+  elif [[ -L "$SSH_DIR" || -L "$AUTH_KEYS" ]]; then
+    s_bad "$(pretty "$SSH_DIR") 또는 $(pretty "$AUTH_KEYS")가 링크임 (실제 디렉터리·파일이어야 함)"
+  elif [[ -e "$AUTH_KEYS" && ! -r "$AUTH_KEYS" ]]; then
+    s_bad "$(pretty "$AUTH_KEYS")를 읽을 수 없음"
   elif [[ -f "$AUTH_KEYS" ]] && grep -qxF "$line" "$AUTH_KEYS"; then
-    others="$(other_key_lines "$key")"
-    if [[ -n "$others" ]]; then
+    if ! others="$(other_key_lines "$key")"; then
+      s_bad "$(pretty "$AUTH_KEYS")를 읽지 못함"
+    elif [[ -n "$others" ]]; then
       s_bad "같은 키가 다른 줄(줄 $(printf '%s' "$others" | paste -sd , -))에도 있어 읽기 전용이 아님: $(pretty "$AUTH_KEYS")"
     elif [[ "$(perm "$SSH_DIR")" != 700 || "$(perm "$AUTH_KEYS")" != 600 ]]; then
       s_bad "권한: $(pretty "$SSH_DIR") $(perm "$SSH_DIR"), $(pretty "$AUTH_KEYS") $(perm "$AUTH_KEYS") (700/600이어야 함)"
@@ -352,16 +390,23 @@ verifier_remove() {
     elif colima_memory_set "$before"; then
       ok "colima 메모리 ${current} → ${before} GiB (다음 시작부터)"
     else
-      fail "colima 설정을 되돌리지 못했습니다: $(pretty "$COLIMA_CONFIG")"
-      st=1
+      # 원래 값은 상태 파일에만 있다. 지우지 않고 멈춰서, 원인을 고친 뒤 다시 실행하면 이어서 끈다.
+      fail "colima 설정을 되돌리지 못했습니다: $(pretty "$COLIMA_CONFIG") (원래 값 ${before} GiB). 아무것도 더 바꾸지 않았습니다. 고친 뒤 다시: ./bootstrap.sh role remove verifier"
+      return 1
     fi
   fi
 
-  # 이 역할이 넣은 줄만 지운다.
-  if [[ -f "$AUTH_KEYS" && ! -L "$AUTH_KEYS" && -n "$(own_lines_filter own)" ]]; then
+  # 이 역할이 넣은 줄만 지운다. 링크이거나 읽을 수 없으면 알리고 남긴다.
+  if [[ -L "$SSH_DIR" || -L "$AUTH_KEYS" ]]; then
+    fail "$(pretty "$SSH_DIR") 또는 $(pretty "$AUTH_KEYS")가 링크라 읽기 전용 키 줄을 지우지 않았습니다. 직접 지우세요 (끝이 bootstrap-role-verifier인 줄)"
+    st=1
+  elif [[ -e "$AUTH_KEYS" && ! -r "$AUTH_KEYS" ]]; then
+    fail "$(pretty "$AUTH_KEYS")를 읽을 수 없어 읽기 전용 키 줄을 지우지 않았습니다. 권한을 고친 뒤 다시: ./bootstrap.sh role remove verifier"
+    st=1
+  elif [[ -f "$AUTH_KEYS" && -n "$(own_lines_filter own)" ]]; then
     if ! changing; then
       dry "$(pretty "$AUTH_KEYS")에서 읽기 전용 키 줄 지우기"
-    elif own_lines_filter keep | write_atomic "$AUTH_KEYS" 600; then
+    elif write_atomic "$AUTH_KEYS" 600 own_lines_filter keep; then
       ok "읽기 전용 SSH 키 지움 ($(pretty "$AUTH_KEYS"))"
     else
       fail "$(pretty "$AUTH_KEYS")에서 키를 지우지 못했습니다"
@@ -380,7 +425,9 @@ verifier_remove() {
   fi
 
   # 로그는 지우지 않는다. 빈 디렉터리만 정리한다.
-  if [[ -d "$LOG_DIR" ]]; then
+  if [[ -L "$LOG_DIR" ]]; then
+    warn "로그 디렉터리가 링크라 그대로 둡니다: $(pretty "$LOG_DIR")"
+  elif [[ -d "$LOG_DIR" ]]; then
     if [[ -n "$(ls -A "$LOG_DIR" 2>/dev/null)" ]]; then
       info "로그를 보존합니다: $(pretty "$LOG_DIR")"
     elif ! changing; then
@@ -399,10 +446,10 @@ verifier_remove() {
 
   # 상태 파일이 없어졌으니 launch-agents.mjs가 이 기기 종류의 원래 자동 시작을 다시 등록한다.
   r=0
-  agents || r=$?
+  agents none || r=$?
   case "$r" in
     0) ok '자동 시작을 원래대로 맞춤' ;;
-    2) warn '자동 시작 일부가 수동 작업 대기입니다 (위 메시지)'; [[ "$st" == 1 ]] || st=2 ;;
+    2) warn "수동 작업 대기인 자동 시작: ${AGENTS_PENDING} (위 메시지)"; [[ "$st" == 1 ]] || st=2 ;;
     *) fail '자동 시작을 되돌리지 못했습니다 (위 메시지). 고친 뒤 ./bootstrap.sh --only browser,paseo'; st=1 ;;
   esac
   return "$st"

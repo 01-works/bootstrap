@@ -181,3 +181,15 @@ test('verifier 역할: 실행 중인 에이전트 Chrome은 끄지 않고 plist�
   assert.equal(f.loaded.has(LABELS['agent-chrome']), false);
   assert.equal(apply({ ...f.options, laptop: false, chromeBinary: join(f.home, 'missing') }), 0, 'Chrome Beta가 없어도 끄는 데는 상관없음');
 });
+
+test('roles를 넘기면 상태 파일 대신 그 역할로 판단한다 (role.sh dry-run 미리 보기)', t => {
+  const f = fixture(t);
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  f.setRole(true);
+  f.calls.length = 0;
+  assert.equal(apply({ ...f.options, laptop: false, dryRun: true, roles: [] }), 0, '역할을 끈 뒤로 미리 보면 등록 유지');
+  assert.ok(!f.calls.includes('bootout'));
+  f.setRole(false);
+  assert.equal(apply({ ...f.options, laptop: false, only: 'paseo', check: true, roles: ['verifier'] }), 1, '켠 뒤로 보면 남아 있음');
+  assert.throws(() => apply({ ...f.options, laptop: false, roles: ['builder'] }), /알 수 없는 역할/);
+});

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, statSync, chmodSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, statSync, chmodSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,8 +28,10 @@ colima() { [[ "$1" == status && -e "$MOCK/colima-running" ]]; }
   writeFileSync(join(root, 'scripts/launch-agents.mjs'), `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 appendFileSync(process.env.MOCK + '/agents', args.join(' ') + '\\n');
-const code = process.env.MOCK + '/agents-exit' + (args.includes('--check') ? '-check' : '');
-process.exitCode = existsSync(code) ? Number(readFileSync(code, 'utf8')) : 0;
+const suffix = args.includes('--check') ? '-check' : '';
+const only = args[args.indexOf('--only') + 1];
+const code = [\`\${process.env.MOCK}/agents-exit\${suffix}-\${only}\`, \`\${process.env.MOCK}/agents-exit\${suffix}\`].find(path => existsSync(path));
+process.exitCode = code ? Number(readFileSync(code, 'utf8')) : 0;
 `);
   const env = { ...process.env, HOME: home, MOCK: mock, BOOTSTRAP_ROOT: root, XDG_STATE_HOME: join(root, 'state'),
     BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'), DRY_RUN: '0', ASSUME_YES: '0' };
@@ -273,14 +275,18 @@ test('dry-run은 아무것도 바꾸지 않는다', t => {
   assert.match(result.stdout, /\[dry-run\] colima 메모리 2 → 6 GiB/);
   assert.deepEqual(tree(f.home), before);
   assert.equal(existsSync(join(f.root, 'state/bootstrap/lock')), false);
-  assert.ok(f.agents().every(call => call.endsWith('--dry-run')), 'launch-agents.mjs에도 dry-run');
+  assert.deepEqual(f.agents(), ['agent-chrome', 'paseo', 'paseo-upgrade'].map(name => `--only ${name} --desktop --dry-run --roles verifier`),
+    '상태 파일을 쓰기 전이라 켠 뒤의 역할로 미리 본다');
 
   assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
   writeFileSync(join(f.logs, 'x.log'), '');
   const on = tree(f.home);
+  f.agents();
   result = f.role('remove', 'verifier', '--dry-run');
   assert.equal(result.status, 0, out(result));
   assert.deepEqual(tree(f.home), on);
+  assert.deepEqual(f.agents(), ['agent-chrome', 'paseo', 'paseo-upgrade'].map(name => `--only ${name} --desktop --dry-run --roles none`),
+    '상태 파일이 남아 있어도 끈 뒤(자동 시작 복구)로 미리 본다');
 });
 
 test('apply-active: 켠 역할이 없으면 아무것도 하지 않고, 있으면 저장된 값으로 다시 맞춘다', t => {
@@ -331,4 +337,105 @@ test('bash 3.2 문법만 쓴다', () => {
       assert.doesNotMatch(source, pattern, `${file}: ${pattern}`);
     }
   }
+});
+
+test('끄기에서 colima 복원이 실패하면 상태 파일과 나머지를 그대로 두고 원래 값을 알린다. 고친 뒤 다시 실행하면 이어서 끈다', t => {
+  const f = sandbox(t);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  f.agents();
+  const dir = join(f.colima, '..');
+  chmodSync(dir, 0o555);
+  t.after(() => { try { chmodSync(dir, 0o755); } catch {} });
+  const before = tree(f.home);
+  let result = f.role('remove', 'verifier');
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /원래 값 2 GiB/);
+  assert.deepEqual(tree(f.home), before, '상태 파일·키 줄·verifier-logs 모두 그대로');
+  assert.deepEqual(f.agents(), [], '자동 시작도 되돌리지 않는다');
+  result = f.role('remove', 'verifier');
+  assert.equal(result.status, 1, '다시 실행해도 0으로 끝나지 않는다');
+  chmodSync(dir, 0o755);
+  result = f.role('remove', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.memory(), '2');
+  assert.equal(existsSync(f.state), false);
+});
+
+test('authorized_keys를 읽을 수 없으면 add·remove 모두 기존 키를 지우지 않고 실패한다', t => {
+  const f = sandbox(t);
+  mkdirSync(f.ssh, { mode: 0o700 });
+  writeFileSync(f.auth, 'ssh-rsa AAAAOTHER other\n', { mode: 0o600 });
+  t.after(() => { try { chmodSync(f.auth, 0o600); } catch {} });
+  chmodSync(f.auth, 0o000);
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /읽을 수 없어/);
+  assert.equal(existsSync(f.state), false, '아무것도 켜지 않는다');
+  chmodSync(f.auth, 0o600);
+  assert.equal(readFileSync(f.auth, 'utf8'), 'ssh-rsa AAAAOTHER other\n');
+
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  const text = readFileSync(f.auth, 'utf8');
+  chmodSync(f.auth, 0o000);
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /읽을 수 없음/);
+  assert.equal(f.role('add', 'verifier').status, 1, '저장된 값으로 다시 맞출 때도 실패');
+  result = f.role('remove', 'verifier');
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /읽을 수 없어 읽기 전용 키 줄을 지우지 않았습니다/);
+  chmodSync(f.auth, 0o600);
+  assert.equal(readFileSync(f.auth, 'utf8'), text, '내용을 잃지 않는다');
+  assert.equal(f.role('remove', 'verifier').status, 0, '고친 뒤 다시 실행하면 지운다');
+  assert.equal(readFileSync(f.auth, 'utf8'), 'ssh-rsa AAAAOTHER other\n');
+});
+
+test('~/.ssh·authorized_keys·로그 디렉터리가 링크면 고치지 않고 알린다', t => {
+  const f = sandbox(t);
+  const real = join(f.root, 'real-ssh');
+  mkdirSync(real, { mode: 0o755 });
+  chmodSync(real, 0o755);
+  symlinkSync(real, f.ssh);
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /\.ssh가 링크라 고치지 않습니다/);
+  assert.equal(mode(real), 0o755, '링크 대상 권한을 바꾸지 않는다');
+  assert.equal(existsSync(f.state), false);
+  rmSync(f.ssh);
+
+  const realLogs = join(f.root, 'real-logs');
+  mkdirSync(realLogs);
+  mkdirSync(join(f.logs, '..'), { recursive: true });
+  symlinkSync(realLogs, f.logs);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 1);
+  rmSync(f.logs);
+
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  rmSync(f.logs, { recursive: true });
+  symlinkSync(realLogs, f.logs);
+  chmodSync(realLogs, 0o700);
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /로그 디렉터리가 링크임/);
+  rmSync(f.logs);
+  mkdirSync(f.logs, { mode: 0o700 });
+
+  const realKeys = join(f.root, 'real-keys');
+  writeFileSync(realKeys, readFileSync(f.auth, 'utf8'));
+  rmSync(f.auth);
+  symlinkSync(realKeys, f.auth);
+  assert.equal(f.role('status', 'verifier').status, 1);
+  result = f.role('remove', 'verifier');
+  assert.equal(result.status, 1, '링크면 조용히 0으로 끝내지 않는다');
+  assert.match(result.stderr, /링크라 읽기 전용 키 줄을 지우지 않았습니다/);
+  assert.match(readFileSync(realKeys, 'utf8'), /bootstrap-role-verifier/);
+});
+
+test('대기(2) 메시지에 실제로 남은 자동 시작 이름을 쓴다', t => {
+  const f = sandbox(t);
+  writeFileSync(join(f.mock, 'agents-exit-paseo'), '2');
+  const result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 2, out(result));
+  assert.match(result.stderr, /실행 중이라 등록이 남은 자동 시작: paseo\./);
+  assert.doesNotMatch(result.stderr, /에이전트 Chrome이 실행 중/);
 });

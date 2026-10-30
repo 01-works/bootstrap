@@ -189,10 +189,12 @@ function removeAgent(label, role, { home, check, dryRun, run, uid }) {
 }
 
 // 결과: 0 완료, 1 실패, 2 수동 작업 대기(noRestart, 역할이 끈 등록이 실행 중). 실패가 대기보다 우선한다.
+// roles: 켠 역할을 상태 파일 대신 정한다. role.sh의 dry-run이 상태 파일을 바꾸기 전에 바꾼 뒤의 결과를 미리 보여 줄 때 쓴다.
 export function apply({ home = homedir(), env = process.env, laptop, only, check = false, dryRun = false, noRestart = false,
-  run = spawnSync, uid = process.getuid(), chromeBinary = CHROME_BETA } = {}) {
+  run = spawnSync, uid = process.getuid(), chromeBinary = CHROME_BETA, roles: forcedRoles } = {}) {
   if (typeof laptop !== 'boolean') throw new Error('--laptop 또는 --desktop이 필요합니다');
-  const roles = activeRoles({ home, env });
+  for (const role of forcedRoles || []) if (!(role in ROLE_DISABLED)) throw new Error(`알 수 없는 역할: ${role}`);
+  const roles = forcedRoles || activeRoles({ home, env });
   const defs = definitions({ home, laptop, env, roles });
   let status = 0;
   let pending = false;
@@ -229,13 +231,14 @@ export function apply({ home = homedir(), env = process.env, laptop, only, check
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const args = process.argv.slice(2);
-    let only;
+    let only, roles;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--only' && args[i + 1]) only = args[++i];
+      else if (args[i] === '--roles' && args[i + 1]) roles = args[++i] === 'none' ? [] : args[i].split(',');
       else if (!['--check', '--dry-run', '--no-restart', '--laptop', '--desktop'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
     }
     const laptop = args.includes('--laptop') ? true : args.includes('--desktop') ? false : undefined;
-    process.exitCode = apply({ laptop, only, check: args.includes('--check'), noRestart: args.includes('--no-restart'),
+    process.exitCode = apply({ laptop, only, roles, check: args.includes('--check'), noRestart: args.includes('--no-restart'),
       dryRun: args.includes('--dry-run') || process.env.DRY_RUN === '1' });
   } catch (error) { console.error(`자동 시작: ${error.message}`); process.exitCode = 1; }
 }
