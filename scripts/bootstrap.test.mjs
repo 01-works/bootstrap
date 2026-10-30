@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, statSync, lstatSync, readlinkSync, readdirSync,
+  openSync, readSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -196,4 +197,52 @@ test('browser 단계: 자동 갱신 중 에이전트 Chrome 등록이 바뀌었�
   assert.equal(pending.status, 2, pending.stdout + pending.stderr);
   const failed = run(`node() { [[ "$1" == *launch-agents.mjs ]] && return 2; return 1; }`);
   assert.equal(failed.status, 1);
+});
+
+test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경로는 없을 때만 링크로 만든다', t => {
+  const { root } = sandbox(t);
+  const home = join(root, 'home'), compat = join(root, 'cc-yw-heavy.sh'), dst = join(home, '.local/bin/yw-heavy');
+  copyFileSync(join(repo, 'scripts/yw-heavy.sh'), join(root, 'scripts/yw-heavy.sh'));
+  const step = (env = {}) => spawnSync('/bin/bash', [join(repo, 'scripts/steps/66-heavy.sh')], {
+    env: { ...process.env, BOOTSTRAP_ROOT: root, HOME: home, DRY_RUN: '0', XDG_STATE_HOME: join(root, 'state'), YW_HEAVY_COMPAT_PATH: compat, ...env },
+    encoding: 'utf8'
+  });
+  mkdirSync(home);
+
+  let result = step({ DRY_RUN: '1' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(dst), false, 'dry-run은 설치하지 않는다');
+  assert.equal(existsSync(compat), false);
+
+  result = step();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(dst, 'utf8'), readFileSync(join(repo, 'scripts/yw-heavy.sh'), 'utf8'));
+  assert.equal(statSync(dst).mode & 0o777, 0o755);
+  assert.equal(readlinkSync(compat), dst);
+  const ino = statSync(dst).ino;
+  result = step();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(statSync(dst).ino, ino, '같으면 그대로 둔다');
+  assert.deepEqual(readdirSync(join(home, '.local/bin')), ['yw-heavy'], '임시 파일을 남기지 않는다');
+
+  // 실행 중인 대기자가 연 이전 파일은 이전 내용을 끝까지 읽는다.
+  const fd = openSync(dst, 'r');
+  t.after(() => closeSync(fd));
+  const old = readFileSync(dst, 'utf8');
+  writeFileSync(join(root, 'scripts/yw-heavy.sh'), old + '# changed\n');
+  result = step();
+  assert.equal(result.status, 0, result.stderr);
+  assert.notEqual(statSync(dst).ino, ino, '교체는 새 파일을 mv로 옮긴다');
+  assert.equal(readFileSync(dst, 'utf8'), old + '# changed\n');
+  const buffer = Buffer.alloc(Buffer.byteLength(old) + 100);
+  assert.equal(buffer.subarray(0, readSync(fd, buffer, 0, buffer.length, 0)).toString(), old);
+
+  // 예전 경로에 일반 파일(구버전)이 있으면 그대로 둔다.
+  rmSync(compat);
+  writeFileSync(compat, 'legacy\n');
+  result = step();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(compat, 'utf8'), 'legacy\n');
+  assert.equal(lstatSync(compat).isSymbolicLink(), false);
+  assert.match(result.stdout, /agents\/heavy-queue\.md/);
 });

@@ -135,6 +135,20 @@ if has node; then
   fi
 fi
 
+step "heavy 대기열"
+if [[ -x /usr/bin/lockf ]]; then pass "lockf"; else miss "/usr/bin/lockf 없음 (yw-heavy가 대기열 편집에 씀)"; fi
+heavy_bin="$HOME/.local/bin/yw-heavy"
+if [[ -x "$heavy_bin" ]] && cmp -s "$BOOTSTRAP_ROOT/scripts/yw-heavy.sh" "$heavy_bin"; then
+  pass "yw-heavy 설치본이 저장소 원본과 같음"
+else
+  miss "yw-heavy 없음 또는 저장소 원본과 다름 (./bootstrap.sh --only heavy)"
+fi
+if [[ -L /tmp/cc-yw-heavy.sh && "$(readlink /tmp/cc-yw-heavy.sh)" == "$heavy_bin" ]]; then
+  info "예전 경로 /tmp/cc-yw-heavy.sh → yw-heavy"
+elif [[ -e /tmp/cc-yw-heavy.sh ]]; then
+  info "예전 경로 /tmp/cc-yw-heavy.sh는 다른 파일 (전환 절차: agents/heavy-queue.md)"
+fi
+
 step "전원"
 if is_laptop; then label="충전 중에는 잠자기 안 함 (노트북)"; else label="잠자기 꺼짐, 화면 ${DISPLAY_SLEEP_MINUTES}분 뒤 끔, 네트워크로 깨우기·정전 후 자동 켜기"; fi
 if power_ok; then pass "$label"; else miss "전원 설정이 다름: $label (./bootstrap.sh --only power)"; fi

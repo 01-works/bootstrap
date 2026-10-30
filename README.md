@@ -52,6 +52,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | agents | Claude Code, Codex CLI 설치 (공식 스크립트) | [agents/](agents/README.md) |
 | browser | Browser Use CLI(uv)와 공식 스킬, 에이전트 전용 Chrome 자동 시작 | [agents/browser.md](agents/browser.md) |
 | paseo | 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 없는 프로필 추가, Paseo 도구 켜기, 기본 플러그인 설치·버전 맞춤, 데스크톱은 로그인 시 데몬 시작과 Paseo 새 버전 올리기 | [agents/paseo.md](agents/paseo.md) |
+| heavy | 공용 heavy 대기열 도구 `yw-heavy`를 `~/.local/bin`에 설치 (모든 기기) | [agents/heavy-queue.md](agents/heavy-queue.md) |
 | auth | GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내와 로그인할 앱 열기 | [development/git.md](development/git.md) |
 | autoupdate | 저장소 자동 갱신 등록 (로그인할 때와 10분마다) | 아래 "변경 전파" |
 
@@ -73,7 +74,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 아무 기기에서나 고쳐서 push하면 다른 기기가 따라온다. `autoupdate` 단계가 등록한 LaunchAgent(`local.bootstrap.update`)가 로그인할 때와 10분마다 `./bootstrap.sh update --auto`를 실행한다. 잠들어 있던 기기는 깨어난 뒤 따라온다. 공개 저장소라 받을 때 로그인이 필요 없다.
 
 - 받기: fetch 후 fast-forward만 한다. 커밋 안 된 변경이 있거나 이 기기의 커밋과 갈라졌으면 받지 않고 "보류"로 알린다. push·merge는 하지 않는다. 고치는 중인 기기(커밋 안 된 변경만 있고 새 커밋 없음)는 건드리지 않는다.
-- 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일에 해당하는 단계만 실행한다. `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `agents/skills/` → paseo, `agents/paseo-profiles.json` → paseo와 기존 프로필 갱신, `agents/paseo-plugins.json` → paseo(플러그인 설치·버전 맞춤), `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
+- 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일에 해당하는 단계만 실행한다. `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `agents/skills/` → paseo, `agents/paseo-profiles.json` → paseo와 기존 프로필 갱신, `agents/paseo-plugins.json` → paseo(플러그인 설치·버전 맞춤), `scripts/yw-heavy.sh` → heavy, `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
 - 사람이 필요한 일: 자동 갱신은 관리자 비밀번호(전원 설정·자동 로그인·Homebrew 설치), 설치 창(Xcode 명령줄 도구), GitHub 로그인, 배경화면 제어 허용 창을 띄우지 않고 "수동 작업 대기"로 남긴다. 터미널에서 `./bootstrap.sh update`를 실행하면 대기 단계까지 다시 실행한다. 관리자 비밀번호가 필요한 cask는 자동 갱신에서 실패로 표시된다.
 - 실패: 적용 기록을 남기지 않고 같은 커밋은 한 시간 뒤 다시 시도한다. 새 커밋이 오면 바로 시도한다.
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
@@ -113,6 +114,7 @@ scripts/steps/        단계별 스크립트
 scripts/*.mjs         설정 병합·스킬 배치 (같은 이름의 *.test.mjs가 테스트)
 scripts/update.sh     변경 전파 (./bootstrap.sh update)
 scripts/paseo-upgrade.sh  데스크톱 Paseo 새 버전 올리기 (./bootstrap.sh paseo-upgrade)
+scripts/yw-heavy.sh   공용 heavy 대기열 도구 (heavy 단계가 ~/.local/bin/yw-heavy로 설치)
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
 macos/                첫 부팅, 시스템 설정

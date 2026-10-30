@@ -126,6 +126,13 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['power 1']);
   assert.equal(f.notifications().length, 5);
+
+  f.push({ 'scripts/steps/66-heavy.sh': mockStep('heavy') });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['heavy 1'], '새 단계 파일은 그 단계');
+  f.push({ 'scripts/yw-heavy.sh': '# yw-heavy\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['heavy 1'], 'yw-heavy 원본은 heavy 단계');
 });
 
 test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 실행하면 다시 실행한다', t => {
