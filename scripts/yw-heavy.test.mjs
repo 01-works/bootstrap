@@ -442,8 +442,8 @@ test('bash 3.2 문법만 쓴다', () => {
     const syntax = spawnSync('/bin/bash', ['-n', file], { encoding: 'utf8' });
     assert.equal(syntax.status, 0, syntax.stderr);
     const source = readFileSync(file, 'utf8');
-    // ko_KR 로캘의 bash 3.2는 변수 이름 바로 뒤의 한글을 이름의 일부로 읽는다: ${SUP}의 처럼 쓴다.
-    assert.doesNotMatch(source, /\$[A-Za-z_][A-Za-z0-9_]*[\uAC00-\uD7A3]/, `${file}: 변수 뒤에 붙은 한글`);
+    // ko_KR 로캘의 bash 3.2는 변수 이름 바로 뒤의 비ASCII 문자(한글·기호)를 이름의 일부로 읽는다: ${SUP}의 처럼 쓴다.
+    assert.doesNotMatch(source, /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/, `${file}: 변수 뒤에 붙은 비ASCII 문자`);
     for (const pattern of [/declare -A/, /\bmapfile\b/, /\breadarray\b/, /\$\{[^}]*,,\}/, /\$\{[^}]*\^\^\}/, /\|&/, /&>>/]) {
       assert.doesNotMatch(source, pattern, `${file}: ${pattern}`);
     }
@@ -462,7 +462,12 @@ test('실행 lock을 만들던 중 SIGKILL되어 owner가 없으면 관문이 �
   const young = f.cliEnv({ YW_HEAVY_OWNERLESS_AGE: '3600' }, 'acquire', 'B', 'w', 'other');
   await f.wait(() => read(f.q).includes('B '), 'B enqueued'); await pause(300);
   assert.equal(young.out, '', '최근에 바뀐 것은 보존');
-  assert.match(f.sync('status').stdout, /실행 lock: .* \(owner 없음, \d+초 전 변경\)/);
+  assert.match(f.sync('status').stdout, /실행 lock: .* \(owner 없음, \d+초 전 변경\)\. 관문이 열려 있고 \d+초가 지나면 자동 회수/);
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  const off = f.sync('status').stdout;
+  assert.match(off, /실행 lock: .* \(owner 없음, \d+초 전 변경\)\. 회수가 꺼져 있어 자동 회수하지 않음/);
+  assert.doesNotMatch(off, /지나면 자동 회수/, 'no-reclaim이면 자동 회수라고 하지 않는다');
+  rmSync(f.env.YW_HEAVY_NO_RECLAIM);
   young.kill('SIGKILL'); await young.done;
   const b = f.cliEnv({ YW_HEAVY_OWNERLESS_AGE: '0' }, 'acquire', 'B', 'w', 'other');
   assert.equal(await f.finish(b), 0); assert.equal(b.out, 'ACQUIRED B\n');
