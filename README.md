@@ -32,6 +32,8 @@
 - 로그인하는 계정 (GitHub, Google, Claude, Codex): 기기마다 로그인한다.
 - git 커밋 작성자: 다른 GitHub 계정을 쓰는 기기는 `~/.gitconfig.local`에 이름·이메일을 적는다.
 
+예외로, 일부 기기에만 필요한 설정은 사람이 켜는 기기 역할로 둔다. 켠 역할은 기기에 남고 저장소에는 기기 목록을 두지 않는다 (아래 "기기 역할").
+
 ## 단계
 
 `scripts/steps/`의 번호 순서대로 실행된다. 여러 번 실행해도 이미 된 것은 건너뛴다.
@@ -55,6 +57,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | heavy | 공용 heavy 대기열 도구 `yw-heavy`를 `~/.local/bin`에 설치 (모든 기기) | [agents/heavy-queue.md](agents/heavy-queue.md) |
 | auth | GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내와 로그인할 앱 열기 | [development/git.md](development/git.md) |
 | autoupdate | 저장소 자동 갱신 등록 (로그인할 때와 10분마다) | 아래 "변경 전파" |
+| roles | 이 기기에 켠 역할만 저장된 값으로 다시 맞춤. 켠 역할이 없으면 아무것도 안 함 | 아래 "기기 역할" |
 
 ## 자주 쓰는 명령
 
@@ -63,6 +66,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 ./bootstrap.sh update              # 저장소를 받아 바뀐 부분만 적용 (수동 작업 대기 처리)
 ./bootstrap.sh paseo-upgrade       # (데스크톱) Paseo를 정식 최신 버전으로. 실행 중 에이전트가 있으면 --force
 ./bootstrap.sh doctor              # 세팅 상태 검증
+./bootstrap.sh role status         # 기기 역할 상태 (켜기·끄기: role add|remove verifier)
 ./bootstrap.sh snapshot            # 이 Mac에는 있는데 저장소에 없는 것 찾기
 ./bootstrap.sh --list              # 단계 목록
 ```
@@ -74,13 +78,47 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 아무 기기에서나 고쳐서 push하면 다른 기기가 따라온다. `autoupdate` 단계가 등록한 LaunchAgent(`local.bootstrap.update`)가 로그인할 때와 10분마다 `./bootstrap.sh update --auto`를 실행한다. 잠들어 있던 기기는 깨어난 뒤 따라온다. 공개 저장소라 받을 때 로그인이 필요 없다.
 
 - 받기: fetch 후 fast-forward만 한다. 커밋 안 된 변경이 있거나 이 기기의 커밋과 갈라졌으면 받지 않고 "보류"로 알린다. push·merge는 하지 않는다. 고치는 중인 기기(커밋 안 된 변경만 있고 새 커밋 없음)는 건드리지 않는다.
-- 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일에 해당하는 단계만 실행한다. `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `agents/skills/` → paseo, `agents/paseo-profiles.json` → paseo와 기존 프로필 갱신, `agents/paseo-plugins.json` → paseo(플러그인 설치·버전 맞춤), `scripts/yw-heavy.sh` → heavy, `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
+- 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일에 해당하는 단계만 실행한다. `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `agents/skills/` → paseo, `agents/paseo-profiles.json` → paseo와 기존 프로필 갱신, `agents/paseo-plugins.json` → paseo(플러그인 설치·버전 맞춤), `scripts/yw-heavy.sh` → heavy, `scripts/role.sh`·`scripts/verifier-logs.sh` → roles, `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
 - 사람이 필요한 일: 자동 갱신은 관리자 비밀번호(전원 설정·자동 로그인·Homebrew 설치), 설치 창(Xcode 명령줄 도구), GitHub 로그인, 배경화면 제어 허용 창을 띄우지 않고 "수동 작업 대기"로 남긴다. 터미널에서 `./bootstrap.sh update`를 실행하면 대기 단계까지 다시 실행한다. 관리자 비밀번호가 필요한 cask는 자동 갱신에서 실패로 표시된다.
 - 실패: 적용 기록을 남기지 않고 같은 커밋은 한 시간 뒤 다시 시도한다. 새 커밋이 오면 바로 시도한다.
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
 - 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
 - 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다.
 - 끄기: `launchctl bootout gui/$(id -u)/local.bootstrap.update` 후 `~/Library/LaunchAgents/local.bootstrap.update.plist`를 지운다.
+
+## 기기 역할
+
+모든 기기에 같은 것을 설치한 뒤, 일부 기기에만 필요한 설정을 역할로 켠다. 켜고 끄는 것은 사람이 하고, 켠 뒤에는 `roles` 단계가 저장된 값으로 다시 맞춘다(역할 코드가 바뀌면 자동 갱신이 전한다). 상태는 `~/.config/bootstrap/roles/<역할>`(권한 600)에 남는다. 역할은 특정 프로젝트를 알지 않는다.
+
+### verifier
+
+무거운 검증을 맡는 기기. 다른 기기가 결과 로그만 읽어 간다.
+
+```sh
+./bootstrap.sh role add verifier --ssh-key <공개키 파일>   # 처음 한 번. 로그를 읽을 기기의 공개키
+./bootstrap.sh role add verifier --colima-memory 8        # 값 바꾸기 (키는 저장된 것을 씀)
+./bootstrap.sh role status                                # 0 준비 완료, 2 수동 작업 대기, 1 실패·꺼짐
+./bootstrap.sh role remove verifier                       # 끄기
+```
+
+켜면 하는 일 (여러 번 실행해도 같다):
+
+- colima 메모리: `~/.colima/default/colima.yaml`의 `memory:`를 기본 6 GiB로 바꾼다(`--colima-memory`로 변경). 원래 값을 기록한다. 실행 중인 VM은 다시 시작하지 않으므로 다음 시작부터 적용된다. colima 설정이 아직 없으면 `colima start --memory 6`을 한 번 실행한 뒤 다시 켠다.
+- 자동 시작 끄기: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 등록하지 않고 있으면 내린다. 이미 떠 있는 Paseo 데몬과 실행 중인 에이전트 Chrome은 끄지 않는다(이 명령을 Paseo 세션에서 실행할 수 있어서). Chrome은 끝내거나 다음 로그인부터 꺼진다.
+- 로그 디렉터리: `~/.local/state/verifier/logs`(권한 700). 검증을 돌리는 쪽이 여기에 로그를 남긴다. 이 경로가 그쪽과의 약속이다.
+- 읽기 전용 SSH: `~/.ssh/authorized_keys`에 `restrict,command="~/.local/bin/verifier-logs" … bootstrap-role-verifier` 한 줄을 넣는다. 이 키로 접속하면 어떤 명령을 보내도 `verifier-logs`만 실행되고, 로그 디렉터리의 파일을 `ls`, `tail [-n N] <파일>`, `cat <파일>`로만 읽는다. 같은 키가 제한 없는 다른 줄에 있으면 읽기 전용이 되지 않으므로 고치지 않고 실패한다.
+
+  ```sh
+  ssh <verifier 기기> ls
+  ssh <verifier 기기> tail -n 200 <파일>
+  ```
+
+끄면 colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
+
+사용자 작업:
+
+- macOS 원격 로그인 켜기: 시스템 설정 > 일반 > 공유 > 원격 로그인. 꺼져 있으면 `role status`가 수동 작업 대기(2)로 알린다.
+- (선택) 이 기기에서 코딩 에이전트를 쓰지 않으면 Claude Code(`claude` 안에서 `/logout`)와 Codex(`codex logout`)에서 로그아웃한다.
 
 ## 새 기기 없이 시험하기
 
@@ -115,6 +153,8 @@ scripts/*.mjs         설정 병합·스킬 배치 (같은 이름의 *.test.mjs�
 scripts/update.sh     변경 전파 (./bootstrap.sh update)
 scripts/paseo-upgrade.sh  데스크톱 Paseo 새 버전 올리기 (./bootstrap.sh paseo-upgrade)
 scripts/yw-heavy.sh   공용 heavy 대기열 도구 (heavy 단계가 ~/.local/bin/yw-heavy로 설치)
+scripts/role.sh       기기 역할 (./bootstrap.sh role, roles 단계)
+scripts/verifier-logs.sh  verifier 기기의 읽기 전용 SSH 강제 명령
 scripts/doctor.sh     검증
 scripts/snapshot.sh   저장소에 빠진 것 찾기
 macos/                첫 부팅, 시스템 설정

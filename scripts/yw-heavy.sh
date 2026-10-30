@@ -526,7 +526,9 @@ EOF
     task="$(json_str "$owner" task)"
     holder="$(json_num "$owner" holder)"
     hs="$(json_str "$owner" holderStart)"
-    if [ -z "$owner" ]; then
+    if [ -z "$owner" ] && [ -e "$NR" ]; then
+      printf '실행 lock: %s (owner 없음, %s초 전 변경). 회수가 꺼져 있어 자동 회수하지 않음\n' "$XL" "$(ownerless_age || echo '?')"
+    elif [ -z "$owner" ]; then
       printf '실행 lock: %s (owner 없음, %s초 전 변경). 관문이 열려 있고 %s초가 지나면 자동 회수\n' "$XL" "$(ownerless_age || echo '?')" "$OWNERLESS_AGE"
     elif printf '%s' "$owner" | grep -q '"PID"'; then
       printf '실행 lock: %s (zsh 형식, 자동 회수 안 함)\n' "$owner"

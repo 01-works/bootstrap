@@ -17,6 +17,8 @@ usage() {
                              저장소를 받아 바뀐 부분만 적용 (자동 갱신이 10분마다 --auto로 실행)
   ./bootstrap.sh paseo-upgrade [--force] [--dry-run]
                              Paseo를 정식 최신 버전으로 (데스크톱은 한 시간마다 --auto로 실행)
+  ./bootstrap.sh role add|status|remove verifier [...]
+                             기기 역할 켜기·확인·끄기 (README "기기 역할", 자세히: ./bootstrap.sh role --help)
   ./bootstrap.sh doctor      설치 상태 검증
   ./bootstrap.sh snapshot    이 Mac에는 있는데 저장소에 없는 것 찾기
   ./bootstrap.sh --list      단계 목록
@@ -44,9 +46,9 @@ step_file() {
   return 1
 }
 
-# 갱신과 Paseo 업그레이드는 자기 인자를 따로 받는다 (scripts/update.sh, scripts/paseo-upgrade.sh).
+# 갱신, Paseo 업그레이드, 기기 역할은 자기 인자를 따로 받는다 (scripts/update.sh, scripts/paseo-upgrade.sh, scripts/role.sh).
 case "${1:-}" in
-  update | paseo-upgrade)
+  update | paseo-upgrade | role)
     script="$BOOTSTRAP_ROOT/scripts/$1.sh"
     shift
     exec bash "$script" "$@"
