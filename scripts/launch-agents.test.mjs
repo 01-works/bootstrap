@@ -3,28 +3,33 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AGENT_CHROME_URL, LABELS, PASEO_UPGRADE_INTERVAL, UPDATE_INTERVAL, apply, definitions, harnessEnvPath, plist } from './launch-agents.mjs';
+import { AGENT_CHROME_URL, LABELS, PASEO_UPGRADE_INTERVAL, ROLE_DISABLED, UPDATE_INTERVAL, activeRoles, apply, definitions, harnessEnvPath, plist } from './launch-agents.mjs';
 
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), 'bootstrap-launch-test-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const chromeBinary = join(home, 'Google Chrome Beta');
   writeFileSync(chromeBinary, '');
-  // launchctl 대역: 등록 상태만 흉내 낸다.
+  // launchctl 대역: 등록 상태와 실행 중인 프로세스만 흉내 낸다.
   const loaded = new Set();
+  const running = new Set();
   const calls = [];
   const run = (cmd, args) => {
     assert.equal(cmd, '/bin/launchctl');
     calls.push(args[0]);
     const label = args[1].split('/').pop();
-    if (args[0] === 'print') return { status: loaded.has(label) ? 0 : 113 };
+    if (args[0] === 'print') return { status: loaded.has(label) ? 0 : 113, stdout: running.has(label) ? `${label} = {\n\tstate = running\n\tpid = 4242\n}\n` : '' };
     if (args[0] === 'bootstrap') { loaded.add(args[2].split('/').pop().replace(/\.plist$/, '')); return { status: 0 }; }
-    if (args[0] === 'bootout') { loaded.delete(label); return { status: 0 }; }
+    if (args[0] === 'bootout') { loaded.delete(label); running.delete(label); return { status: 0 }; }
     throw new Error(`예상하지 못한 호출: ${args.join(' ')}`);
   };
   const options = { home, env: {}, run, uid: 501, chromeBinary };
   const agentPath = label => join(home, 'Library/LaunchAgents', `${label}.plist`);
-  return { home, options, calls, loaded, agentPath };
+  // 기기 역할 켜기·끄기 (scripts/role.sh의 상태 파일).
+  const roleFile = join(home, '.config/bootstrap/roles/verifier');
+  const setRole = on => on ? (mkdirSync(join(roleFile, '..'), { recursive: true }), writeFileSync(roleFile, 'colima_memory=6\n'))
+    : rmSync(roleFile, { force: true });
+  return { home, options, calls, loaded, running, agentPath, setRole };
 }
 
 test('기기 종류별 정의: 데스크톱은 로그인 시 시작, 노트북은 Chrome만 필요할 때', () => {
@@ -117,4 +122,62 @@ test('자동 갱신 중(noRestart)에는 실행 중인 등록을 내렸다 올�
   assert.equal(apply({ ...f.options, laptop: false, noRestart: true, chromeBinary: join(f.home, 'missing') }), 1, '실패가 대기보다 우선');
   const xdg = plist(definitions({ home: '/h', laptop: false, env: { XDG_STATE_HOME: '/s' } }).update);
   assert.match(xdg, /<key>XDG_STATE_HOME<\/key><string>\/s<\/string>/, '셸의 상태 위치를 launchd에도 줌');
+});
+
+test('verifier 역할: 세 정의는 null이고 자동 갱신은 그대로다', t => {
+  const roles = ['verifier'];
+  assert.deepEqual(ROLE_DISABLED.verifier, ['agent-chrome', 'paseo', 'paseo-upgrade']);
+  for (const laptop of [false, true]) {
+    const defs = definitions({ home: '/h', laptop, roles });
+    for (const name of ROLE_DISABLED.verifier) assert.equal(defs[name], null, `${name} (laptop=${laptop})`);
+    assert.equal(plist(defs.update), plist(definitions({ home: '/h', laptop }).update));
+  }
+  const f = fixture(t);
+  assert.deepEqual(activeRoles({ home: f.home }), []);
+  f.setRole(true);
+  assert.deepEqual(activeRoles({ home: f.home }), ['verifier']);
+  assert.deepEqual(activeRoles({ home: '/elsewhere', env: { XDG_CONFIG_HOME: join(f.home, '.config') } }), ['verifier']);
+});
+
+test('verifier 역할: 등록이 있으면 내리고 plist를 지운다. --check는 없을 때 0, 있을 때 1. 끄면 다시 등록한다', t => {
+  const f = fixture(t);
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  f.setRole(true);
+  for (const name of ROLE_DISABLED.verifier) assert.equal(apply({ ...f.options, laptop: false, only: name, check: true }), 1, `${name} 남아 있음`);
+  assert.equal(apply({ ...f.options, laptop: false, dryRun: true }), 0);
+  assert.ok(f.loaded.has(LABELS.paseo), 'dry-run은 내리지 않음');
+  f.calls.length = 0;
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  assert.equal(f.calls.filter(call => call === 'bootout').length, 3);
+  for (const name of ROLE_DISABLED.verifier) {
+    assert.equal(f.loaded.has(LABELS[name]), false, name);
+    assert.equal(existsSync(f.agentPath(LABELS[name])), false, `${name} plist`);
+    assert.equal(apply({ ...f.options, laptop: false, only: name, check: true }), 0, `${name} 꺼짐`);
+  }
+  assert.ok(f.loaded.has(LABELS.update), '자동 갱신은 그대로');
+  f.calls.length = 0;
+  assert.equal(apply({ ...f.options, laptop: false, noRestart: true }), 0, '다시 실행해도 같다');
+  assert.ok(f.calls.every(call => call === 'print'));
+
+  f.setRole(false);
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  for (const name of ROLE_DISABLED.verifier) assert.ok(f.loaded.has(LABELS[name]), `${name} 다시 등록`);
+});
+
+test('verifier 역할: 실행 중인 에이전트 Chrome은 끄지 않고 plist만 지워 대기로 알린다. 끝난 뒤 다시 실행하면 내린다', t => {
+  const f = fixture(t);
+  assert.equal(apply({ ...f.options, laptop: false, only: 'agent-chrome' }), 0);
+  f.running.add(LABELS['agent-chrome']);
+  f.setRole(true);
+  f.calls.length = 0;
+  assert.equal(apply({ ...f.options, laptop: false, only: 'agent-chrome' }), 2);
+  assert.ok(!f.calls.includes('bootout'), '실행 중인 Chrome을 내리지 않음');
+  assert.ok(f.loaded.has(LABELS['agent-chrome']));
+  assert.equal(existsSync(f.agentPath(LABELS['agent-chrome'])), false, '다음 로그인부터 시작하지 않게 plist를 지움');
+  assert.equal(apply({ ...f.options, laptop: false, only: 'agent-chrome', check: true }), 2);
+  f.running.delete(LABELS['agent-chrome']);
+  assert.equal(apply({ ...f.options, laptop: false, only: 'agent-chrome', check: true }), 1);
+  assert.equal(apply({ ...f.options, laptop: false, only: 'agent-chrome' }), 0);
+  assert.equal(f.loaded.has(LABELS['agent-chrome']), false);
+  assert.equal(apply({ ...f.options, laptop: false, chromeBinary: join(f.home, 'missing') }), 0, 'Chrome Beta가 없어도 끄는 데는 상관없음');
 });

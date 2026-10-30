@@ -133,6 +133,16 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   f.push({ 'scripts/yw-heavy.sh': '# yw-heavy\n' });
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['heavy 1'], 'yw-heavy 원본은 heavy 단계');
+
+  f.push({ 'scripts/steps/90-roles.sh': mockStep('roles') });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['roles 1'], '새 단계 파일은 그 단계');
+  f.push({ 'scripts/role.sh': '# role\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['roles 1'], '역할 코드는 roles 단계');
+  f.push({ 'scripts/verifier-logs.sh': '# verifier-logs\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['roles 1'], '읽기 전용 SSH 강제 명령도 roles 단계');
 });
 
 test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 실행하면 다시 실행한다', t => {

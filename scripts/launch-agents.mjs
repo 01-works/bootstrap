@@ -1,6 +1,7 @@
 // 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬·Paseo 업그레이드, (모든 기기) 저장소 자동 갱신.
 // plist에는 이 기기의 절대 경로가 들어가므로 저장소에 두지 않고 여기서 만든다.
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// 기기 역할(scripts/role.sh)이 끈 등록은 만들지 않고, 있으면 내린다.
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +18,17 @@ export const LABELS = { 'agent-chrome': 'local.bootstrap.agent-chrome', paseo: '
 export const UPDATE_INTERVAL = 600;
 // Paseo 업그레이드 확인 주기(초). 최신 버전은 하루에 한 번 확인하고, 올릴 버전이 있으면 에이전트가 쉴 때까지 이 주기로 다시 본다.
 export const PASEO_UPGRADE_INTERVAL = 3600;
+// 역할별로 끄는 자동 시작. verifier 기기는 검증만 하므로 에이전트 Chrome과 Paseo 데몬을 띄우지 않는다.
+// 업그레이드도 끈다: 새 버전을 올린 뒤 데몬을 띄우기 때문이다 (scripts/paseo-upgrade.sh).
+export const ROLE_DISABLED = { verifier: ['agent-chrome', 'paseo', 'paseo-upgrade'] };
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// 켠 역할: 상태 파일(~/.config/bootstrap/roles/<역할>)이 있는 역할.
+export function activeRoles({ home, env = {} }) {
+  const dir = join(env.XDG_CONFIG_HOME || join(home, '.config'), 'bootstrap/roles');
+  return Object.keys(ROLE_DISABLED).filter(role => existsSync(join(dir, role)));
+}
+const disabledBy = (name, roles) => roles.find(role => ROLE_DISABLED[role].includes(name));
 
 const escape = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -49,14 +60,15 @@ export function plist({ label, args, runAtLoad, keepAlive, processType, startInt
 }
 
 // 노트북은 필요할 때 시작하고(launchctl kickstart), 늘 켜두는 기기는 로그인할 때 시작한다.
-export function definitions({ home, laptop, env = {}, root = REPO_ROOT }) {
+// roles: 켠 역할. 역할이 끈 등록은 null이다.
+export function definitions({ home, laptop, env = {}, root = REPO_ROOT, roles = [] }) {
   const dataHome = env.XDG_DATA_HOME || join(home, '.local/share');
   const profile = join(dataHome, 'bootstrap/agent-chrome');
   const stateHome = join(env.XDG_STATE_HOME || join(home, '.local/state'), 'bootstrap');
   const updateState = join(stateHome, 'update');
   const upgradeState = join(stateHome, 'paseo-upgrade');
   const stateEnv = env.XDG_STATE_HOME ? { XDG_STATE_HOME: env.XDG_STATE_HOME } : undefined;
-  return {
+  const defs = {
     'agent-chrome': {
       label: LABELS['agent-chrome'],
       args: [CHROME_BETA, `--user-data-dir=${profile}`, `--remote-debugging-port=${AGENT_CHROME_PORT}`,
@@ -86,6 +98,8 @@ export function definitions({ home, laptop, env = {}, root = REPO_ROOT }) {
       log: join(updateState, 'update.log'), dirs: [updateState], env: stateEnv,
     },
   };
+  for (const name of Object.keys(defs)) if (disabledBy(name, roles)) defs[name] = null;
+  return defs;
 }
 
 // Browser Use가 읽는 .env (browser_harness/paths.py와 같은 위치). 기본 연결 대상을 에이전트 Chrome으로 둔다.
@@ -145,16 +159,53 @@ function ensureAgent(def, { home, check, dryRun, noRestart, run, uid }) {
   return 0;
 }
 
-// 결과: 0 완료, 1 실패, 2 수동 작업 대기(noRestart). 실패가 대기보다 우선한다.
+// 역할이 끈 등록을 내리고 plist를 지운다. 실행 중인 프로세스(에이전트 Chrome)는 끄지 않는다. 내리면 함께 끝나기 때문이다.
+// 그때는 plist만 지워 다음 로그인부터 시작하지 않게 하고 수동 작업 대기(2)로 알린다. 끝난 뒤 다시 실행하면 내린다.
+// check: 0 꺼짐, 1 남아 있음, 2 실행 중이라 등록만 남음.
+function removeAgent(label, role, { home, check, dryRun, run, uid }) {
+  const path = join(home, 'Library/LaunchAgents', `${label}.plist`);
+  const target = `gui/${uid}/${label}`;
+  const printed = run('/bin/launchctl', ['print', target], { encoding: 'utf8' });
+  const loaded = printed.status === 0;
+  const running = loaded && /^\s*pid = \d+/m.test(printed.stdout || '');
+  const present = existsSync(path);
+  if (!loaded && !present) { console.log(`${role}: 자동 시작 꺼짐 ${label}`); return 0; }
+  if (running) {
+    if (check && present) { console.error(`${role}: 자동 시작이 남아 있음 ${label}`); return 1; }
+    console.error(`${role}: ${label} 실행 중이라 내리지 않음. ${present ? 'plist를 지워 ' : ''}다음 로그인부터 시작하지 않습니다` +
+      ` (지금 끄려면: launchctl bootout ${target})`);
+    if (!check && present && !dryRun) rmSync(path, { force: true });
+    return 2;
+  }
+  if (check) { console.error(`${role}: 자동 시작이 남아 있음 ${label}`); return 1; }
+  console.log(`${dryRun ? '[dry-run] ' : ''}${role}: 자동 시작 해제 ${label}`);
+  if (dryRun) return 0;
+  if (loaded) {
+    const result = run('/bin/launchctl', ['bootout', target], { encoding: 'utf8' });
+    if (result.error || result.status !== 0) throw new Error(`launchctl bootout 실패: ${label} ${result.stderr || result.error?.message || ''}`);
+  }
+  rmSync(path, { force: true });
+  return 0;
+}
+
+// 결과: 0 완료, 1 실패, 2 수동 작업 대기(noRestart, 역할이 끈 등록이 실행 중). 실패가 대기보다 우선한다.
 export function apply({ home = homedir(), env = process.env, laptop, only, check = false, dryRun = false, noRestart = false,
   run = spawnSync, uid = process.getuid(), chromeBinary = CHROME_BETA } = {}) {
   if (typeof laptop !== 'boolean') throw new Error('--laptop 또는 --desktop이 필요합니다');
-  const defs = definitions({ home, laptop, env });
+  const roles = activeRoles({ home, env });
+  const defs = definitions({ home, laptop, env, roles });
   let status = 0;
   let pending = false;
   for (const name of only ? [only] : Object.keys(defs)) {
     if (!(name in defs)) throw new Error(`알 수 없는 대상: ${name}`);
     const def = defs[name];
+    const role = disabledBy(name, roles);
+    if (role) {
+      const result = removeAgent(LABELS[name], role, { home, check, dryRun, run, uid });
+      if (result === 2) pending = true;
+      else status = Math.max(status, result);
+      continue;
+    }
     if (!def) {
       console.log(name === 'paseo' ? 'Paseo 자동 시작: 노트북은 선택 사항 (시스템 설정 > 일반 > 로그인 항목)'
         : 'Paseo 업그레이드: 노트북은 앱이 스스로 업데이트');

@@ -10,6 +10,20 @@ pass() { ok "$*"; passed=$((passed + 1)); }
 miss() { fail "$*"; failed=$((failed + 1)); }
 wait_for_user() { warn "$*"; pending=$((pending + 1)); }
 
+# verifier 역할(scripts/role.sh)을 켠 기기는 에이전트 Chrome·Paseo 데몬·Paseo 업그레이드를 자동 시작하지 않는다.
+verifier=0
+[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" ]] && verifier=1
+# 역할이 끈 자동 시작이 실제로 꺼졌는지: verifier_off <launch-agents 대상> <표시 이름>
+verifier_off() {
+  local r=0
+  node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only "$1" "$(device_flag)" || r=$?
+  case "$r" in
+    0) pass "verifier: $2 자동 시작 꺼짐 확인" ;;
+    2) wait_for_user "verifier: $2 실행 중이라 등록이 남음 (끝내거나 다음 로그인부터 꺼짐)" ;;
+    *) miss "verifier: $2 자동 시작이 남아 있음 (./bootstrap.sh role add verifier)" ;;
+  esac
+}
+
 step "Homebrew"
 if has brew; then
   pass "brew"
@@ -93,7 +107,10 @@ if has node; then
       warn "Paseo 기본 스킬 설치 필요 (./bootstrap.sh --only paseo)"
     fi
   fi
-  if ! is_laptop; then
+  if [[ "$verifier" == 1 ]]; then
+    verifier_off paseo 'Paseo 데몬'
+    verifier_off paseo-upgrade 'Paseo 새 버전 확인'
+  elif ! is_laptop; then
     if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only paseo --desktop; then
       pass "Paseo 로그인 시 자동 시작"
     else
@@ -120,7 +137,9 @@ if has node && node "$BOOTSTRAP_ROOT/scripts/browser-use-setup.mjs" --check; the
 else
   miss "Browser Use 설치/스킬 확인 필요 (./bootstrap.sh --only homebrew,browser)"
 fi
-if has node; then
+if has node && [[ "$verifier" == 1 ]]; then
+  verifier_off agent-chrome '에이전트 Chrome'
+elif has node; then
   if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only agent-chrome "$(device_flag)"; then
     pass "에이전트 Chrome 자동 시작·Browser Use 기본 연결"
   else
@@ -155,6 +174,19 @@ elif [[ -e /tmp/cc-yw-heavy.sh || -L /tmp/cc-yw-heavy.sh ]]; then
   info "예전 경로 /tmp/cc-yw-heavy.sh는 다른 파일 (전환 절차: agents/heavy-queue.md)"
 else
   info "예전 경로 /tmp/cc-yw-heavy.sh 없음 (재시동 뒤 비워짐). 그 경로를 쓰는 호출이 있으면 ./bootstrap.sh --only heavy"
+fi
+
+step "기기 역할"
+if [[ "$verifier" == 1 ]]; then
+  role_status=0
+  bash "$BOOTSTRAP_ROOT/scripts/role.sh" status verifier || role_status=$?
+  case "$role_status" in
+    0) pass "verifier 준비 완료" ;;
+    2) wait_for_user "verifier 수동 작업 대기 (위 항목, ./bootstrap.sh role status)" ;;
+    *) miss "verifier 설정 확인 필요 (위 항목, ./bootstrap.sh role add verifier)" ;;
+  esac
+else
+  info "기기 역할 없음"
 fi
 
 step "전원"

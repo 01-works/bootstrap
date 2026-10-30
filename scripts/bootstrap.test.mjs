@@ -254,3 +254,28 @@ test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경�
   assert.equal(lstatSync(compat).isSymbolicLink(), false);
   assert.match(result.stdout, /agents\/heavy-queue\.md/);
 });
+
+test('role 명령은 scripts/role.sh로 넘기고, roles 단계는 켠 역할이 없으면 아무것도 하지 않는다', t => {
+  const { root, run } = sandbox(t);
+  const home = join(root, 'home');
+  mkdirSync(home);
+  copyFileSync(join(repo, 'scripts/role.sh'), join(root, 'scripts/role.sh'));
+  const env = { ...process.env, BOOTSTRAP_ROOT: root, HOME: home, DRY_RUN: '0', XDG_STATE_HOME: join(root, 'state') };
+  delete env.XDG_CONFIG_HOME;
+  const bootstrap = (...args) => spawnSync('/bin/bash', [join(root, 'bootstrap.sh'), ...args], { env, encoding: 'utf8' });
+  let result = bootstrap('role', 'status');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /기기 역할 없음/);
+  result = bootstrap('role', 'status', 'verifier');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /verifier 꺼짐/);
+  result = bootstrap('role');
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /role add verifier/);
+  assert.match(run('--help').stdout, /role add\|status\|remove verifier/);
+
+  result = spawnSync('/bin/bash', [join(repo, 'scripts/steps/90-roles.sh')], { env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /기기 역할 없음/);
+  assert.deepEqual(readdirSync(home), [], '역할이 없으면 홈을 건드리지 않는다');
+});
