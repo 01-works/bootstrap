@@ -122,7 +122,7 @@ node scripts/paseo-profiles.mjs --update
 
 노트북은 앱이 스스로 업데이트한다(정식은 36시간에 걸쳐 단계 배포). 앱의 업데이트 확인은 앱 화면이 켜져 있을 때만 돌아서, 앱 없이 데몬만 띄우는 데스크톱은 따로 올린다. `paseo` 단계가 등록한 LaunchAgent(`local.bootstrap.paseo-upgrade`)가 한 시간마다 `./bootstrap.sh paseo-upgrade --auto`를 실행한다 (`scripts/paseo-upgrade.sh`).
 
-- 하루에 한 번 Homebrew cask의 최신 버전과 그 GitHub 릴리스 공개 시각을 확인한다. 공개 뒤 36시간(공식 단계 배포 기간)이 지난 버전만 올린다. 이틀 사이에 핫픽스가 이어지는 경우가 있어서다.
+- 하루에 한 번 Homebrew cask의 최신 버전과 그 GitHub 릴리스 공개 시각을 확인한다. 공개 시각은 `gh`에 로그인된 토큰으로 받고, 안 되면 로그인 없이 받는다(IP마다 시간당 60회라 같은 IP의 다른 도구와 나눠 쓰다 막힌다). 못 받으면 한 시간 뒤 다시 확인한다. 공개 뒤 36시간(공식 단계 배포 기간)이 지난 버전만 올린다. 이틀 사이에 핫픽스가 이어지는 경우가 있어서다.
 - 실행 중(running)인 에이전트가 있으면 올리지 않고 한 시간 뒤 다시 본다. 하루 넘게 못 올리면 한 번 알리고(`doctor`에도 대기로 표시), 한가할 때 터미널에서 `./bootstrap.sh paseo-upgrade --force`로 올린다. `--force`는 36시간 대기와 실행 중 에이전트 확인을 건너뛰고, 진행 중인 작업은 끊긴다.
 - `brew upgrade --cask paseo`는 cask 제거 단계에서 데몬을 멈춘다(`paseo daemon stop --force`). 끝나면 `local.bootstrap.paseo`로 데몬을 다시 띄우고 새 버전으로 응답하는지 확인한다. 실패하면 옛 버전으로라도 다시 띄우고 실패로 알린다.
 - 앱이 스스로 새 버전이 됐는데 데몬이 옛 버전이면 데몬만 멈췄다가 시작한다. `paseo daemon restart`는 supervisor를 바꾸지 않아 버전이 바뀌지 않는다 ([CLI 문서](https://paseo.sh/docs/cli.md)).

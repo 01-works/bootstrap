@@ -77,8 +77,14 @@ check_latest() {
     warn 'Homebrew에서 Paseo 최신 버전을 읽지 못했습니다'
     return 1
   fi
-  json="$(curl -fsS --max-time 20 "https://api.github.com/repos/getpaseo/paseo/releases/tags/v$version" 2>/dev/null)" &&
-    published="$(plutil -extract published_at raw -o - - <<<"$json" 2>/dev/null)" &&
+  # 로그인 없는 GitHub API는 IP마다 시간당 60회라 같은 IP의 다른 도구가 다 쓰면 막힌다. gh에 로그인돼 있으면 그 토큰으로
+  # 먼저 부르고, 안 되면 로그인 없이 부른다. 토큰은 명령줄(ps)에 드러나지 않게 표준 입력으로 넘긴다.
+  local url="https://api.github.com/repos/getpaseo/paseo/releases/tags/v$version" token=''
+  json=''
+  has gh && token="$(gh auth token 2>/dev/null)"
+  [[ -n "$token" ]] && json="$(printf 'Authorization: Bearer %s\n' "$token" | curl -fsS --max-time 20 -H @- "$url" 2>/dev/null)"
+  [[ -n "$json" ]] || json="$(curl -fsS --max-time 20 "$url" 2>/dev/null)"
+  published="$(plutil -extract published_at raw -o - - <<<"$json" 2>/dev/null)" &&
     epoch="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$published" +%s 2>/dev/null)"
   if [[ -z "${epoch:-}" ]]; then
     warn "Paseo $version 릴리스 공개 시각을 받지 못했습니다 (GitHub)"
