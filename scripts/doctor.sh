@@ -136,7 +136,13 @@ if has node; then
 fi
 
 step "heavy 대기열"
-if [[ -x /usr/bin/lockf ]]; then pass "lockf"; else miss "/usr/bin/lockf 없음 (yw-heavy가 대기열 편집에 씀)"; fi
+lockf_check="$(mktemp "${TMPDIR:-/tmp}/yw-heavy-lockf.XXXXXX")"
+if (exec 9>"$lockf_check" && /usr/bin/lockf -s -t 0 9) 2>/dev/null; then
+  pass "lockf fd 모드 잠금"
+else
+  miss "/usr/bin/lockf fd 모드 잠금이 동작하지 않음 (yw-heavy가 대기열 편집에 씀)"
+fi
+rm -f "$lockf_check"
 heavy_bin="$HOME/.local/bin/yw-heavy"
 if [[ -x "$heavy_bin" ]] && cmp -s "$BOOTSTRAP_ROOT/scripts/yw-heavy.sh" "$heavy_bin"; then
   pass "yw-heavy 설치본이 저장소 원본과 같음"
@@ -145,8 +151,10 @@ else
 fi
 if [[ -L /tmp/cc-yw-heavy.sh && "$(readlink /tmp/cc-yw-heavy.sh)" == "$heavy_bin" ]]; then
   info "예전 경로 /tmp/cc-yw-heavy.sh → yw-heavy"
-elif [[ -e /tmp/cc-yw-heavy.sh ]]; then
+elif [[ -e /tmp/cc-yw-heavy.sh || -L /tmp/cc-yw-heavy.sh ]]; then
   info "예전 경로 /tmp/cc-yw-heavy.sh는 다른 파일 (전환 절차: agents/heavy-queue.md)"
+else
+  info "예전 경로 /tmp/cc-yw-heavy.sh 없음 (재시동 뒤 비워짐). 그 경로를 쓰는 호출이 있으면 ./bootstrap.sh --only heavy"
 fi
 
 step "전원"

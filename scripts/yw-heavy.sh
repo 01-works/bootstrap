@@ -8,6 +8,7 @@
 #   실행 lock YW_HEAVY_EXEC_LOCK (/tmp/yw-heavy-check.lock/owner.txt)
 #   편집 lock YW_HEAVY_FLOCK ($Q.flock, 커널 flock) + 호환 표지 파일 YW_HEAVY_EDIT_LOCK (/tmp/yw-heavy-queue.edit.lock)
 #   회수 기록 YW_HEAVY_LOG ($Q.log), 회수 끄기 YW_HEAVY_NO_RECLAIM ($Q.no-reclaim), 대기 주기 YW_HEAVY_POLL (30초)
+#   owner 없는 실행 lock 회수까지 YW_HEAVY_OWNERLESS_AGE (60초), 구형식 편집 lock 경고까지 YW_HEAVY_EDIT_WARN (120초)
 
 usage() {
   cat <<'EOF'
@@ -35,6 +36,7 @@ init() {
   NR="${YW_HEAVY_NO_RECLAIM:-$Q.no-reclaim}"
   POLL="${YW_HEAVY_POLL:-30}"
   EDIT_WARN="${YW_HEAVY_EDIT_WARN:-120}"
+  OWNERLESS_AGE="${YW_HEAVY_OWNERLESS_AGE:-60}"
   # 구버전 편집 lock이 풀리기를 기다리는 주기. 1초보다 짧은 대기 주기(테스트)면 그것을 쓴다.
   case "$POLL" in 0* | .*) EDIT_POLL="$POLL" ;; *) EDIT_POLL=1 ;; esac
   LOCKF=/usr/bin/lockf
@@ -139,11 +141,23 @@ q_set_ps() {
 }
 
 owner_read() { cat "$XL/owner.txt" 2>/dev/null; }
-json_str() { printf '%s' "$1" | sed -nE "s/.*\"$2\":\"([^\"]*)\".*/\\1/p" | head -1; }
+json_str() { printf '%s' "$1" | sed -nE "s/.*\"$2\":[[:space:]]*\"([^\"]*)\".*/\\1/p" | head -1; }
 json_num() { printf '%s' "$1" | sed -nE "s/.*\"$2\":[[:space:]]*([0-9]+).*/\\1/p" | head -1; }
 json_esc() {
   local s="${1//\\/\\\\}"
   printf '%s' "${s//\"/\\\"}"
+}
+# 구형식 편집 lock owner: 구 bash는 {"pid":N,"task":"T"}, R1-heavy.py는 pid=N task=T. 둘 다 그 프로세스 자신의 pid다.
+edit_owner_field() {
+  local v
+  if [ "$2" = pid ]; then v="$(json_num "$1" pid)"; else v="$(json_str "$1" "$2")"; fi
+  [ -n "$v" ] || v="$(printf '%s' "$1" | sed -nE "s/(^|.*[[:space:]])$2=([^[:space:]]+).*/\\2/p" | head -1)"
+  printf '%s' "$v"
+}
+# owner.txt가 없거나 비어 있는 실행 lock이 마지막으로 바뀐 뒤 지난 초. owner가 있거나 lock이 없으면 실패한다.
+ownerless_age() {
+  [ -d "$XL" ] && [ ! -s "$XL/owner.txt" ] || return 1
+  echo $(($(date +%s) - $(stat -f %m "$XL" 2>/dev/null || date +%s)))
 }
 owner_v2() {
   local v
@@ -203,12 +217,12 @@ edit_lock() {
     if [ -d "$EL" ]; then
       # 구버전 enqueue·release가 쓰는 중이다. owner pid는 그 프로세스 자신이라 정확하다. 사망이 확정될 때만 지운다.
       owner="$(cat "$EL/owner.txt" 2>/dev/null)"
-      pid="$(json_num "$owner" pid)"
+      pid="$(edit_owner_field "$owner" pid)"
       if [ -n "$pid" ] && [ "$(proc_state "$pid")" = dead:esrch ]; then
         if [ "$(cat "$EL/owner.txt" 2>/dev/null)" = "$owner" ]; then
           rm -f "$EL/owner.txt"
           rmdir "$EL" 2>/dev/null &&
-            note "reclaim kind=edit task=$(json_str "$owner" task) pid=$pid start=- reason=legacy-edit-esrch"
+            note "reclaim kind=edit task=$(edit_owner_field "$owner" task) pid=$pid start=- reason=legacy-edit-esrch"
         fi
         continue
       fi
@@ -235,12 +249,18 @@ unlock_queue() {
 # reclaim_dead [보호할 ID]: 사망이 확정된 실행 lock holder와 v2 대기 줄을 지운다.
 # 보호할 ID는 같은 ID 재시도가 이어받을 줄이다. 그 줄은 지우지 않고 위치를 유지한다.
 reclaim_dead() {
-  local protect="${1:-}" owner task holder hs st drop='' l id pid start kept='' changed=0
+  local protect="${1:-}" owner task holder hs st age drop='' l id pid start kept='' changed=0
   [ -e "$NR" ] && return 0
   owner="$(owner_read)"
   task="$(json_str "$owner" task)"
   holder="$(json_num "$owner" holder)"
-  # 구형식 owner(pid가 $PPID라 믿을 수 없음)·zsh 형식·holder 없는 lock은 회수하지 않는다.
+  # 구형식 owner(pid가 ${PPID}라 믿을 수 없음)·zsh 형식·holder 없는 lock은 회수하지 않는다.
+  # owner 없는 실행 lock: 실행 lock을 만들거나 지우던 프로세스가 그 사이에 끝났다. 새 버전은 flock 아래에서만 만들고 지우며,
+  # 관문이 열려 있으면 구버전 acquire가 mkdir과 owner 기록 사이에 있을 수 없다. 그래도 한동안 바뀌지 않은 것만 지운다.
+  if [ -z "$owner" ] && age="$(ownerless_age)" && [ "$age" -ge "$OWNERLESS_AGE" ] && gate_open; then
+    rm -f "$XL/owner.txt"
+    rmdir "$XL" 2>/dev/null && note "reclaim kind=exec task=- pid=- start=- reason=ownerless-stale age=${age}s"
+  fi
   if [ -n "$holder" ] && owner_v2 "$owner" && gate_open; then
     hs="$(json_str "$owner" holderStart)"
     st="$(proc_state "$holder" "${hs:--}")"
@@ -317,10 +337,22 @@ write_owner() {
   printf '%s}\n' "$json" >"$XL/owner.txt"
 }
 
+holder_dead() {
+  [ -n "$HOLDER" ] || return 1
+  case "$(proc_state "$HOLDER" "$HOLDER_START")" in dead:*) return 0 ;; esac
+  return 1
+}
+
 do_acquire() {
   local registered=0 l pid start head capped=0 last_note="$SECONDS"
   while :; do
     lock_queue || return 1
+    if holder_dead; then
+      [ "$registered" = 0 ] || [ "$(lf "$(q_line "$ID")" pid)" != "$$" ] || q_drop "$ID"
+      unlock_queue
+      say "$ID: holder ${HOLDER}가 끝나 대기를 그만둡니다"
+      return 3
+    fi
     if [ "$registered" = 0 ]; then
       reclaim_dead "$ID"
       if [ "$(json_str "$(owner_read)" task)" = "$ID" ]; then
@@ -346,7 +378,7 @@ do_acquire() {
         registered=1
       elif [ "$(sup_count)" -ge 2 ]; then
         unlock_queue
-        [ "$capped" = 1 ] || say "$ID: 감독자 $SUP의 대기 줄이 이미 2개라 자리가 날 때까지 기다립니다"
+        [ "$capped" = 1 ] || say "$ID: 감독자 ${SUP}의 대기 줄이 이미 2개라 자리가 날 때까지 기다립니다"
         capped=1
         pause_poll || return $?
         continue
@@ -371,18 +403,14 @@ do_acquire() {
         say "$ID: 같은 ID의 다른 대기자가 자리를 이어받아 대기를 그만둡니다 (superseded by pid $pid)"
         return 3
       fi
-      if [ -n "$HOLDER" ]; then
-        case "$(proc_state "$HOLDER" "$HOLDER_START")" in
-          dead:*)
-            q_drop "$ID"
-            unlock_queue
-            say "$ID: holder $HOLDER가 끝나 대기를 그만둡니다"
-            return 3
-            ;;
-        esac
-      fi
     fi
     head="$(line_id "$(q_lines | head -1)")"
+    if [ "$head" = "$ID" ] && holder_dead; then
+      q_drop "$ID"
+      unlock_queue
+      say "$ID: holder ${HOLDER}가 끝나 대기를 그만둡니다"
+      return 3
+    fi
     if [ "$head" = "$ID" ] && mkdir "$XL" 2>/dev/null; then
       if ! write_owner; then
         rm -f "$XL/owner.txt"
@@ -407,15 +435,23 @@ do_acquire() {
 }
 
 # 차례를 내려놓는다: 실행 lock(그 ID의 것일 때)과 그 ID의 줄.
+# 실행 lock을 지우지 못했으면 줄만 지웠다고 알리고 1을 돌려준다.
 release_id() {
+  local rc=0
   lock_queue || return 1
   if [ "$(json_str "$(owner_read)" task)" = "$ID" ]; then
     rm -f "$XL/owner.txt"
-    rmdir "$XL" 2>/dev/null
+    if ! rmdir "$XL" 2>/dev/null; then
+      say "$ID: 실행 lock을 지우지 못했습니다 (${XL}에 다른 파일이 있음). 대기 줄만 지웠습니다"
+      rc=1
+    fi
+  elif [ -d "$XL" ] && [ ! -s "$XL/owner.txt" ]; then
+    say "$ID: owner 없는 실행 lock이 남아 있어 누구 것인지 알 수 없습니다. 대기 줄만 지웠습니다 (yw-heavy status, agents/heavy-queue.md)"
   fi
   [ -z "$(q_line "$ID")" ] || q_drop "$ID"
   unlock_queue
   HELD=0
+  return "$rc"
 }
 
 # 구버전 acquire가 "$0" enqueue로 부를 때: 대기자는 부모인 구 acquire라 pid 없는 구형식 줄을 쓴다.
@@ -491,7 +527,7 @@ EOF
     holder="$(json_num "$owner" holder)"
     hs="$(json_str "$owner" holderStart)"
     if [ -z "$owner" ]; then
-      printf '실행 lock: %s (owner.txt 없음, 자동 회수 안 함)\n' "$XL"
+      printf '실행 lock: %s (owner 없음, %s초 전 변경). 관문이 열려 있고 %s초가 지나면 자동 회수\n' "$XL" "$(ownerless_age || echo '?')" "$OWNERLESS_AGE"
     elif printf '%s' "$owner" | grep -q '"PID"'; then
       printf '실행 lock: %s (zsh 형식, 자동 회수 안 함)\n' "$owner"
     elif ! owner_v2 "$owner"; then
@@ -513,7 +549,7 @@ EOF
     age=$(($(date +%s) - $(stat -f %m "$EL" 2>/dev/null || date +%s)))
     owner="$(cat "$EL/owner.txt" 2>/dev/null)"
     if [ -n "$owner" ]; then
-      pid="$(json_num "$owner" pid)"
+      pid="$(edit_owner_field "$owner" pid)"
       printf '편집 lock: 구형식 %s (pid %s %s, %d초)\n' "$owner" "${pid:--}" "$(proc_state "$pid")" "$age"
     else
       printf '편집 lock: 구형식, owner.txt 없음 (%d초). 2분 넘게 남으면 agents/heavy-queue.md 수동 처리\n' "$age"
@@ -566,9 +602,10 @@ main() {
       [ $# = 1 ] || { usage >&2; return 2; }
       need_task "$1" || return
       ID="$1"
-      release_id || return 1
+      release_id
+      st=$?
       echo "released $ID"
-      return 0
+      return "$st"
       ;;
   esac
   [ $# -ge 3 ] || { usage >&2; return 2; }
@@ -587,7 +624,7 @@ main() {
         HOLDER="$2"
         HOLDER_START="$(proc_start "$HOLDER")" || HOLDER_START=-
         st="$(proc_state "$HOLDER" "$HOLDER_START")"
-        case "$st" in dead:*) say "holder $HOLDER가 이미 끝났습니다"; return 2 ;; esac
+        case "$st" in dead:*) say "holder ${HOLDER}가 이미 끝났습니다"; return 2 ;; esac
       elif [ $# != 0 ]; then
         usage >&2
         return 2

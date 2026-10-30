@@ -209,7 +209,15 @@ test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경�
   });
   mkdirSync(home);
 
-  let result = step({ DRY_RUN: '1' });
+  // lockf fd 모드가 동작하지 않으면 설치하지 않는다.
+  const badLockf = join(root, 'lockf');
+  writeFileSync(badLockf, '#!/bin/sh\nexit 64\n', { mode: 0o755 });
+  let result = step({ YW_HEAVY_LOCKF_CHECK: badLockf });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /fd 모드 잠금이 동작하지 않습니다/);
+  assert.equal(existsSync(dst), false);
+
+  result = step({ DRY_RUN: '1' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(dst), false, 'dry-run은 설치하지 않는다');
   assert.equal(existsSync(compat), false);

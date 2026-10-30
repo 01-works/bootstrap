@@ -47,7 +47,11 @@ function fixture(t) {
   const q = join(dir, 'q'), x = join(dir, 'x'), e = join(dir, 'e');
   const hook = join(dir, 'bash-env');
   // Deterministic EPERM even when this suite is run outside the agent sandbox.
-  writeFileSync(hook, `kill() { if [ "$1" = -0 ] && [ "$2" = 1 ]; then echo 'kill: (1) - Operation not permitted' >&2; return 1; fi; builtin kill "$@"; }\nsleep() { case "$1" in 30|2) /bin/sleep .05;; *) /bin/sleep "$@";; esac; }\n`);
+  const baseHook = `kill() { if [ "$1" = -0 ] && [ "$2" = 1 ]; then echo 'kill: (1) - Operation not permitted' >&2; return 1; fi; builtin kill "$@"; }\nsleep() { case "$1" in 30|2) /bin/sleep .05;; *) /bin/sleep "$@";; esac; }\n`;
+  writeFileSync(hook, baseHook);
+  // 기본 대역에 셸 함수를 더한 BASH_ENV (특정 구간에서 자기 자신을 kill -9하는 shim 등).
+  let hooks = 0;
+  const hookWith = extra => { const path = join(dir, `bash-env-${++hooks}`); writeFileSync(path, baseHook + extra + '\n'); return path; };
   const env = { ...process.env, HOME: join(dir, 'home'), BASH_ENV: hook, YW_HEAVY_QUEUE: q, YW_HEAVY_EXEC_LOCK: x, YW_HEAVY_EDIT_LOCK: e,
     YW_HEAVY_FLOCK: join(dir, 'flock'), YW_HEAVY_LOG: join(dir, 'log'), YW_HEAVY_NO_RECLAIM: join(dir, 'no-reclaim'), YW_HEAVY_POLL: '.05' };
   mkdirSync(env.HOME);
@@ -86,9 +90,10 @@ function fixture(t) {
       .replace('EL=/tmp/yw-heavy-queue.edit.lock\n', `EL=${quote(e)}\n`)
       .replace('XL=/tmp/yw-heavy-check.lock\n', `XL=${quote(x)}\n`)
       .replaceAll('mktemp /tmp/yw-heavy-queue.tmp.XXXXXX', `mktemp ${quote(q)}.tmp.XXXXXX`), { mode: 0o755 });
+    assert.doesNotMatch(readFileSync(path, 'utf8'), /\/tmp\/yw-heavy/, '구버전 사본은 실제 /tmp 경로를 쓰지 않는다');
     return path;
   };
-  return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, finish, owner, ownerText, line, legacy, log: () => read(env.YW_HEAVY_LOG) };
+  return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, finish, owner, ownerText, line, legacy, hookWith, log: () => read(env.YW_HEAVY_LOG) };
 }
 
 // ---- 반려 결함 재현 (구 CLI만 쓰는 *-legacy는 반려 구현에서 실패해야 한다) ----
@@ -437,9 +442,95 @@ test('bash 3.2 문법만 쓴다', () => {
     const syntax = spawnSync('/bin/bash', ['-n', file], { encoding: 'utf8' });
     assert.equal(syntax.status, 0, syntax.stderr);
     const source = readFileSync(file, 'utf8');
+    // ko_KR 로캘의 bash 3.2는 변수 이름 바로 뒤의 한글을 이름의 일부로 읽는다: ${SUP}의 처럼 쓴다.
+    assert.doesNotMatch(source, /\$[A-Za-z_][A-Za-z0-9_]*[\uAC00-\uD7A3]/, `${file}: 변수 뒤에 붙은 한글`);
     for (const pattern of [/declare -A/, /\bmapfile\b/, /\breadarray\b/, /\$\{[^}]*,,\}/, /\$\{[^}]*\^\^\}/, /\|&/, /&>>/]) {
       assert.doesNotMatch(source, pattern, `${file}: ${pattern}`);
     }
   }
   assert.match(spawnSync('/bin/bash', ['--version'], { encoding: 'utf8' }).stdout, /version 3\.2/);
+});
+
+// ---- 리뷰 지적 보강 ----
+
+test('실행 lock을 만들던 중 SIGKILL되어 owner가 없으면 관문이 열려 있고 오래됐을 때만 회수', async t => {
+  const f = fixture(t);
+  const killAfterMkdir = f.hookWith('mkdir() { command mkdir "$@" || return; [ "$1" = "$YW_HEAVY_EXEC_LOCK" ] && builtin kill -9 $$; return 0; }');
+  const a = f.cliEnv({ BASH_ENV: killAfterMkdir }, 'acquire', 'A', 'w', 's');
+  assert.equal((await a.done).signal, 'SIGKILL');
+  assert.deepEqual(readdirSync(f.x), [], 'owner 없는 실행 lock이 남는다');
+  const young = f.cliEnv({ YW_HEAVY_OWNERLESS_AGE: '3600' }, 'acquire', 'B', 'w', 'other');
+  await f.wait(() => read(f.q).includes('B '), 'B enqueued'); await pause(300);
+  assert.equal(young.out, '', '최근에 바뀐 것은 보존');
+  assert.match(f.sync('status').stdout, /실행 lock: .* \(owner 없음, \d+초 전 변경\)/);
+  young.kill('SIGKILL'); await young.done;
+  const b = f.cliEnv({ YW_HEAVY_OWNERLESS_AGE: '0' }, 'acquire', 'B', 'w', 'other');
+  assert.equal(await f.finish(b), 0); assert.equal(b.out, 'ACQUIRED B\n');
+  assert.match(f.log(), /reclaim kind=exec task=- pid=- start=- reason=ownerless-stale/);
+  assert.match(f.log(), new RegExp(`reclaim kind=line task=A pid=${a.pid} `), '죽은 대기자 줄도 회수');
+});
+
+test('실행 lock을 지우던 중 SIGKILL되어도 회수하고, 관문이 닫혀 있으면 보존, release는 사실대로 알린다', async t => {
+  const f = fixture(t);
+  assert.equal(await f.finish(f.cli('acquire', 'A', 'w', 's')), 0);
+  const killAfterRm = f.hookWith(`rm() { command rm "$@"; case " $* " in *" $YW_HEAVY_EXEC_LOCK/owner.txt "*) builtin kill -9 $$ ;; esac; }`);
+  const rel = f.cliEnv({ BASH_ENV: killAfterRm }, 'release', 'A');
+  assert.equal((await rel.done).signal, 'SIGKILL');
+  assert.deepEqual(readdirSync(f.x), []);
+  writeFileSync(f.q, read(f.q) + 'OLD worker=w supervisor=o\n');
+  const b = f.cliEnv({ YW_HEAVY_OWNERLESS_AGE: '0' }, 'acquire', 'B', 'w', 'other');
+  await f.wait(() => read(f.q).includes('B '), 'B enqueued'); await pause(300);
+  assert.equal(b.out, '', '관문이 닫혀 있으면 보존'); assert.ok(existsSync(f.x));
+  const old = f.sync('release', 'OLD');
+  assert.equal(old.status, 0); assert.equal(old.stdout, 'released OLD\n');
+  assert.match(old.stderr, /owner 없는 실행 lock이 남아 있어 .*대기 줄만 지웠습니다/);
+  // 관문이 열리면(A 줄은 owner가 없어 v2 실행 lock 회수와 무관) owner 없는 lock을 회수한다.
+  assert.equal(f.sync('release', 'A').status, 0);
+  assert.equal(await f.finish(b), 0);
+  assert.match(f.log(), /reason=ownerless-stale/);
+
+  const g = fixture(t);
+  g.owner({ pid: 1, task: 'X', v: 2 });
+  writeFileSync(join(g.x, 'extra'), '');
+  writeFileSync(g.q, 'X worker=w supervisor=s\n');
+  const stuck = g.sync('release', 'X');
+  assert.equal(stuck.status, 1, '실행 lock을 지우지 못하면 1');
+  assert.match(stuck.stderr, /실행 lock을 지우지 못했습니다.*대기 줄만 지웠습니다/);
+  assert.equal(read(g.q), '');
+});
+
+test('상한 때문에 기다리는 동안 holder가 끝나면 등록하지 않고 종료 코드 3', async t => {
+  const f = fixture(t);
+  f.owner({ pid: 1, task: 'HOLD' });
+  writeFileSync(f.q, 'A worker=w supervisor=S\nB worker=w supervisor=S\n');
+  const s = f.live();
+  await f.wait(() => procStart(s.pid), 'ps start');
+  const c = f.cli('acquire', 'C', 'w', 'S', '--holder', String(s.pid));
+  await f.wait(() => c.err.includes('대기 줄이 이미 2개'), 'cap message');
+  s.kill('SIGKILL');
+  assert.equal(await f.finish(c), 3); assert.match(c.err, /holder \d+가 끝나 대기를 그만둡니다/);
+  assert.equal(await f.finish(f.cli('release', 'A')), 0);
+  await pause(200);
+  assert.doesNotMatch(read(f.q), /^C /m);
+});
+
+test('콜론 뒤 공백이 있는 owner JSON과 R1-heavy.py 형식 편집 lock도 읽는다', async t => {
+  const f = fixture(t);
+  mkdirSync(f.x); writeFileSync(join(f.x, 'owner.txt'), '{"pid": 1, "startedAt": "2026-10-31T00:00:00+00:00", "supervisor": "s", "task": "R1", "worker": "w", "cwd": "/"}\n');
+  const same = f.cli('acquire', 'R1', 'w', 's');
+  assert.equal(await f.finish(same, 1500), 3, '같은 ID가 차례를 가진 것으로 읽는다');
+  const b = f.cli('acquire', 'B', 'w', 's');
+  await f.wait(() => read(f.q).includes('B '), 'B enqueued'); await pause(300);
+  assert.equal(b.out, '', '구형식(v 없음)이라 회수하지 않는다');
+  assert.equal(f.sync('release', 'R1').status, 0);
+  assert.equal(await f.finish(b), 0);
+
+  const g = fixture(t);
+  mkdirSync(g.e); writeFileSync(join(g.e, 'owner.txt'), `pid=${dead} task=R1-prep\n`);
+  assert.equal(await g.finish(g.cli('acquire', 'A', 'w', 's')), 0);
+  assert.match(g.log(), /reclaim kind=edit task=R1-prep pid=2147483647 start=- reason=legacy-edit-esrch/);
+  const h = fixture(t);
+  mkdirSync(h.e); writeFileSync(join(h.e, 'owner.txt'), 'pid=1 task=R1-prep\n');
+  const w = h.cli('acquire', 'A', 'w', 's');
+  await pause(300); assert.equal(w.out, ''); assert.match(h.sync('status').stdout, /편집 lock: 구형식 pid=1 task=R1-prep \(pid 1 unknown/);
 });

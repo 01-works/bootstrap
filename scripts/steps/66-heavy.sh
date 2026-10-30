@@ -2,14 +2,22 @@
 # 공용 heavy 대기열 도구 yw-heavy를 ~/.local/bin에 설치한다. 모든 기기가 같다. 사용법·전환 절차는 agents/heavy-queue.md.
 # 실행 중인 대기자가 이전 파일을 끝까지 읽도록 복사본을 같은 디렉터리에 만든 뒤 mv로 바꾼다. 저장소로 연결하는 링크는 쓰지 않는다
 # (브랜치·worktree를 바꾸면 실행 중인 도구가 바뀐다). 예전 경로 /tmp/cc-yw-heavy.sh는 없을 때만 링크로 만들고, 있으면 그대로 둔다.
+# /tmp는 재시동 때 비워진다. 링크는 이 단계가 다시 돌 때(yw-heavy 변경, 전체 설치, --only heavy)만 생긴다. 정식 경로는 ~/.local/bin/yw-heavy다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
 src="$BOOTSTRAP_ROOT/scripts/yw-heavy.sh"
 dst="$HOME/.local/bin/yw-heavy"
 compat="${YW_HEAVY_COMPAT_PATH:-/tmp/cc-yw-heavy.sh}"
+lockf="${YW_HEAVY_LOCKF_CHECK:-/usr/bin/lockf}"  # 테스트가 대역으로 바꾼다
 
-[[ -x /usr/bin/lockf ]] || die '/usr/bin/lockf 없음. yw-heavy는 lockf(flock)로 대기열 편집을 직렬화합니다'
+# yw-heavy는 열어 둔 fd에 lockf를 거는 방식(fd 모드)으로 대기열 편집을 직렬화한다. 실제로 되는지 확인한다.
+check="$(mktemp "${TMPDIR:-/tmp}/yw-heavy-lockf.XXXXXX")"
+if ! (exec 9>"$check" && "$lockf" -s -t 0 9) 2>/dev/null; then
+  rm -f "$check"
+  die "$lockf 의 fd 모드 잠금이 동작하지 않습니다. yw-heavy를 설치하지 않습니다"
+fi
+rm -f "$check"
 
 if [[ -x "$dst" ]] && cmp -s "$src" "$dst"; then
   ok "yw-heavy ($(pretty "$dst"))"
@@ -25,7 +33,6 @@ else
   ok "yw-heavy 설치 ($(pretty "$dst"))"
 fi
 
-# /tmp는 재시동 때 비워지므로 링크도 그때 사라지고 다음 실행에서 다시 생긴다. 정식 경로는 ~/.local/bin/yw-heavy다.
 if [[ -L "$compat" && "$(readlink "$compat")" == "$dst" ]]; then
   ok "$compat → $(pretty "$dst")"
 elif [[ -e "$compat" || -L "$compat" ]]; then
