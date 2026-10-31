@@ -176,6 +176,26 @@ else
   info "예전 경로 /tmp/cc-yw-heavy.sh 없음 (재시동 뒤 비워짐). 그 경로를 쓰는 호출이 있으면 ./bootstrap.sh --only heavy"
 fi
 
+step "에이전트 GitHub 신원 (yw-gh)"
+gh_front="$HOME/.local/bin/gh"
+gh_config="${YW_GH_APP_CONFIG_DIR:-$HOME/.config/yw-gh-app}"
+if [[ -f "$gh_front" ]] && grep -q '^# yw-gh: ' "$gh_front" && cmp -s "$BOOTSTRAP_ROOT/scripts/yw-gh-app.mjs" "$HOME/.local/share/yw-gh/yw-gh-app.mjs"; then
+  pass "yw-gh 설치본이 저장소 원본과 같음"
+else
+  miss "yw-gh 없음 또는 저장소 원본과 다름 (./bootstrap.sh --only ghapp)"
+fi
+if [[ -e "$gh_config/disabled" ]]; then
+  info "끄기 파일이 있어 에이전트도 소유자 gh를 씀"
+elif [[ -f "$gh_config/config.json" ]]; then
+  pass "App 설정 있음"
+else
+  wait_for_user "App 설정 없음: 에이전트의 gh가 실패함 (키 배치 또는 끄기: agents/github-app.md)"
+fi
+gh_real="$(sed -n "s/^real='\(.*\)'\$/\1/p" "$gh_front" 2>/dev/null || true)"
+if [[ -n "$gh_real" ]] && git config --global --get-regexp '^credential\..*helper$' 2>/dev/null | grep -qF "$gh_real"; then
+  miss "credential helper가 실제 gh($gh_real)를 직접 가리켜 에이전트 push가 yw-gh를 건너뜀 (home/git/.gitconfig 변경 되돌리기)"
+fi
+
 step "기기 역할"
 if [[ "$verifier" == 1 ]]; then
   role_status=0

@@ -4,9 +4,7 @@
 // - 설정·키·발급 실패는 오류로 끝낸다. 소유자 인증으로 넘어가는 경로는 없다.
 // 의존성 없이 Node 내장 모듈만 쓴다.
 import { createPrivateKey, randomBytes, sign } from 'node:crypto';
-import {
-  closeSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync,
-} from 'node:fs';
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -14,6 +12,10 @@ import { pathToFileURL } from 'node:url';
 
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const REFUSED_AUTH = new Set(['login', 'logout', 'switch', 'refresh', 'setup-git']);
+// Bearer 토큰 문자 집합 (RFC 6750 b64token). 길이·접두사는 가정하지 않는다.
+const TOKEN_RE = /^[A-Za-z0-9\-._~+/]+=*$/;
+// git이 넘기는 원격 경로: <owner>/<repo>[.git][/]. 그 밖은 파싱 실패로 본다.
+const PATH_RE = /^([A-Za-z0-9-]+)\/[A-Za-z0-9._-]+(?:\.git)?\/?$/;
 
 export class YwGhError extends Error {}
 const fail = message => { throw new YwGhError(message); };
@@ -25,7 +27,6 @@ function settings(env) {
     configDir: env.YW_GH_APP_CONFIG_DIR || join(homedir(), '.config', 'yw-gh-app'),
     api: (env.YW_GH_APP_API || 'https://api.github.com').replace(/\/+$/, ''),
     cacheDir: join(env.TMPDIR || tmpdir(), `yw-gh-app-${process.getuid()}`),
-    lockWaitMs: Number(env.YW_GH_APP_LOCK_WAIT_MS || 10000),
   };
 }
 
@@ -83,16 +84,16 @@ async function mintToken(config, s, fetchImpl) {
       },
       signal: AbortSignal.timeout(15000),
     });
-  } catch (e) {
-    fail(`App 토큰 발급 요청 실패: ${e.message}`);
+  } catch {
+    // 오류 원문(서버 메시지·네트워크 오류)은 출력하지 않는다.
+    fail('App 토큰 발급 요청 실패 (네트워크 또는 시간 초과)');
   }
+  if (!res.ok) fail(`App 토큰 발급 실패 (HTTP ${res.status})`);
   let data = null;
   try { data = await res.json(); } catch {}
-  if (!res.ok) fail(`App 토큰 발급 실패 (HTTP ${res.status}${data?.message ? `: ${data.message}` : ''})`);
   const token = data?.token;
   const expiresAt = Date.parse(data?.expires_at ?? '');
-  // 토큰 형식·길이는 가정하지 않는다. 비어 있지 않은 문자열과 미래의 만료 시각만 확인한다.
-  if (typeof token !== 'string' || !token || /\s/.test(token) || !(expiresAt > Date.now())) {
+  if (typeof token !== 'string' || !TOKEN_RE.test(token) || !(expiresAt > Date.now())) {
     fail('App 토큰 발급 응답이 올바르지 않습니다');
   }
   return { token, expiresAt };
@@ -105,11 +106,13 @@ function ensureCacheDir(dir) {
 
 function readCache(file, config) {
   try {
+    const st = lstatSync(file);
+    if (!st.isFile() || st.uid !== process.getuid() || st.mode & 0o077) return null;
     const c = JSON.parse(readFileSync(file, 'utf8'));
-    if (c.appId === config.appId && c.installationId === config.installationId && typeof c.token === 'string' && c.token
-      && Number.isFinite(c.expiresAt) && c.expiresAt - Date.now() > REFRESH_MARGIN_MS) return c.token;
+    if (c.appId === config.appId && c.installationId === config.installationId && typeof c.token === 'string'
+      && TOKEN_RE.test(c.token) && Number.isFinite(c.expiresAt) && c.expiresAt - Date.now() > REFRESH_MARGIN_MS) return c.token;
   } catch {}
-  return null; // 없거나 깨졌거나 다른 App 것이거나 곧 만료: 새로 발급한다.
+  return null; // 없거나 깨졌거나 남의 것이거나 다른 App 것이거나 곧 만료: 새로 발급한다 (소유자로 넘기지 않는다).
 }
 
 function writeCache(file, config, minted) {
@@ -123,62 +126,16 @@ function writeCache(file, config, minted) {
   renameSync(tmp, file);
 }
 
-const alive = pid => {
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
-};
-const pause = ms => new Promise(r => setTimeout(r, ms));
-
-// 잠금은 같은 기기의 중복 발급을 줄이는 용도다 (정확성은 원자적 캐시 교체가 지킨다).
-// 내용을 다 쓴 임시 파일을 link로 올려서 빈 잠금 파일이 남지 않게 한다.
-// 소유 프로세스가 죽은 것이 확인될 때만 회수하고, 해제할 때는 자기 잠금인지 확인한다.
-export async function withLock(lockPath, waitMs, fn) {
-  const mine = `${process.pid} ${randomBytes(8).toString('hex')}\n`;
-  const tmp = `${lockPath}.${process.pid}.${randomBytes(4).toString('hex')}`;
-  const fd = openSync(tmp, 'wx', 0o600);
-  try { writeSync(fd, mine); } finally { closeSync(fd); }
-  const deadline = Date.now() + waitMs;
-  try {
-    for (;;) {
-      try { linkSync(tmp, lockPath); break; } catch (e) { if (e.code !== 'EEXIST') throw e; }
-      let seen = null;
-      try { seen = readFileSync(lockPath, 'utf8'); } catch {}
-      const pid = Number(seen?.split(' ')[0]);
-      if (seen && Number.isInteger(pid) && pid > 0 && !alive(pid)) {
-        // 죽은 소유자의 잠금: 고유 이름으로 옮긴 뒤 옮긴 것이 본 그 잠금일 때만 지운다.
-        const stale = `${lockPath}.stale.${process.pid}.${randomBytes(4).toString('hex')}`;
-        try {
-          renameSync(lockPath, stale);
-          if (readFileSync(stale, 'utf8') === seen) unlinkSync(stale);
-          else { try { linkSync(stale, lockPath); } catch {} unlinkSync(stale); }
-        } catch {}
-        continue;
-      }
-      if (Date.now() >= deadline) fail(`토큰 캐시 잠금을 ${waitMs / 1000}초 안에 얻지 못했습니다 (${lockPath})`);
-      await pause(100);
-    }
-  } finally {
-    try { unlinkSync(tmp); } catch {}
-  }
-  try {
-    return await fn();
-  } finally {
-    try { if (readFileSync(lockPath, 'utf8') === mine) unlinkSync(lockPath); } catch {}
-  }
-}
-
 export async function installationToken(s, fetchImpl = fetch) {
   const config = loadConfig(s.configDir);
   ensureCacheDir(s.cacheDir);
   const file = join(s.cacheDir, 'token.json');
   const cached = readCache(file, config);
   if (cached) return { token: cached, config };
-  return withLock(join(s.cacheDir, 'token.lock'), s.lockWaitMs, async () => {
-    const again = readCache(file, config); // 기다리는 동안 다른 프로세스가 발급했을 수 있다.
-    if (again) return { token: again, config };
-    const minted = await mintToken(config, s, fetchImpl);
-    writeCache(file, config, minted);
-    return { token: minted.token, config };
-  });
+  // 잠금은 두지 않는다. 동시에 캐시가 비면 각자 발급하지만 무해하고, 캐시는 원자적 rename이라 깨지지 않는다.
+  const minted = await mintToken(config, s, fetchImpl);
+  writeCache(file, config, minted);
+  return { token: minted.token, config };
 }
 
 // 이 앞단이 넣은 토큰만 지운다. 사용자가 직접 넣은 GH_TOKEN은 건드리지 않는다.
@@ -217,8 +174,9 @@ async function gitCredential(op, s, env, io) {
   const quit = message => { io.stdout('quit=true\n'); fail(message); };
   const attrs = parseCredential(raw);
   if (attrs.protocol !== 'https' || attrs.host !== 'github.com') quit(`github.com https 자격 증명만 처리합니다 (host: ${attrs.host || '없음'})`);
-  const owner = (attrs.path || '').split('/')[0];
-  if (!owner) quit('git이 path를 넘기지 않았습니다 (credential.https://github.com.useHttpPath=true 필요)');
+  if (!attrs.path) quit('git이 path를 넘기지 않았습니다 (credential.https://github.com.useHttpPath=true 필요)');
+  const owner = PATH_RE.exec(attrs.path)?.[1];
+  if (!owner) quit('원격 경로를 <owner>/<repo>로 읽지 못했습니다');
   let config;
   try { config = loadConfig(s.configDir); } catch (e) { quit(e.message); }
   if (owner.toLowerCase() !== config.owner.toLowerCase()) {

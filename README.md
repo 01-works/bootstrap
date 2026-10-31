@@ -55,7 +55,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | browser | Browser Use CLI(uv)와 공식 스킬, 에이전트 전용 Chrome 자동 시작 | [agents/browser.md](agents/browser.md) |
 | paseo | 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 없는 프로필 추가, Paseo 도구 켜기, 기본 플러그인 설치·버전 맞춤, 데스크톱은 로그인 시 데몬 시작과 Paseo 새 버전 올리기 | [agents/paseo.md](agents/paseo.md) |
 | heavy | 공용 heavy 대기열 도구 `yw-heavy`를 `~/.local/bin`에 설치 (모든 기기) | [agents/heavy-queue.md](agents/heavy-queue.md) |
-| ghapp | App 설정이 있는 기기에만 에이전트 GitHub 신원 도구 `yw-gh`를 `~/.local/bin/gh`로 설치. 설정이 없으면 아무것도 안 함 | [agents/github-app.md](agents/github-app.md) |
+| ghapp | 에이전트 GitHub 신원 도구 `yw-gh`를 `~/.local/bin/gh`로 설치. App 설정도 기기 단위 끄기 파일도 없으면 수동 작업 대기 | [agents/github-app.md](agents/github-app.md) |
 | auth | GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내와 로그인할 앱 열기 | [development/git.md](development/git.md) |
 | autoupdate | 저장소 자동 갱신 등록 (로그인할 때와 10분마다) | 아래 "변경 전파" |
 | roles | 이 기기에 켠 역할만 저장된 값으로 다시 맞춤. 켠 역할이 없으면 아무것도 안 함 | 아래 "기기 역할" |

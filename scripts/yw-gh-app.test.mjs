@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { generateKeyPairSync, verify } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
-import { main, withLock, YwGhError } from './yw-gh-app.mjs';
+import { main, YwGhError } from './yw-gh-app.mjs';
 
 // 실제 GitHub·실제 gh·실제 홈을 쓰지 않는다. 키는 테스트마다 만들고, API는 주입한 fetch나 로컬 서버로 대신한다.
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -103,6 +103,25 @@ test('캐시: 유효하면 다시 쓰고, 손상·다른 App·5분 내 만료면
   assert.equal(fetch.count, 3, '다른 App 캐시는 쓰지 않음');
   assert.equal(f.calls().GH_TOKEN, 'ghs_test');
 
+  const valid = { appId: '11', installationId: '22', expiresAt: Date.now() + 3600_000 };
+  writeFileSync(f.cacheFile, JSON.stringify({ ...valid, token: 'bad\ntoken' }));
+  await run(f, ['api', 'x'], { fetch });
+  assert.equal(fetch.count, 4, '허용 문자 밖 토큰(줄바꿈)은 손상으로 보고 새로 발급');
+
+  writeFileSync(f.cacheFile, JSON.stringify({ ...valid, token: 'cached_ok' }));
+  chmodSync(f.cacheFile, 0o644);
+  await run(f, ['api', 'x'], { fetch });
+  assert.equal(fetch.count, 5, '남이 읽을 수 있는 캐시 파일은 쓰지 않음');
+  assert.equal(f.calls().GH_TOKEN, 'ghs_test');
+
+  const elsewhere = join(f.dir, 'elsewhere.json');
+  writeFileSync(elsewhere, JSON.stringify({ ...valid, token: 'linked' }), { mode: 0o600 });
+  rmSync(f.cacheFile);
+  symlinkSync(elsewhere, f.cacheFile);
+  await run(f, ['api', 'x'], { fetch });
+  assert.equal(fetch.count, 6, '링크된 캐시 파일은 따라가지 않음');
+  assert.equal(f.calls().GH_TOKEN, 'ghs_test');
+
   const soon = fakeFetch({ ttlMs: 4 * 60_000, token: 'ghs_soon' });
   writeFileSync(f.cacheFile, '');
   await run(f, ['api', 'x'], { fetch: soon });
@@ -121,9 +140,11 @@ test('설정 누락·형식 오류·넓은 키 권한이면 오류로 끝나고 
 
 test('발급 실패(HTTP 오류·네트워크 오류·잘못된 응답)면 오류로 끝나고 실제 gh를 실행하지 않는다', async t => {
   const f = fixture(t);
-  await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch({ status: 500 }), spawn: noSpawn }), /HTTP 500/);
-  await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch({ throws: 'offline' }), spawn: noSpawn }), /offline/);
+  // 서버 message·네트워크 오류 원문은 내보내지 않고 HTTP 상태와 고정 설명만 쓴다.
+  await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch({ status: 500 }), spawn: noSpawn }), e => /HTTP 500\)$/.test(e.message) && !/boom/.test(e.message));
+  await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch({ throws: 'secret-detail' }), spawn: noSpawn }), e => /네트워크/.test(e.message) && !/secret-detail/.test(e.message));
   await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch({ token: '' }), spawn: noSpawn }), /응답이 올바르지 않습니다/);
+  await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch({ token: 'a b' }), spawn: noSpawn }), /응답이 올바르지 않습니다/);
   assert.equal(f.calls(), null);
 });
 
@@ -148,10 +169,17 @@ test('git credential: 설정 owner면 App 토큰, 다른 owner면 소유자 인�
   assert.equal(await run(f, ['auth', 'git-credential', 'get'], io(other), { GH_TOKEN: 'app-token', YW_GH_INJECTED: '1' }), 0);
   assert.deepEqual(f.calls(), { args: ['auth', 'git-credential', 'get'], stdin: other, GH_TOKEN: null, GH_PATH: null, YW_GH_INJECTED: null });
 
-  for (const input of ['protocol=https\nhost=github.com\n\n', 'protocol=https\nhost=gist.github.com\npath=abc.git\n\n']) {
+  const badPaths = ['', 'owner', '01-office', '../01-office/x.git', '01-office/x/y.git', '01-office/x?y', 'own er/x.git', '01_office/x.git', '/01-office/x.git'];
+  for (const input of ['protocol=https\nhost=github.com\n\n', 'protocol=https\nhost=gist.github.com\npath=abc.git\n\n',
+    ...badPaths.map(p => `protocol=https\nhost=github.com\npath=${p}\n\n`)]) {
     out.length = 0;
     await assert.rejects(run(f, ['auth', 'git-credential', 'get'], { ...io(input), spawn: noSpawn }), YwGhError);
-    assert.equal(out.join(''), 'quit=true\n');
+    assert.equal(out.join(''), 'quit=true\n', input);
+  }
+  for (const ok of ['01-office/01-software', '01-office/01-software.git/', '01-office/a.b_c-d']) {
+    out.length = 0;
+    assert.equal(await run(f, ['auth', 'git-credential', 'get'], io(`protocol=https\nhost=github.com\npath=${ok}\n\n`)), 0);
+    assert.match(out.join(''), /username=x-access-token/, ok);
   }
   out.length = 0;
   writeFileSync(f.cacheFile, '');
@@ -168,30 +196,15 @@ test('git credential: 설정 owner면 App 토큰, 다른 owner면 소유자 인�
   assert.equal(out.join(''), '');
 });
 
-test('동시 호출은 잠금 덕분에 한 번만 발급한다', async t => {
+test('동시 호출: 잠금 없이 모두 성공하고, 캐시가 비어 있으면 각자 발급할 수 있다 (무해한 중복)', async t => {
   const f = fixture(t);
-  const fetch = fakeFetch({ delayMs: 150 });
+  const fetch = fakeFetch({ delayMs: 100 });
   const codes = await Promise.all(Array.from({ length: 5 }, () => run(f, ['api', 'x'], { fetch })));
   assert.deepEqual(codes, [0, 0, 0, 0, 0]);
-  assert.equal(fetch.count, 1);
-});
-
-test('잠금: 죽은 소유자 것만 회수하고, 살아 있는 소유자 것은 기다리다 실패하며, 해제는 자기 잠금만', async t => {
-  const f = fixture(t);
-  const lock = join(f.tmp, 'lock');
-  writeFileSync(lock, '2147483646 deadbeef\n');
-  assert.equal(await withLock(lock, 500, async () => 'ran'), 'ran', '죽은 pid 잠금은 회수');
-  assert.equal(existsSync(lock), false, '자기 잠금은 해제');
-
-  writeFileSync(lock, `${process.ppid} live\n`);
-  const started = Date.now();
-  await assert.rejects(withLock(lock, 300, async () => 'never'), /잠금을/);
-  assert.ok(Date.now() - started >= 300, '대기 시간만큼 기다린 뒤 실패');
-  assert.equal(readFileSync(lock, 'utf8'), `${process.ppid} live\n`, '살아 있는 소유자의 잠금은 그대로');
-  rmSync(lock);
-
-  await withLock(lock, 500, async () => { writeFileSync(lock, 'someone else\n'); });
-  assert.equal(readFileSync(lock, 'utf8'), 'someone else\n', '남의 잠금은 지우지 않는다');
+  assert.ok(fetch.count >= 1 && fetch.count <= 5);
+  const after = fetch.count;
+  await run(f, ['api', 'x'], { fetch });
+  assert.equal(fetch.count, after, '그 뒤에는 캐시를 쓴다');
 });
 
 // 앞단(bash)은 설치 단계처럼 경로를 채워 실행한다.
@@ -201,22 +214,26 @@ function renderFront(f, core = coreSrc) {
   writeFileSync(front, text, { mode: 0o755 });
   return front;
 }
-const runFront = (front, args, env) => new Promise(resolve => {
+const runFront = (front, args, env, input = '') => new Promise(resolve => {
   const p = spawn(front, args, { env });
-  let err = '';
+  let out = '', err = '';
+  p.stdout.on('data', b => { out += b; });
   p.stderr.on('data', b => { err += b; });
-  p.on('close', code => resolve({ code, err }));
+  p.on('close', code => resolve({ code, out, err }));
+  p.stdin.end(input);
 });
+// 대역 gh를 node 없는 PATH에서도 돌게 node 절대 경로로 바꾼다.
+const pinNode = f => writeFileSync(f.real, readFileSync(f.real, 'utf8').replace('#!/usr/bin/env node', `#!${process.execPath}`));
 
 test('앞단: 에이전트 모드가 아니면 node 없이 실제 gh를 그대로 실행하고, 토큰을 바꾸지 않는다', async t => {
   const f = fixture(t);
   const front = renderFront(f, '/nonexistent/core.mjs');
   const env = { PATH: '/usr/bin:/bin', HOME: f.env.HOME, GH_TOKEN: 'user-set', YW_FAKE_GH_EXIT: '5' };
-  // 대역 gh는 node로 돌므로 node 경로만 절대 경로로 바꿔 준다.
-  writeFileSync(f.real, readFileSync(f.real, 'utf8').replace('#!/usr/bin/env node', `#!${process.execPath}`));
+  pinNode(f);
   const r = await runFront(front, ['repo', 'view'], env);
   assert.equal(r.code, 5);
-  assert.deepEqual(f.calls(), { args: ['repo', 'view'], stdin: '', GH_TOKEN: 'user-set', GH_PATH: null, YW_GH_INJECTED: null });
+  assert.deepEqual(f.calls(), { args: ['repo', 'view'], stdin: '', GH_TOKEN: 'user-set', GH_PATH: front, YW_GH_INJECTED: null },
+    '사람 분기도 GH_PATH는 앞단 (setup-git이 실제 gh 경로를 helper로 적지 않게)');
 });
 
 test('앞단: YW_GH_IDENTITY=owner는 주입된 App 토큰만 지우고, 알 수 없는 값은 거절한다', async t => {
@@ -225,11 +242,46 @@ test('앞단: YW_GH_IDENTITY=owner는 주입된 App 토큰만 지우고, 알 수
   const base = { PATH: process.env.PATH, HOME: f.env.HOME, PASEO_AGENT_ID: 'a1' };
   await runFront(front, ['pr', 'list'], { ...base, YW_GH_IDENTITY: 'owner', GH_TOKEN: 'app', YW_GH_INJECTED: '1' });
   assert.equal(f.calls().GH_TOKEN, null);
+  assert.equal(f.calls().GH_PATH, front);
   await runFront(front, ['pr', 'list'], { ...base, YW_GH_IDENTITY: 'owner', GH_TOKEN: 'user-set' });
   assert.equal(f.calls().GH_TOKEN, 'user-set');
   const bad = await runFront(front, ['pr', 'list'], { ...base, YW_GH_IDENTITY: 'bot' });
   assert.equal(bad.code, 1);
   assert.match(bad.err, /agent 또는 owner/);
+  const badCred = await runFront(front, ['auth', 'git-credential', 'get'], { ...base, YW_GH_IDENTITY: 'bot' }, 'protocol=https\nhost=github.com\n\n');
+  assert.equal(badCred.out, 'quit=true\n');
+});
+
+test('앞단: 기기 단위 끄기 파일이 있으면 설정이 없어도 에이전트 모드가 소유자 인증을 쓴다 (gh·git credential)', async t => {
+  const f = fixture(t, { config: null });
+  writeFileSync(join(f.configDir, 'disabled'), '');
+  const front = renderFront(f, '/nonexistent/core.mjs');
+  const env = { PATH: process.env.PATH, HOME: f.env.HOME, PASEO_AGENT_ID: 'a1', YW_GH_APP_CONFIG_DIR: f.configDir, GH_TOKEN: 'app', YW_GH_INJECTED: '1' };
+  const r = await runFront(front, ['pr', 'list'], env);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(f.calls().GH_TOKEN, null, '주입된 App 토큰은 지운다');
+  const input = 'protocol=https\nhost=github.com\npath=01-office/x.git\n\n';
+  const c = await runFront(front, ['auth', 'git-credential', 'get'], env, input);
+  assert.equal(c.code, 0, c.err);
+  assert.equal(c.out, 'username=owner\npassword=owner-token\n');
+});
+
+test('앞단: 에이전트 git credential은 node 없음·본체 누락·본체 실패에도 quit=true로 멈춘다', async t => {
+  const f = fixture(t);
+  pinNode(f);
+  const input = 'protocol=https\nhost=github.com\npath=01-office/x.git\n\n';
+  const base = { HOME: f.env.HOME, PASEO_AGENT_ID: 'a1', YW_GH_APP_CONFIG_DIR: f.configDir, TMPDIR: f.tmp };
+  const noNode = await runFront(renderFront(f), ['auth', 'git-credential', 'get'], { ...base, PATH: '/usr/bin:/bin' }, input);
+  assert.deepEqual([noNode.code, noNode.out], [1, 'quit=true\n'], 'node 없음');
+  const noCore = await runFront(renderFront(f, join(f.dir, 'missing.mjs')), ['auth', 'git-credential', 'get'], { ...base, PATH: process.env.PATH }, input);
+  assert.deepEqual([noCore.code, noCore.out], [1, 'quit=true\n'], '본체 누락');
+  const crash = join(f.dir, 'crash.mjs');
+  writeFileSync(crash, "process.stdout.write('username=x\\npassword=half\\n'); throw new Error('boom');\n");
+  const crashed = await runFront(renderFront(f, crash), ['auth', 'git-credential', 'get'], { ...base, PATH: process.env.PATH }, input);
+  assert.deepEqual([crashed.code, crashed.out], [1, 'quit=true\n'], '본체가 중간에 죽으면 출력하던 자격 증명을 버리고 quit=true');
+  const noNodeGh = await runFront(renderFront(f), ['pr', 'list'], { ...base, PATH: '/usr/bin:/bin' });
+  assert.equal(noNodeGh.code, 1);
+  assert.equal(f.calls(), null, '소유자 gh로 넘기지 않는다');
 });
 
 test('앞단 → 본체 → 로컬 API 서버: PASEO_AGENT_ID면 실제 fetch로 발급한 App 토큰으로 실행한다', async t => {
@@ -265,11 +317,36 @@ function runStep(f, env) {
   });
 }
 
-test('설치 단계: 설정이 없으면 아무것도 설치하지 않는다', t => {
+function stepEnv(f) {
+  const realDir = join(f.dir, 'brew-bin');
+  mkdirSync(realDir, { recursive: true });
+  writeFileSync(join(realDir, 'gh'), '#!/bin/sh\n', { mode: 0o755 });
+  const PATH = `${join(f.env.HOME, '.local/bin')}:${realDir}:/usr/bin:/bin`;
+  return { realGh: join(realDir, 'gh'), env: { PATH, YW_GH_SEARCH_PATH: PATH } };
+}
+
+test('설치 단계: 설정이 없어도 설치하고 수동 작업 대기(2)로 알리며, 끄기 파일이 있으면 완료(0)', t => {
   const f = fixture(t, { config: null });
-  const r = runStep(f, { PATH: process.env.PATH });
-  assert.equal(r.status, 0, r.stderr);
-  assert.equal(existsSync(join(f.env.HOME, '.local/bin/gh')), false);
+  const { env } = stepEnv(f);
+  const r = runStep(f, env);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /App 설정이 없어/);
+  assert.equal(existsSync(join(f.env.HOME, '.local/bin/gh')), true);
+  assert.equal(existsSync(join(f.configDir, 'disabled')), false, '끄기 파일을 만들지 않는다');
+  writeFileSync(join(f.configDir, 'disabled'), '');
+  assert.equal(runStep(f, env).status, 0);
+});
+
+test('설치 단계: 전역 credential helper가 실제 gh 절대 경로를 가리키면 고치지 않고 경고한다', t => {
+  const f = fixture(t);
+  const { env, realGh } = stepEnv(f);
+  mkdirSync(f.env.HOME, { recursive: true });
+  const gitconfig = `[credential "https://github.com"]\n\thelper = \n\thelper = !${realGh} auth git-credential\n`;
+  writeFileSync(join(f.env.HOME, '.gitconfig'), gitconfig);
+  const r = runStep(f, env);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /실제 gh를 직접 가리킵니다/);
+  assert.equal(readFileSync(join(f.env.HOME, '.gitconfig'), 'utf8'), gitconfig, '자동으로 고치지 않는다');
 });
 
 test('설치 단계: ~/.local/bin을 건너뛴 실제 gh 절대 경로를 적고, 다시 실행해도 같으며, 남의 gh는 덮어쓰지 않는다', t => {
