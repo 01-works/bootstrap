@@ -108,10 +108,11 @@ no_restart_flag() { if unattended; then printf '%s' --no-restart; fi; }
 # 자동 갱신 상태 (scripts/update.sh). applied는 이 기기에 마지막으로 적용한 커밋.
 BOOTSTRAP_UPDATE_STATE="$BOOTSTRAP_STATE/update"
 
-# 이 기기에 저장소의 현재 커밋까지 적용했다고 기록한다 (전체 설치·갱신 성공).
+# 이 기기에 저장소의 커밋까지 적용했다고 기록한다 (전체 설치·갱신 성공): mark_applied [실행을 시작한 커밋]
+# 실행 중에 이 기기로 커밋·pull이 들어와도 그 커밋의 단계를 건너뛰지 않게 시작한 커밋을 넘긴다. 없으면 지금 HEAD.
 mark_applied() {
-  local head
-  head="$(git -C "$BOOTSTRAP_ROOT" rev-parse HEAD 2>/dev/null)" || return 0
+  local head="${1:-}"
+  [[ -n "$head" ]] || head="$(git -C "$BOOTSTRAP_ROOT" rev-parse HEAD 2>/dev/null)" || return 0
   mkdir -p "$BOOTSTRAP_UPDATE_STATE" && printf '%s\n' "$head" >"$BOOTSTRAP_UPDATE_STATE/applied"
 }
 

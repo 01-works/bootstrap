@@ -265,7 +265,7 @@ main() {
       info '[dry-run] 다시 실행할 단계 없음'
       return 0
     fi
-    [[ "$applied" == "$target" ]] || mark_applied  # 문서처럼 기기에 적용할 것이 없는 변경
+    [[ "$applied" == "$target" ]] || mark_applied "$target"  # 문서처럼 기기에 적용할 것이 없는 변경
     # 실패·대기로 남은 단계가 저장소에서 없어졌으면 상태에서도 뺀다.
     local kept_failed kept_pending
     # shellcheck disable=SC2086
@@ -317,7 +317,7 @@ main() {
   failed="${failed# }"
   # shellcheck disable=SC2086
   pending="$(ordered $pending)"
-  mark_applied
+  mark_applied "$target"
   result="$(settle "$failed" "$pending")"
 
   local commit

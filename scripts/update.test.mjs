@@ -224,6 +224,31 @@ test('받은 커밋의 update.sh 규칙으로 단계를 고른다', t => {
   assert.ok(!existsSync(join(f.root, 'state/bootstrap/lock')), '다시 시작한 뒤에도 잠금을 푼다');
 });
 
+test('실행 중에 이 기기로 들어온 커밋은 적용 기록에 넣지 않고 다음 갱신이 실행한다', t => {
+  const f = fixture(t);
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  // $MOCK/land가 있으면 dotfiles 단계가 도는 동안 이 기기에서 home/ 변경을 커밋한다.
+  const land = 'if [[ -f "$MOCK/land" ]]; then rm "$MOCK/land"; echo x >>"$BOOTSTRAP_ROOT/home/landed"\n' +
+    '  git -C "$BOOTSTRAP_ROOT" add home/landed && git -C "$BOOTSTRAP_ROOT" commit -q -m landed; fi\n';
+  f.push({ 'scripts/steps/40-dotfiles.sh': mockStep('dotfiles').replace('exit ', land + 'exit ') });
+  writeFileSync(join(f.mock, 'land'), '');
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['dotfiles 1']);
+  assert.notEqual(f.head(), f.remoteHead(), '실행 중에 커밋이 들어옴');
+  assert.equal(f.applied(), f.remoteHead(), '시작한 커밋까지만 적용으로 기록');
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['dotfiles 1'], '들어온 커밋의 단계는 다음 갱신이 실행');
+  assert.equal(f.applied(), f.head());
+
+  const start = f.head();
+  writeFileSync(join(f.mock, 'land'), '');
+  assert.equal(f.install().status, 0);
+  f.calls();
+  assert.notEqual(f.head(), start);
+  assert.equal(f.applied(), start, '전체 설치도 시작한 커밋을 기록');
+});
+
 test('Homebrew 자체가 실패하면 실행하지 못한 뒤 단계도 실패로 남긴다', t => {
   const f = fixture(t);
   f.exitWith('homebrew', 1);
