@@ -199,6 +199,19 @@ test('browser 단계: 자동 갱신 중 에이전트 Chrome 등록이 바뀌었�
   assert.equal(failed.status, 1);
 });
 
+test('paseo 단계: Paseo 에이전트 안에서 직접 실행하면 데몬 등록을 내렸다 올리지 않고 대기로 남긴다', t => {
+  // --no-restart 없이 데몬 등록을 다시 올리려 하면 9(데몬과 함께 끝남)로 본다.
+  const mocks = `has() { return 0; }\nis_laptop() { return 1; }\nrun() { :; }
+node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || return 0; [[ " $* " == *" --no-restart "* ]] && return 2; return 9; }\n`;
+  const run = agent => mockStep(t, '65-paseo.sh', mocks,
+    { BOOTSTRAP_UNATTENDED: '0', PASEO_AGENT_ID: agent, PASEO_HOME: '/nonexistent/paseo-home' }).result;
+  const inAgent = run('agent-1');
+  assert.equal(inAgent.status, 2, inAgent.stdout + inAgent.stderr);
+  assert.match(inAgent.stderr, /Paseo 에이전트 안이라 데몬 등록을 다시 올리지 않았습니다/);
+  const terminal = run('');
+  assert.equal(terminal.status, 1, '터미널에서는 그대로 다시 올린다');
+});
+
 test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경로는 없을 때만 링크로 만든다', t => {
   const { root } = sandbox(t);
   const home = join(root, 'home'), compat = join(root, 'cc-yw-heavy.sh'), dst = join(home, '.local/bin/yw-heavy');
