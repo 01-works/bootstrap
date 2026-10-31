@@ -8,7 +8,7 @@
 | Claude 앱 | Cowork·데스크톱 Claude Code | `cask "claude"` | | 앱에서 |
 | [Codex CLI](codex.md) | 터미널·Paseo 코딩 작업 | 공식 설치 스크립트 (`agents` 단계) | `AGENTS.md` (링크), `config.toml` (seed) | `codex` 실행 |
 | ChatGPT 앱 (Codex 앱) | Work·Codex | `cask "chatgpt"` | | 앱에서 |
-| [Paseo](paseo.md) | 작업자·workspace 조율 | `cask "paseo"` | 프로필·도구 설정 (병합), 기본 플러그인 (목록 버전으로 맞춤), `yw-supervisor` 스킬 (Claude·Codex에 링크) | 앱에서. 데스크톱은 `paseo-upgrade`가 매일 확인 ([새 버전](paseo.md#paseo-새-버전)) |
+| [Paseo](paseo.md) | 작업자·workspace 조율 | `cask "paseo"` | 프로필·도구 설정 (병합), 기본 플러그인 (목록 버전으로 맞춤), `yw-supervisor` 스킬 (Claude·Codex에 링크) | 앱에서. 데스크톱은 `paseo-upgrade`가 한 시간마다 확인(최신 버전 조회는 하루 한 번) ([새 버전](paseo.md#paseo-새-버전)) |
 | [공용 heavy 대기열](heavy-queue.md) | 무거운 명령을 기기에서 하나씩 실행 (감독 세션·worktree 공용) | `yw-heavy` (`heavy` 단계, `~/.local/bin`) | 원본 `scripts/yw-heavy.sh` | |
 | [브라우저 작업](browser.md) | 에이전트 전용 Chrome(기본)·개인 Chrome(요청 시) 조작 | Chrome·Chrome Beta·uv (`homebrew` 단계), Browser Use CLI·공식 스킬 (`browser` 단계) | 에이전트 Chrome 자동 시작 | 에이전트 Chrome에 한 번씩 로그인 |
 

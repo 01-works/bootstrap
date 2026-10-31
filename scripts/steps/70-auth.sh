@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 직접 입력이 필요한 인증: GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내. 그래서 마지막 단계다.
+# 직접 입력이 필요한 인증: GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내. 그래서 설치 단계 중 마지막이다 (뒤의 autoupdate·roles는 등록·설정만 한다).
 # SSH 키는 만들지 않는다. git은 https를 쓰고, 다른 기기로 SSH 접속할 때만 필요하다 (development/git.md).
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"

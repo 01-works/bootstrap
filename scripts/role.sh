@@ -25,7 +25,7 @@ EOF
 }
 
 ROLES=verifier
-# GiB. 16GB 기기 기준: VM 안에서는 PostgreSQL 컨테이너만 돌고, 호스트의 Node가 heap을 최대 8GB 쓴다. --colima-memory로 바꾼다.
+# GiB. 검증 작업은 VM과 호스트 양쪽에서 메모리를 쓰므로 VM에 다 주지 않는다. 기기에 맞게 --colima-memory로 바꾼다.
 VERIFIER_DEFAULT_MEMORY=6
 # 이 기기에서 자동 시작하지 않는 등록 (launch-agents.mjs가 상태 파일을 보고 끈다).
 VERIFIER_AGENTS='agent-chrome paseo paseo-upgrade'

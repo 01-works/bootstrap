@@ -78,9 +78,9 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 아무 기기에서나 고쳐서 push하면 다른 기기가 따라온다. `autoupdate` 단계가 등록한 LaunchAgent(`local.bootstrap.update`)가 로그인할 때와 10분마다 `./bootstrap.sh update --auto`를 실행한다. 잠들어 있던 기기는 깨어난 뒤 따라온다. 공개 저장소라 받을 때 로그인이 필요 없다.
 
 - 받기: fetch 후 fast-forward만 한다. 커밋 안 된 변경이 있거나 이 기기의 커밋과 갈라졌으면 받지 않고 "보류"로 알린다. push·merge는 하지 않는다. 고치는 중인 기기(커밋 안 된 변경만 있고 새 커밋 없음)는 건드리지 않는다.
-- 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일에 해당하는 단계만 실행한다. `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `agents/skills/` → paseo, `agents/paseo-profiles.json` → paseo와 기존 프로필 갱신, `agents/paseo-plugins.json` → paseo(플러그인 설치·버전 맞춤), `scripts/yw-heavy.sh` → heavy, `scripts/role.sh`·`scripts/verifier-logs.sh` → roles, `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
+- 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일을 쓰는 단계만 실행한다. 예: `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 전체 대응은 `scripts/update.sh`의 `steps_for_paths`. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
 - 사람이 필요한 일: 자동 갱신은 관리자 비밀번호(전원 설정·자동 로그인·Homebrew 설치), 설치 창(Xcode 명령줄 도구), GitHub 로그인, 배경화면 제어 허용 창을 띄우지 않고 "수동 작업 대기"로 남긴다. 터미널에서 `./bootstrap.sh update`를 실행하면 대기 단계까지 다시 실행한다. 관리자 비밀번호가 필요한 cask는 자동 갱신에서 실패로 표시된다.
-- 실패: 적용 기록을 남기지 않고 같은 커밋은 한 시간 뒤 다시 시도한다. 새 커밋이 오면 바로 시도한다.
+- 실패: 적용 기록은 앞으로 옮기고, 실패한 단계만 `status`의 `failed`에 남겨 다음 실행 때 다시 실행한다. 자동 갱신은 같은 커밋이면 한 시간 뒤, 새 커밋이 오면 바로 다시 시도한다.
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
 - 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
 - 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다.
@@ -97,7 +97,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 ```sh
 ./bootstrap.sh role add verifier --ssh-key <공개키 파일>   # 처음 한 번. 로그를 읽을 기기의 공개키
 ./bootstrap.sh role add verifier --colima-memory 8        # 값 바꾸기 (키는 저장된 것을 씀)
-./bootstrap.sh role status                                # 0 준비 완료, 2 수동 작업 대기, 1 실패·꺼짐
+./bootstrap.sh role status verifier                       # 0 준비 완료, 2 수동 작업 대기, 1 실패·꺼짐
 ./bootstrap.sh role remove verifier                       # 끄기
 ```
 
@@ -106,7 +106,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 - colima 메모리: `~/.colima/default/colima.yaml`의 `memory:`를 기본 6 GiB로 바꾼다(`--colima-memory`로 변경). 원래 값을 기록한다. 실행 중인 VM은 다시 시작하지 않으므로 다음 시작부터 적용된다. colima 설정이 아직 없으면 `colima start --memory 6`을 한 번 실행한 뒤 다시 켠다.
 - 자동 시작 끄기: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 등록하지 않고 있으면 내린다. 이미 떠 있는 Paseo 데몬과 실행 중인 에이전트 Chrome은 끄지 않는다(이 명령을 Paseo 세션에서 실행할 수 있어서). Chrome은 끝내거나 다음 로그인부터 꺼진다.
 - 로그 디렉터리: `~/.local/state/verifier/logs`(권한 700). 검증을 돌리는 쪽이 여기에 로그를 남긴다. 이 경로가 그쪽과의 약속이다.
-- 읽기 전용 SSH: `~/.ssh/authorized_keys`에 `restrict,command="~/.local/bin/verifier-logs" … bootstrap-role-verifier` 한 줄을 넣는다. 이 키로 접속하면 어떤 명령을 보내도 `verifier-logs`만 실행되고, 로그 디렉터리의 파일을 `ls`, `tail [-n N] <파일>`, `cat <파일>`로만 읽는다. 같은 키가 제한 없는 다른 줄에 있으면 읽기 전용이 되지 않으므로 고치지 않고 실패한다.
+- 읽기 전용 SSH: `~/.ssh/authorized_keys`에 `restrict,command="<홈>/.local/bin/verifier-logs" … bootstrap-role-verifier` 한 줄을 넣는다(홈은 절대 경로로 쓴다). 이 키로 접속하면 어떤 명령을 보내도 `verifier-logs`만 실행되고, 로그 디렉터리의 파일을 `ls`, `tail [-n N] <파일>`, `cat <파일>`로만 읽는다. 같은 키가 제한 없는 다른 줄에 있으면 읽기 전용이 되지 않으므로 고치지 않고 실패한다.
 
   ```sh
   ssh <verifier 기기> ls
@@ -126,14 +126,14 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 
 전체 설치 검증에는 별도 Mac이나 macOS 가상 머신을 사용한다. `HOME`만 임시 경로로 바꾸는 방식은 외부 설치 프로그램의 시스템 변경까지 격리하지 못한다.
 
-`doctor`의 Brewfile 검사는 Homebrew 등록 상태도 확인한다. `/Applications`에 직접 설치한 앱이 있어도 Homebrew에 등록되지 않았다면 불일치로 표시한다. 기존 앱의 재설치·관리 방식 변경은 별도로 처리한다.
+`doctor`의 Brewfile 검사는 Homebrew 등록 상태도 확인한다. Homebrew 밖에서 설치한 앱은 검사에서 빼고 "유지"로 표시한다. Homebrew 관리로 옮기는 방법은 [Homebrew 문서](development/homebrew.md#기존-앱-옮기기).
 
 ## 설정 파일
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
 - `.seed`로 끝나는 파일은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용.
 - 같은 내용을 두 도구가 쓰는 파일은 저장소 안에서 링크한다. Codex `AGENTS.md`는 Claude Code `CLAUDE.md`를 가리킨다.
-- Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 앱을 처음 실행한 뒤 `./bootstrap.sh --only paseo`를 실행한다. 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.
+- Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 설정이 없으면 같은 단계가 앱 없이 첫 설정부터 한다([새 기기에서](agents/paseo.md#새-기기에서)). 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.
 - 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude(`~/.claude/skills`)·Codex(`~/.agents/skills`) 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다. 같은 이름의 다른 스킬이 있으면 덮어쓰지 않고 멈춘다.
 - 기존 파일은 `~/.local/state/bootstrap/backup/<시각>-<번호>/`로 옮긴 뒤 연결한다. 되돌리려면 링크(`~/.zshrc` 등)를 지우고 백업 폴더의 파일을 제자리로 옮긴다.
 - 기기마다 다른 설정은 `~/.zshrc.local`, `~/.gitconfig.local`에 둔다. 저장소에 넣지 않는다.
