@@ -35,10 +35,10 @@ if ! xcode-select -p >/dev/null 2>&1; then
   sudo -v
   placeholder=/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   sudo touch "$placeholder"
+  # 목록에 없거나 설치가 실패해도 멈추지 않는다. 표지 파일을 지운 뒤 아래 설치 창으로 넘어간다.
   label="$(/usr/sbin/softwareupdate -l 2>/dev/null | grep -B 1 -E 'Command Line Tools' |
-    awk -F'*' '/^ *\*/ {print $2}' | sed -e 's/^ *Label: //' -e 's/^ *//' | sort -V | tail -n1)"
-  if [[ -n "$label" ]]; then
-    sudo /usr/sbin/softwareupdate -i "$label"
+    awk -F'*' '/^ *\*/ {print $2}' | sed -e 's/^ *Label: //' -e 's/^ *//' | sort -V | tail -n1 || true)"
+  if [[ -n "$label" ]] && sudo /usr/sbin/softwareupdate -i "$label"; then
     sudo /usr/bin/xcode-select --switch /Library/Developer/CommandLineTools
   fi
   sudo rm -f "$placeholder"
