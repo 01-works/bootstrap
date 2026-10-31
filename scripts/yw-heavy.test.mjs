@@ -256,6 +256,14 @@ test('flock을 잡은 뒤 남아 있는 새 버전 편집 표지는 죽은 것�
   }
 });
 
+test('표지에서 읽은 task의 제어 문자와 $·`는 기록에 남기지 않는다', async t => {
+  const f = fixture(t);
+  writeFileSync(f.e, `yw-heavy-v2:pid=${dead}:task=Z$(id)\`id\`\x1b[31m\r\x07\n`);
+  assert.equal(await f.finish(f.cli('acquire', 'A', 'w', 's')), 0);
+  assert.match(f.log(), /reclaim kind=edit task=Z\(id\)id\[31m pid=2147483647 start=- reason=stale-edit-mark/);
+  assert.doesNotMatch(f.log(), /[$`\x00-\x09\x0b-\x1f\x7f]/);
+});
+
 test('flock을 쥔 프로세스가 kill -9되면 다음 작업이 바로 진행한다', async t => {
   const f = fixture(t);
   const holder = f.start(['-c', `exec /usr/bin/lockf -k ${quote(f.env.YW_HEAVY_FLOCK)} /bin/sleep 2`]);
