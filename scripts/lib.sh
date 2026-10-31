@@ -62,7 +62,7 @@ ensure_standalone_uv() {
   ok 'uv 공식 바이너리 설치됨 (셸 설정 유지)'
 }
 
-# $HOME을 ~로 줄여서 보여준다.
+# ${HOME}을 ~로 줄여서 보여준다.
 pretty() {
   case "$1" in
     "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;

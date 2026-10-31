@@ -256,7 +256,7 @@ main() {
       start_daemon || warn 'Paseo 데몬 시작 실패'
     fi
     if ! wait_daemon "$installed"; then
-      warn "Paseo 데몬이 $installed로 응답하지 않습니다 (paseo daemon status)"
+      warn "Paseo 데몬이 ${installed}로 응답하지 않습니다 (paseo daemon status)"
       st=1
     fi
   fi

@@ -279,3 +279,13 @@ test('role 명령은 scripts/role.sh로 넘기고, roles 단계는 켠 역할이
   assert.match(result.stdout, /기기 역할 없음/);
   assert.deepEqual(readdirSync(home), [], '역할이 없으면 홈을 건드리지 않는다');
 });
+
+test('모든 bash 스크립트는 변수 이름 바로 뒤에 비ASCII 문자를 붙이지 않는다', () => {
+  const files = ['bootstrap.sh', 'install.sh', ...readdirSync(join(repo, 'scripts'), { recursive: true })
+    .filter(name => name.endsWith('.sh')).map(name => join('scripts', name))];
+  assert.ok(files.includes(join('scripts', 'steps', '65-paseo.sh')));
+  for (const file of files) {
+    // UTF-8 로캘의 bash 3.2는 변수 이름 바로 뒤의 비ASCII 문자를 이름의 일부로 읽어 set -u에서 멈춘다: ${installed}로 처럼 쓴다.
+    assert.doesNotMatch(readFileSync(join(repo, file), 'utf8'), /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/, `${file}: 변수 뒤에 붙은 비ASCII 문자`);
+  }
+});
