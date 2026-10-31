@@ -134,6 +134,14 @@ test('설정 누락·형식 오류·넓은 키 권한이면 오류로 끝나고 
   await assert.rejects(run(missing, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), YwGhError);
   const bad = fixture(t, { config: { appId: 'x', installationId: 22, owner: '01-office' } });
   await assert.rejects(run(bad, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), /appId/);
+  for (const owner of ['01-office ', ' ', '01-office/', '-office', 'office-', '01_office', '', 123, null]) {
+    const f = fixture(t, { config: { appId: 11, installationId: 22, owner } });
+    await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), /owner\(GitHub 계정 이름\)/, JSON.stringify(owner));
+    const out = [];
+    await assert.rejects(run(f, ['auth', 'git-credential', 'get'], { fetch: fakeFetch(), spawn: noSpawn, stdout: x => out.push(x),
+      readStdin: () => 'protocol=https\nhost=github.com\npath=01-office/01-software.git\n\n' }), YwGhError);
+    assert.equal(out.join(''), 'quit=true\n', `잘못된 owner ${JSON.stringify(owner)}는 소유자 helper로 넘기지 않는다`);
+  }
   const wide = fixture(t, { keyMode: 0o644 });
   await assert.rejects(run(wide, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), /권한이 너무 넓습니다/);
 });
@@ -266,6 +274,29 @@ test('앞단: 기기 단위 끄기 파일이 있으면 설정이 없어도 에�
   assert.equal(c.out, 'username=owner\npassword=owner-token\n');
 });
 
+test('앞단: 믿을 수 없는 끄기 파일(디렉터리·링크·group/other 쓰기 가능한 설정 디렉터리)은 무시하고 설정 없음으로 실패한다', async t => {
+  const cases = {
+    '끄기 파일이 디렉터리': f => mkdirSync(join(f.configDir, 'disabled')),
+    '끄기 파일이 링크': f => { writeFileSync(join(f.dir, 'elsewhere'), ''); symlinkSync(join(f.dir, 'elsewhere'), join(f.configDir, 'disabled')); },
+    '설정 디렉터리 0777': f => { writeFileSync(join(f.configDir, 'disabled'), '', { mode: 0o666 }); chmodSync(join(f.configDir, 'disabled'), 0o666); chmodSync(f.configDir, 0o777); },
+    '설정 디렉터리 0720': f => { writeFileSync(join(f.configDir, 'disabled'), ''); chmodSync(f.configDir, 0o720); },
+  };
+  for (const [name, make] of Object.entries(cases)) {
+    const f = fixture(t, { config: null });
+    make(f);
+    const front = renderFront(f);
+    const env = { PATH: process.env.PATH, HOME: f.env.HOME, TMPDIR: f.tmp, PASEO_AGENT_ID: 'a1', YW_GH_APP_CONFIG_DIR: f.configDir };
+    const r = await runFront(front, ['pr', 'list'], env);
+    assert.equal(r.code, 1, name);
+    assert.equal(f.calls(), null, `${name}: 소유자 gh로 넘기지 않는다`);
+    const c = await runFront(front, ['auth', 'git-credential', 'get'], env, 'protocol=https\nhost=github.com\npath=01-works/b.git\n\n');
+    assert.deepEqual([c.code, c.out], [1, 'quit=true\n'], name);
+    const lib = spawnSync('bash', ['-c', `source "$1"; yw_gh_disabled "$2"`, '_', join(root, 'scripts/yw-gh-lib.sh'), f.configDir], { env: { ...env, BOOTSTRAP_ROOT: root } });
+    assert.equal(lib.status, 1, `${name}: 설치 단계·doctor의 판정도 같다`);
+    chmodSync(f.configDir, 0o700);
+  }
+});
+
 test('앞단: 에이전트 git credential은 node 없음·본체 누락·본체 실패에도 quit=true로 멈춘다', async t => {
   const f = fixture(t);
   pinNode(f);
@@ -337,16 +368,37 @@ test('설치 단계: 설정이 없어도 설치하고 수동 작업 대기(2)로
   assert.equal(runStep(f, env).status, 0);
 });
 
-test('설치 단계: 전역 credential helper가 실제 gh 절대 경로를 가리키면 고치지 않고 경고한다', t => {
+test('설치 단계: 전역 credential helper(~/.gitconfig와 include한 ~/.gitconfig.local)가 실제 gh를 가리키면 고치지 않고 경고한다', t => {
   const f = fixture(t);
   const { env, realGh } = stepEnv(f);
   mkdirSync(f.env.HOME, { recursive: true });
-  const gitconfig = `[credential "https://github.com"]\n\thelper = \n\thelper = !${realGh} auth git-credential\n`;
-  writeFileSync(join(f.env.HOME, '.gitconfig'), gitconfig);
+  const helper = `[credential "https://github.com"]\n\thelper = \n\thelper = !${realGh} auth git-credential\n`;
+  writeFileSync(join(f.env.HOME, '.gitconfig'), helper);
   const r = runStep(f, env);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, /실제 gh를 직접 가리킵니다/);
-  assert.equal(readFileSync(join(f.env.HOME, '.gitconfig'), 'utf8'), gitconfig, '자동으로 고치지 않는다');
+  assert.match(r.stderr, /실제 gh를 직접 가리켜/);
+  assert.equal(readFileSync(join(f.env.HOME, '.gitconfig'), 'utf8'), helper, '자동으로 고치지 않는다');
+
+  // 저장소 .gitconfig처럼 정상 helper + ~/.gitconfig.local include. 우회 helper는 include한 파일에만 있다.
+  writeFileSync(join(f.env.HOME, '.gitconfig'), '[credential "https://github.com"]\n\thelper = \n\thelper = !gh auth git-credential\n[include]\n\tpath = ~/.gitconfig.local\n');
+  assert.equal(runStep(f, env).status, 0, '정상 helper만 있으면 완료');
+  writeFileSync(join(f.env.HOME, '.gitconfig.local'), helper);
+  const local = runStep(f, env);
+  assert.equal(local.status, 2, local.stderr);
+  assert.match(local.stderr, /실제 gh를 직접 가리켜/);
+});
+
+test('doctor 판정: 설치한 앞단은 기대 내용과 같고, 구버전 앞단은 다르다고 본다', t => {
+  const f = fixture(t);
+  const { env, realGh } = stepEnv(f);
+  assert.equal(runStep(f, env).status, 0);
+  const front = join(f.env.HOME, '.local/bin/gh');
+  const core = join(f.env.HOME, '.local/share/yw-gh/yw-gh-app.mjs');
+  const same = () => spawnSync('bash', ['-c', 'source "$BOOTSTRAP_ROOT/scripts/yw-gh-lib.sh"; real="$(yw_gh_find_real "$HOME/.local/bin")" && [[ "$real" == "$1" ]] && cmp -s "$2" <(yw_gh_render "$real" "$3" "$2")',
+    '_', realGh, front, core], { env: { ...env, HOME: f.env.HOME, BOOTSTRAP_ROOT: root } }).status;
+  assert.equal(same(), 0);
+  writeFileSync(front, readFileSync(front, 'utf8').replace('export GH_PATH="$self"\n', ''));
+  assert.notEqual(same(), 0, 'marker가 있어도 내용이 다르면 최신이 아니다');
 });
 
 test('설치 단계: ~/.local/bin을 건너뛴 실제 gh 절대 경로를 적고, 다시 실행해도 같으며, 남의 gh는 덮어쓰지 않는다', t => {

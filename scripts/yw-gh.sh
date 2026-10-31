@@ -13,8 +13,16 @@ identity="${YW_GH_IDENTITY:-}"
 if [[ -z "$identity" && -n "${PASEO_AGENT_ID:-}" ]]; then
   identity=agent
 fi
-# 기기 단위 명시적 끄기: 이 파일이 있으면 에이전트 모드도 소유자 인증을 쓴다. 설치 단계는 만들지 않는다.
-if [[ "$identity" == agent && -e "${YW_GH_APP_CONFIG_DIR:-$HOME/.config/yw-gh-app}/disabled" ]]; then
+# 기기 단위 명시적 끄기: 믿을 수 있는 끄기 파일이 있으면 에이전트 모드도 소유자 인증을 쓴다. 설치 단계는 만들지 않는다.
+# 끄기 파일은 현재 사용자 소유의 일반 파일(링크 아님), 설정 디렉터리는 현재 사용자 소유·링크 아님·group/other 쓰기 불가여야 한다.
+# 조건이 맞지 않으면 무시한다 (= 설정 없음 → 실패). scripts/yw-gh-lib.sh의 yw_gh_disabled와 같은 판정이다.
+disabled() {
+  local dir="${YW_GH_APP_CONFIG_DIR:-$HOME/.config/yw-gh-app}" perm
+  [[ -d "$dir" && ! -L "$dir" && -O "$dir" && -f "$dir/disabled" && ! -L "$dir/disabled" && -O "$dir/disabled" ]] || return 1
+  perm="$(/usr/bin/stat -f %Lp "$dir" 2>/dev/null)" || return 1
+  (((8#$perm & 8#022) == 0))
+}
+if [[ "$identity" == agent ]] && disabled; then
   identity=owner
 fi
 credential=0

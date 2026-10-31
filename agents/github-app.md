@@ -18,9 +18,9 @@
 - 에이전트 모드: `PASEO_AGENT_ID`가 있거나 `YW_GH_IDENTITY=agent`일 때. Paseo 밖에서 직접 띄운 세션은 `YW_GH_IDENTITY=agent`를 설정해야 분리된다.
 - gh 명령은 인자나 cwd로 대상을 추론하지 않는다. App이 설치되지 않은 저장소(예: `01-works` 조직)를 `gh`로 다룰 때는 `YW_GH_IDENTITY=owner gh …`로 명시한다. 명시하지 않으면 권한 오류로 실패한다.
 - git은 `credential.https://github.com.useHttpPath=true`(`home/git/.gitconfig`)로 원격 경로를 넘긴다. 경로가 없거나 github.com이 아니면 `quit=true`로 멈춘다.
-- 에이전트 모드에서 설정·키 누락, 권한 오류, 발급 실패는 오류로 끝난다. 소유자 인증으로 넘어가지 않는다. git credential은 node 없음·본체 실패까지 `quit=true`로 멈춘다. 원격 경로는 `<owner>/<repo>[.git]` 형식만 받는다.
-- 기기 단위 끄기: `touch ~/.config/yw-gh-app/disabled`. 에이전트도 소유자 gh를 쓴다(지금까지와 같다). 사람이 명시적으로 고르는 것이며 설치 단계는 만들지 않는다. 다시 켜려면 지운다.
-- 모든 분기에서 `GH_PATH`를 앞단 경로로 넘겨서, `gh auth setup-git`이 credential helper에 실제 gh 절대 경로를 적지 않게 한다. 이미 그렇게 적혀 있으면 `ghapp` 단계와 `doctor`가 경고한다. `~/.gitconfig`는 저장소 `home/git/.gitconfig` 링크이므로 저장소에서 그 변경을 되돌린다.
+- 에이전트 모드에서 설정·키 누락, 권한 오류, 발급 실패는 오류로 끝난다. 소유자 인증으로 넘어가지 않는다. git credential은 node 없음·본체 실패까지 `quit=true`로 멈춘다. 원격 경로는 `<owner>/<repo>[.git]` 형식만 받는다. 설정 owner는 GitHub 계정 이름 형식이어야 하고, 비교는 대소문자를 무시한다.
+- 기기 단위 끄기: `touch ~/.config/yw-gh-app/disabled`. 에이전트도 소유자 gh를 쓴다(지금까지와 같다). 사람이 명시적으로 고르는 것이며 설치 단계는 만들지 않는다. 다시 켜려면 지운다. 끄기 파일은 현재 사용자 소유의 일반 파일(링크 아님)이고 설정 디렉터리가 현재 사용자 소유·링크 아님·group/other 쓰기 불가일 때만 인정한다. 아니면 무시해서 설정 없음으로 실패한다.
+- 모든 분기에서 `GH_PATH`를 앞단 경로로 넘겨서, `gh auth setup-git`이 credential helper에 실제 gh 절대 경로를 적지 않게 한다. 이미 그렇게 적혀 있으면(include한 `~/.gitconfig.local` 포함) `ghapp` 단계와 `doctor`가 경고한다. `~/.gitconfig`는 저장소 `home/git/.gitconfig` 링크이므로 저장소에서 그 변경을 되돌린다.
 - 에이전트 모드에서 `gh auth login|logout|switch|refresh|setup-git`은 거절한다. 계정 관리는 사람 터미널에서 한다.
 - 설치 토큰(1시간)은 `$TMPDIR/yw-gh-app-<uid>/`(700)의 600 파일에 원자적으로 캐시해 만료 5분 전까지 다시 쓴다. 남의 것이거나 권한이 넓거나 형식이 맞지 않는 캐시는 손상으로 보고 새로 발급한다. 잠금은 없다(동시에 캐시가 비면 각자 발급하지만 무해하다).
 

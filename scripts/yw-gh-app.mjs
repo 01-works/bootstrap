@@ -16,6 +16,8 @@ const REFUSED_AUTH = new Set(['login', 'logout', 'switch', 'refresh', 'setup-git
 const TOKEN_RE = /^[A-Za-z0-9\-._~+/]+=*$/;
 // git이 넘기는 원격 경로: <owner>/<repo>[.git][/]. 그 밖은 파싱 실패로 본다.
 const PATH_RE = /^([A-Za-z0-9-]+)\/[A-Za-z0-9._-]+(?:\.git)?\/?$/;
+// GitHub 계정 이름. 비교는 GitHub처럼 대소문자를 무시한다.
+const OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
 
 export class YwGhError extends Error {}
 const fail = message => { throw new YwGhError(message); };
@@ -50,9 +52,9 @@ export function loadConfig(configDir) {
   try { config = JSON.parse(readFileSync(configPath, 'utf8')); } catch { fail(`${configPath} 를 읽지 못했습니다`); }
   const appId = String(config?.appId ?? '');
   const installationId = String(config?.installationId ?? '');
-  const owner = String(config?.owner ?? '');
-  if (!/^\d+$/.test(appId) || !/^\d+$/.test(installationId) || !owner) {
-    fail(`${configPath} 에 appId·installationId(숫자)와 owner가 필요합니다`);
+  const owner = config?.owner;
+  if (!/^\d+$/.test(appId) || !/^\d+$/.test(installationId) || typeof owner !== 'string' || !OWNER_RE.test(owner)) {
+    fail(`${configPath} 에 appId·installationId(숫자)와 owner(GitHub 계정 이름)가 필요합니다`);
   }
   let key;
   try { key = createPrivateKey(readFileSync(keyPath)); } catch { fail(`${keyPath} 를 private key로 읽지 못했습니다`); }
