@@ -6,16 +6,14 @@ model = "gpt-6.1-sol"
 model_context_window = 250000
 model_auto_compact_token_limit = 200000
 model_reasoning_effort = "medium"
-personality = "pragmatic"
 service_tier = "default"
 
 [agents]
-max_threads = 24
+max_concurrent_threads_per_session = 24
 max_depth = 2
 
 [features]
 hooks = true
-js_repl = false
 
 [notice]
 hide_rate_limit_model_nudge = true

@@ -18,7 +18,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 # 목록을 못 읽으면 빈 목록으로 비교해 엉뚱한 결과가 나오므로 멈춘다.
-dump="$(brew bundle dump --file=- 2>/dev/null)" || die "brew bundle dump 실패"
+# uv·npm 도구는 Brewfile로 관리하지 않으므로 빼고 받는다.
+dump="$(brew bundle dump --file=- --no-uv --no-npm 2>/dev/null)" || die "brew bundle dump 실패"
 printf '%s\n' "$dump" | normalize >"$tmp/installed"
 normalize <"$BOOTSTRAP_ROOT/Brewfile" >"$tmp/listed"
 
