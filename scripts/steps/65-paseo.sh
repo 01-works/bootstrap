@@ -44,9 +44,15 @@ fi
 
 # 자동 시작 등록이 실패해도 프로필 설정은 계속한다. 실패(1)가 수동 작업 대기(2)보다 우선한다.
 # 자동 갱신 중에는 실행 중인 데몬 등록을 다시 올리지 않는다(바뀌었으면 대기). 데몬과 그 에이전트가 끝나기 때문이다.
+# Paseo 에이전트 안에서 실행해도 같다. 데몬을 내리면 그 에이전트와 이 실행도 함께 끝난다 (paseo-upgrade.sh와 같은 확인).
+daemon_restart="$(no_restart_flag)"
+[[ -z "${PASEO_AGENT_ID:-}" ]] || daemon_restart=--no-restart
 autostart=0
-# shellcheck disable=SC2046
-node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo "$(device_flag)" $(no_restart_flag) || autostart=$?
+# shellcheck disable=SC2086
+node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo "$(device_flag)" $daemon_restart || autostart=$?
+if [[ "$autostart" == 2 && -n "${PASEO_AGENT_ID:-}" ]]; then
+  warn 'Paseo 에이전트 안이라 데몬 등록을 다시 올리지 않았습니다(데몬과 함께 끝남) → 터미널에서 ./bootstrap.sh update'
+fi
 upgrade=0
 # shellcheck disable=SC2046
 node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo-upgrade "$(device_flag)" $(no_restart_flag) || upgrade=$?

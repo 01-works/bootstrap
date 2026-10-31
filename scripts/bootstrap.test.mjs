@@ -199,6 +199,19 @@ test('browser 단계: 자동 갱신 중 에이전트 Chrome 등록이 바뀌었�
   assert.equal(failed.status, 1);
 });
 
+test('paseo 단계: Paseo 에이전트 안에서 직접 실행하면 데몬 등록을 내렸다 올리지 않고 대기로 남긴다', t => {
+  // --no-restart 없이 데몬 등록을 다시 올리려 하면 9(데몬과 함께 끝남)로 본다.
+  const mocks = `has() { return 0; }\nis_laptop() { return 1; }\nrun() { :; }
+node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || return 0; [[ " $* " == *" --no-restart "* ]] && return 2; return 9; }\n`;
+  const run = agent => mockStep(t, '65-paseo.sh', mocks,
+    { BOOTSTRAP_UNATTENDED: '0', PASEO_AGENT_ID: agent, PASEO_HOME: '/nonexistent/paseo-home' }).result;
+  const inAgent = run('agent-1');
+  assert.equal(inAgent.status, 2, inAgent.stdout + inAgent.stderr);
+  assert.match(inAgent.stderr, /Paseo 에이전트 안이라 데몬 등록을 다시 올리지 않았습니다/);
+  const terminal = run('');
+  assert.equal(terminal.status, 1, '터미널에서는 그대로 다시 올린다');
+});
+
 test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경로는 없을 때만 링크로 만든다', t => {
   const { root } = sandbox(t);
   const home = join(root, 'home'), compat = join(root, 'cc-yw-heavy.sh'), dst = join(home, '.local/bin/yw-heavy');
@@ -278,4 +291,14 @@ test('role 명령은 scripts/role.sh로 넘기고, roles 단계는 켠 역할이
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /기기 역할 없음/);
   assert.deepEqual(readdirSync(home), [], '역할이 없으면 홈을 건드리지 않는다');
+});
+
+test('모든 bash 스크립트는 변수 이름 바로 뒤에 비ASCII 문자를 붙이지 않는다', () => {
+  const files = ['bootstrap.sh', 'install.sh', ...readdirSync(join(repo, 'scripts'), { recursive: true })
+    .filter(name => name.endsWith('.sh')).map(name => join('scripts', name))];
+  assert.ok(files.includes(join('scripts', 'steps', '65-paseo.sh')));
+  for (const file of files) {
+    // UTF-8 로캘의 bash 3.2는 변수 이름 바로 뒤의 비ASCII 문자를 이름의 일부로 읽어 set -u에서 멈춘다: ${installed}로 처럼 쓴다.
+    assert.doesNotMatch(readFileSync(join(repo, file), 'utf8'), /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/, `${file}: 변수 뒤에 붙은 비ASCII 문자`);
+  }
 });
