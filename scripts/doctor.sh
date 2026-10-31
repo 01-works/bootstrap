@@ -176,6 +176,30 @@ else
   info "예전 경로 /tmp/cc-yw-heavy.sh 없음 (재시동 뒤 비워짐). 그 경로를 쓰는 호출이 있으면 ./bootstrap.sh --only heavy"
 fi
 
+step "에이전트 GitHub 신원 (yw-gh)"
+source "$BOOTSTRAP_ROOT/scripts/yw-gh-lib.sh"
+gh_front="$HOME/.local/bin/gh"
+gh_core="$HOME/.local/share/yw-gh/yw-gh-app.mjs"
+gh_config="${YW_GH_APP_CONFIG_DIR:-$HOME/.config/yw-gh-app}"
+gh_real="$(yw_gh_find_real "$HOME/.local/bin" || true)"
+# 앞단은 설치 경로를 채운 기대 내용과 통째로 비교한다 (구버전 앞단을 최신으로 보지 않게).
+if [[ -n "$gh_real" && -f "$gh_front" ]] && cmp -s "$gh_front" <(yw_gh_render "$gh_real" "$gh_core" "$gh_front") &&
+  cmp -s "$BOOTSTRAP_ROOT/scripts/yw-gh-app.mjs" "$gh_core"; then
+  pass "yw-gh 설치본이 저장소 원본과 같음"
+else
+  miss "yw-gh 없음 또는 저장소 원본과 다름 (./bootstrap.sh --only ghapp)"
+fi
+if yw_gh_disabled "$gh_config"; then
+  info "끄기 파일이 있어 에이전트도 소유자 gh를 씀"
+elif [[ -f "$gh_config/config.json" ]]; then
+  pass "App 설정 있음"
+else
+  wait_for_user "App 설정 없음(또는 믿을 수 없는 끄기 파일): 에이전트의 gh가 실패함 (agents/github-app.md)"
+fi
+if [[ -n "$gh_real" ]] && yw_gh_helper_bypass "$gh_real"; then
+  miss "credential helper(~/.gitconfig·~/.gitconfig.local)가 실제 gh($gh_real)를 직접 가리켜 에이전트 push가 yw-gh를 건너뜀"
+fi
+
 step "기기 역할"
 if [[ "$verifier" == 1 ]]; then
   role_status=0
