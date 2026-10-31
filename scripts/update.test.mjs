@@ -143,6 +143,10 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   f.push({ 'scripts/verifier-logs.sh': '# verifier-logs\n' });
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['roles 1'], '읽기 전용 SSH 강제 명령도 roles 단계');
+
+  f.push({ 'home/한글 파일': 'x\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['dotfiles 1'], '비ASCII 경로도 따옴표 없이 경로 규칙과 비교');
 });
 
 test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 실행하면 다시 실행한다', t => {

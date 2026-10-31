@@ -246,7 +246,8 @@ main() {
   if [[ -z "$applied" ]]; then
     steps="$(auto_steps)"
   elif [[ "$applied" != "$target" ]]; then
-    steps="$(git_ diff --name-only "$applied" "$target" | steps_for_paths)"
+    # 비ASCII 경로를 따옴표로 감싸지 않아야 아래 경로 규칙과 맞는다.
+    steps="$(git_ -c core.quotePath=false diff --name-only "$applied" "$target" | steps_for_paths)"
   fi
   steps="$steps $prev_failed"
   [[ "$AUTO" == 1 ]] || steps="$steps $prev_pending"
