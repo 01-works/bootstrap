@@ -134,7 +134,7 @@ test('설정 누락·형식 오류·넓은 키 권한이면 오류로 끝나고 
   await assert.rejects(run(missing, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), YwGhError);
   const bad = fixture(t, { config: { appId: 'x', installationId: 22, owner: '01-office' } });
   await assert.rejects(run(bad, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), /appId/);
-  for (const owner of ['01-office ', ' ', '01-office/', '-office', 'office-', '01_office', '', 123, null]) {
+  for (const owner of ['01-office ', ' ', '01-office/', '-office', 'office-', '01_office', '01--office', 'a'.repeat(40), '', 123, null]) {
     const f = fixture(t, { config: { appId: 11, installationId: 22, owner } });
     await assert.rejects(run(f, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), /owner\(GitHub 계정 이름\)/, JSON.stringify(owner));
     const out = [];
@@ -142,6 +142,8 @@ test('설정 누락·형식 오류·넓은 키 권한이면 오류로 끝나고 
       readStdin: () => 'protocol=https\nhost=github.com\npath=01-office/01-software.git\n\n' }), YwGhError);
     assert.equal(out.join(''), 'quit=true\n', `잘못된 owner ${JSON.stringify(owner)}는 소유자 helper로 넘기지 않는다`);
   }
+  const longest = fixture(t, { config: { appId: 11, installationId: 22, owner: 'a'.repeat(39) } });
+  assert.equal(await run(longest, ['pr', 'list'], { fetch: fakeFetch() }), 0, '39자 owner는 유효');
   const wide = fixture(t, { keyMode: 0o644 });
   await assert.rejects(run(wide, ['pr', 'list'], { fetch: fakeFetch(), spawn: noSpawn }), /권한이 너무 넓습니다/);
 });
@@ -310,6 +312,12 @@ test('앞단: 에이전트 git credential은 node 없음·본체 누락·본체 
   writeFileSync(crash, "process.stdout.write('username=x\\npassword=half\\n'); throw new Error('boom');\n");
   const crashed = await runFront(renderFront(f, crash), ['auth', 'git-credential', 'get'], { ...base, PATH: process.env.PATH }, input);
   assert.deepEqual([crashed.code, crashed.out], [1, 'quit=true\n'], '본체가 중간에 죽으면 출력하던 자격 증명을 버리고 quit=true');
+  const silent = join(f.dir, 'silent.mjs');
+  writeFileSync(silent, '// 아무것도 하지 않고 0으로 끝난다\n');
+  const empty = await runFront(renderFront(f, silent), ['auth', 'git-credential', 'get'], { ...base, PATH: process.env.PATH }, input);
+  assert.deepEqual([empty.code, empty.out], [1, 'quit=true\n'], 'get에 빈 응답·종료 0은 실패로 본다');
+  const store = await runFront(renderFront(f, silent), ['auth', 'git-credential', 'store'], { ...base, PATH: process.env.PATH }, input);
+  assert.deepEqual([store.code, store.out], [0, ''], 'store·erase의 빈 응답은 정상');
   const noNodeGh = await runFront(renderFront(f), ['pr', 'list'], { ...base, PATH: '/usr/bin:/bin' });
   assert.equal(noNodeGh.code, 1);
   assert.equal(f.calls(), null, '소유자 gh로 넘기지 않는다');
@@ -334,6 +342,21 @@ test('앞단 → 본체 → 로컬 API 서버: PASEO_AGENT_ID면 실제 fetch로
   assert.deepEqual(f.calls(), { args: ['issue', 'list'], stdin: '', GH_TOKEN: 'ghs_e2e', GH_PATH: front, YW_GH_INJECTED: '1' });
   await runFront(front, ['issue', 'list'], env);
   assert.equal(hits, 1, '두 번째 프로세스는 캐시를 쓴다');
+
+  // 상위 경로에 링크가 있는 곳에 설치한 본체 복사본도 실제로 실행된다 (macOS /var → /private/var 같은 경우).
+  const realRoot = join(f.dir, 'real-root');
+  mkdirSync(join(realRoot, 'share'), { recursive: true });
+  writeFileSync(join(realRoot, 'share/yw-gh-app.mjs'), readFileSync(coreSrc));
+  symlinkSync(realRoot, join(f.dir, 'linked-root'));
+  const linkedFront = renderFront(f, join(f.dir, 'linked-root/share/yw-gh-app.mjs'));
+  rmSync(f.cacheFile);
+  const viaLink = await runFront(linkedFront, ['issue', 'view', '1'], env);
+  assert.equal(viaLink.code, 0, viaLink.err);
+  assert.deepEqual(f.calls(), { args: ['issue', 'view', '1'], stdin: '', GH_TOKEN: 'ghs_e2e', GH_PATH: linkedFront, YW_GH_INJECTED: '1' });
+  assert.equal(hits, 2, '링크 경로의 본체가 실제로 발급했다');
+  const cred = await runFront(linkedFront, ['auth', 'git-credential', 'get'], env, 'protocol=https\nhost=github.com\npath=01-office/01-software.git\n\n');
+  assert.equal(cred.code, 0, cred.err);
+  assert.equal(cred.out, 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=ghs_e2e\n');
 
   rmSync(join(f.configDir, 'config.json'));
   const missing = await runFront(front, ['issue', 'list'], env);

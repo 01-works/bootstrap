@@ -45,7 +45,8 @@ case "$identity" in
     export YW_GH_REAL="$real" YW_GH_SELF="$self"
     if [[ "$credential" == 1 ]]; then
       # git credential: 본체 진입 전 실패(node 없음·본체 누락·기동 실패)까지 quit=true로 멈춰 다음 helper로 넘어가지 않게 한다.
-      if out="$(node "$core" "$@")"; then
+      # get에 빈 응답은 성공으로 보지 않는다 (본체가 돌지 않고 끝난 경우 등). store·erase는 원래 출력이 없다.
+      if out="$(node "$core" "$@")" && [[ -n "$out" || "${3:-}" != get ]]; then
         if [[ -n "$out" ]]; then printf '%s\n' "$out"; fi
         exit 0
       fi

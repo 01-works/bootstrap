@@ -4,11 +4,11 @@
 // - 설정·키·발급 실패는 오류로 끝낸다. 소유자 인증으로 넘어가는 경로는 없다.
 // 의존성 없이 Node 내장 모듈만 쓴다.
 import { createPrivateKey, randomBytes, sign } from 'node:crypto';
-import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from 'node:fs';
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, writeSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const REFUSED_AUTH = new Set(['login', 'logout', 'switch', 'refresh', 'setup-git']);
@@ -16,8 +16,8 @@ const REFUSED_AUTH = new Set(['login', 'logout', 'switch', 'refresh', 'setup-git
 const TOKEN_RE = /^[A-Za-z0-9\-._~+/]+=*$/;
 // git이 넘기는 원격 경로: <owner>/<repo>[.git][/]. 그 밖은 파싱 실패로 본다.
 const PATH_RE = /^([A-Za-z0-9-]+)\/[A-Za-z0-9._-]+(?:\.git)?\/?$/;
-// GitHub 계정 이름. 비교는 GitHub처럼 대소문자를 무시한다.
-const OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+// GitHub 계정 이름: 영숫자와 단일 하이픈, 앞뒤 하이픈 금지, 1~39자. 비교는 GitHub처럼 대소문자를 무시한다.
+const OWNER_RE = /^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 
 export class YwGhError extends Error {}
 const fail = message => { throw new YwGhError(message); };
@@ -208,7 +208,9 @@ export async function main(args, env = process.env, io = {}) {
   return exitLike(io.spawn(s.real, args, { stdio: 'inherit', env: agentEnv(env, s, token) }));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// 직접 실행될 때만 main을 돈다 (테스트는 import). 상위 경로에 링크가 있어도 같게 보도록 양쪽을 실제 경로로 비교한다.
+const realOrNull = p => { try { return realpathSync(p); } catch { return null; } };
+if (process.argv[1] && realOrNull(process.argv[1]) === realOrNull(fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).then(code => process.exit(code), e => {
     process.stderr.write(`yw-gh: ${e instanceof YwGhError ? e.message : e.stack}\n`);
     process.exit(1);
