@@ -73,7 +73,7 @@ yw-heavy status                                              # 읽기 전용
   /usr/bin/lockf -k -t 30 /tmp/yw-heavy-queue.flock /bin/sh -c 'x=/tmp/yw-heavy-check.lock; [ -d "$x" ] && [ ! -s "$x/owner.txt" ] && rm -f "$x/owner.txt" && rmdir "$x"; true'
   ```
 
-- 차례가 정체되면 보유자·대기자가 실제로 살아 있는지 확인한다. 끝난 것이 확인된 다른 세션의 항목은 소유 감독 세션에 알린 뒤 `release`한다.
+- 차례가 정체되면 보유자·대기자가 실제로 살아 있는지 확인한다. 끝난 것이 확인된 다른 세션의 항목도 소유 감독 세션의 동의나 사용자 승인을 받은 뒤 `release`한다.
 
 ## 자동 회수 끄기
 
@@ -115,7 +115,7 @@ yw-heavy status                                              # 읽기 전용
    ```
 
 6. 확인: `readlink /tmp/cc-yw-heavy.sh`, `bash /tmp/cc-yw-heavy.sh status`, 대기열이 스냅샷과 같은지, 편집 lock이 없는지, 기록한 구버전 대기자가 살아 있는지(`ps -p`).
-7. 구형식 줄마다 대기자가 살아 있는지 확인한다(`pgrep -fl` 결과의 ID와 대조). 대기자가 없는 고아 줄은 관문을 계속 닫아 두므로, 소유 감독 세션의 동의를 받은 뒤 `yw-heavy release <ID>`로 지운다.
+7. 구형식 줄마다 대기자가 살아 있는지 확인한다(`pgrep -fl` 결과의 ID와 대조). 대기자가 없는 고아 줄은 관문을 계속 닫아 두므로, 소유 감독 세션의 동의나 사용자 승인을 받은 뒤 `yw-heavy release <ID>`로 지운다.
 8. 관찰: 다음 두 번의 인계에서 release마다 다음 맨 앞 대기자가 차례를 얻는지, 회수 기록에 살아 있는 pid가 없는지 본다.
 
 즉시 롤백하는 경우: `status`·`acquire`·`release`가 종료 코드 1이나 bash 오류를 냄, 정상 release가 아닌데 줄이 사라지거나 순서가 바뀜, 편집 lock이 2분 넘게 남음, 살아 있는 pid(시작 시각 일치)를 회수한 기록, 실행 lock owner와 실제 실행 중인 작업이 다름.
