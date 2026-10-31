@@ -60,6 +60,7 @@ steps_for_paths() {
       scripts/browser-use-setup.mjs) out="$out browser" ;;
       scripts/brew-outside-casks.sh) out="$out homebrew" ;;
       scripts/yw-heavy.sh) out="$out heavy" ;;
+      scripts/yw-gh.sh | scripts/yw-gh-app.mjs) out="$out ghapp" ;;
       scripts/role.sh | scripts/verifier-logs.sh) out="$out roles" ;;
       scripts/steps/[0-9]*-*.sh)
         path="${path##*/}"

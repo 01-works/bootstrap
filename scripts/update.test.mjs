@@ -134,6 +134,13 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['heavy 1'], 'yw-heavy 원본은 heavy 단계');
 
+  f.push({ 'scripts/steps/67-ghapp.sh': mockStep('ghapp') });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['ghapp 1'], '새 단계 파일은 그 단계');
+  f.push({ 'scripts/yw-gh-app.mjs': '// yw-gh\n', 'scripts/yw-gh.sh': '# yw-gh\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['ghapp 1'], 'yw-gh 원본은 ghapp 단계');
+
   f.push({ 'scripts/steps/90-roles.sh': mockStep('roles') });
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['roles 1'], '새 단계 파일은 그 단계');

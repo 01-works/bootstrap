@@ -5,6 +5,7 @@
 - GitHub 계정: `01-office` (조직 `01-works` 멤버)
 - 커밋 작성자: [`home/git/.gitconfig`](../home/git/.gitconfig). 이메일은 GitHub noreply 주소를 쓴다.
 - git은 **https + gh 자격 증명**으로 GitHub에 접속한다. `gh auth login` 한 번이면 push/pull이 된다. 토큰은 gh가 관리하고 저장소에는 들어가지 않는다.
+- 에이전트 세션의 gh·push는 App 설정이 있는 기기에서 에이전트 전용 GitHub App 신원을 쓴다 → [agents/github-app.md](../agents/github-app.md). 그래서 credential helper가 원격 경로를 받도록 `useHttpPath`를 켠다.
 
 ## SSH 키
 

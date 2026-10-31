@@ -1,6 +1,8 @@
 [credential "https://github.com"]
 	helper = 
 	helper = !gh auth git-credential
+	# yw-gh가 원격 저장소 owner로 App·소유자 인증을 고르도록 path를 넘긴다 (agents/github-app.md)
+	useHttpPath = true
 [credential "https://gist.github.com"]
 	helper = 
 	helper = !gh auth git-credential
