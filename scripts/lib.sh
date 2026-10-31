@@ -116,6 +116,34 @@ mark_applied() {
   mkdir -p "$BOOTSTRAP_UPDATE_STATE" && printf '%s\n' "$head" >"$BOOTSTRAP_UPDATE_STATE/applied"
 }
 
+# 자동 갱신 상태 파일 (doctor·새 터미널이 읽는다): write_update_status <결과> <실패 단계> <대기 단계> <새 터미널에 보일 한 줄>
+# paseo-upgrade.sh에는 자기 상태 파일을 쓰는 write_status가 따로 있어 이름을 나눈다.
+write_update_status() {
+  [[ "$DRY_RUN" == 1 ]] && return 0
+  mkdir -p "$BOOTSTRAP_UPDATE_STATE"
+  printf 'result=%s\ncommit=%s\nat=%s\nfailed=%s\npending=%s\nbanner=%s\n' \
+    "$1" "$(git -C "$BOOTSTRAP_ROOT" rev-parse --short HEAD 2>/dev/null)" "$(date +%s)" "$2" "$3" "$4" >"$BOOTSTRAP_UPDATE_STATE/status.tmp"
+  mv "$BOOTSTRAP_UPDATE_STATE/status.tmp" "$BOOTSTRAP_UPDATE_STATE/status"
+}
+
+# 실패·대기 단계로 결과를 정해 기록하고 결과 이름을 출력한다: settle <실패 단계> <대기 단계>
+# 갱신(update.sh)과 전체 설치(bootstrap.sh)가 같이 쓴다. ./bootstrap.sh update가 실패·대기 단계를 이어서 다시 실행한다.
+settle() {
+  local repo log=''
+  repo="$(pretty "$BOOTSTRAP_ROOT")"
+  [[ "${AUTO:-0}" == 1 ]] && log=" (기록: $(pretty "$BOOTSTRAP_UPDATE_STATE")/update.log)"
+  if [[ -n "$1" ]]; then
+    write_update_status failed "$1" "$2" "bootstrap 갱신 실패: $1 → $repo/bootstrap.sh update$log"
+    printf failed
+  elif [[ -n "$2" ]]; then
+    write_update_status pending '' "$2" "bootstrap 수동 작업 대기: $2 → $repo/bootstrap.sh update"
+    printf pending
+  else
+    write_update_status ok '' '' ''
+    printf ok
+  fi
+}
+
 # 설치와 자동 갱신이 동시에 돌지 않게 잡는 잠금. 얻으면 0, 다른 실행이 잡고 있으면 1. 끝날 때(EXIT) 푼다.
 # BOOTSTRAP_LOCKED는 잠금을 잡은 프로세스 번호다. 하위 실행(update.sh → bootstrap.sh)과 exec로 바뀐 자신은
 # 그 번호가 잠금의 pid와 같을 때만 이어서 쓴다. 끝난 실행의 환경 변수가 남아 있어도 잠금을 건너뛰지 않는다.

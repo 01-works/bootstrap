@@ -350,3 +350,37 @@ test('전체 설치가 끝나면 적용 기록을 남겨 자동 갱신이 다시
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), []);
 });
+
+test('전체 설치의 실패·대기는 상태로 남겨 터미널의 update가 이어서 다시 실행한다', t => {
+  const f = fixture(t);
+  f.exitWith('power', 2);
+  let result = f.install();
+  assert.equal(result.status, 2, output(result));
+  f.calls();
+  assert.equal(f.status().result, 'pending');
+  assert.equal(f.status().pending, 'power');
+  assert.equal(f.applied(), f.head(), '대기는 적용 기록을 막지 않음');
+  f.exitWith('power', null);
+  result = f.update();
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.calls(), ['power 0'], '설치에서 대기로 남은 단계를 다시 실행');
+  assert.equal(f.status().result, 'ok');
+
+  // 적용 기록이 있는 기기에서 전체 설치가 부분 실패하면 기록은 그대로 두고 실패를 남긴다.
+  const applied = f.applied();
+  f.push({ 'README.md': 'docs\n' });
+  f.git(f.work, 'pull', '-q');
+  f.exitWith('homebrew', 3);
+  result = f.install();
+  assert.equal(result.status, 1, output(result));
+  f.calls();
+  assert.equal(f.status().result, 'failed');
+  assert.equal(f.status().failed, 'homebrew');
+  assert.equal(f.applied(), applied, '실패하면 적용 기록을 옮기지 않음');
+  f.exitWith('homebrew', null);
+  result = f.update();
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.calls(), ['homebrew 0'], '설치에서 실패한 단계를 다시 실행');
+  assert.equal(f.status().result, 'ok');
+  assert.equal(f.applied(), f.head());
+});

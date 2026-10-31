@@ -143,9 +143,10 @@ for name in $(all_steps); do
 done
 
 # 전체 설치가 실패 없이 끝나면 이 커밋까지 적용한 것으로 기록한다. 자동 갱신은 여기부터 바뀐 것만 실행한다.
-if [[ -z "$only" && "$DRY_RUN" != 1 && -z "$failed" ]]; then
-  mark_applied "$start_head"
-  rm -f "$BOOTSTRAP_UPDATE_STATE/status"
+# 실패·대기 단계는 자동 갱신과 같은 상태 파일에 남긴다. ./bootstrap.sh update가 이어서 다시 실행한다.
+if [[ -z "$only" && "$DRY_RUN" != 1 ]]; then
+  [[ -n "$failed" ]] || mark_applied "$start_head"
+  settle "${failed# }" "${pending# }" >/dev/null
 fi
 
 doctor_status=0
