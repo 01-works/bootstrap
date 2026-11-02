@@ -13,7 +13,7 @@ const mode = path => statSync(path).mode & 0o777;
 const read = path => existsSync(path) ? readFileSync(path, 'utf8') : null;
 
 // 샌드박스 저장소와 임시 HOME. 실제 role.sh를 쓰고 lib.sh 끝에 대역(원격 로그인·기기 종류·colima)을 붙인다.
-// launch-agents.mjs는 대역으로 바꿔 받은 인자만 기록한다. 실제 launchctl·홈·colima는 건드리지 않는다.
+// launch-agents.mjs는 대역으로 바꿔 받은 인자만 기록한다. 실제 launchctl·홈·brew services·colima·Docker는 건드리지 않는다.
 function sandbox(t) {
   const root = mkdtempSync(join(tmpdir(), 'bootstrap-role-test-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -23,7 +23,42 @@ function sandbox(t) {
   writeFileSync(join(root, 'scripts/lib.sh'), readFileSync(join(repo, 'scripts/lib.sh'), 'utf8') + `
 sharing_enabled() { [[ "$1" == com.openssh.sshd && ! -e "$MOCK/sshd-off" ]]; }
 is_laptop() { return 1; }
-colima() { [[ "$1" == status && -e "$MOCK/colima-running" ]]; }
+has() {
+  case "$1" in brew|docker) [[ ! -e "$MOCK/$1-missing" ]] ;; *) command -v "$1" >/dev/null 2>&1 ;; esac
+}
+colima() {
+  printf '%s\\n' "$*" >>"$MOCK/colima-calls"
+  [[ "$1" == status && -e "$MOCK/colima-running" ]]
+}
+brew() {
+  printf '%s\\n' "$*" >>"$MOCK/brew-calls"
+  case "$*" in
+    'services info colima --json')
+      [[ ! -e "$MOCK/info-fail" ]] || return 1
+      if [[ -e "$MOCK/info-json" ]]; then cat "$MOCK/info-json"; return; fi
+      local registered=false
+      [[ ! -e "$MOCK/registered" ]] || registered=true
+      printf '[{"name":"colima","registered":%s,"running":false,"file":"%s/Library/LaunchAgents/sh.brew.colima.plist"}]\\n' "$registered" "$HOME"
+      ;;
+    'services start colima')
+      [[ ! -e "$MOCK/start-fail" ]] || return 1
+      # 소유 기록과 메모리를 start 전에 남겼는지 확인한다.
+      grep -qx 'colima_service=role' "$HOME/.config/bootstrap/roles/verifier" || return 99
+      cp "$HOME/.colima/default/colima.yaml" "$MOCK/config-at-start"
+      [[ -e "$MOCK/start-noop" ]] || touch "$MOCK/registered"
+      [[ ! -e "$MOCK/start-partial" ]]
+      ;;
+    'services stop colima')
+      [[ ! -e "$MOCK/stop-fail" ]] || return 1
+      [[ -e "$MOCK/stop-noop" ]] || rm -f "$MOCK/registered"
+      ;;
+    *) return 99 ;;
+  esac
+}
+docker() {
+  printf '%s context=%s host=%s tls=%s cert=%s\\n' "$*" "\${DOCKER_CONTEXT:-}" "\${DOCKER_HOST:-}" "\${DOCKER_TLS_VERIFY:-}" "\${DOCKER_CERT_PATH:-}" >>"$MOCK/docker-calls"
+  [[ "$1" == --host && "$3" == info && ! -e "$MOCK/docker-off" ]]
+}
 `);
   writeFileSync(join(root, 'scripts/launch-agents.mjs'), `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
@@ -52,6 +87,8 @@ process.exitCode = code ? Number(readFileSync(code, 'utf8')) : 0;
     role: (...args) => spawnSync('/bin/bash', [join(repo, 'scripts/role.sh'), ...args], { env, encoding: 'utf8' }),
     // 대역 launch-agents.mjs가 받은 호출을 돌려주고 비운다.
     agents() { const lines = (read(join(mock, 'agents')) || '').split('\n').filter(Boolean); rmSync(join(mock, 'agents'), { force: true }); return lines; },
+    calls(name) { const lines = (read(join(mock, `${name}-calls`)) || '').split('\n').filter(Boolean); rmSync(join(mock, `${name}-calls`), { force: true }); return lines; },
+    serviceChanges() { return this.calls('brew').filter(line => !line.startsWith('services info ')); },
     stateOf: () => Object.fromEntries((read(paths.state) || '').split('\n').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])),
     memory: () => /^memory: (\S+)$/m.exec(readFileSync(colima, 'utf8'))[1],
   };
@@ -438,4 +475,177 @@ test('대기(2) 메시지에 실제로 남은 자동 시작 이름을 쓴다', t
   assert.equal(result.status, 2, out(result));
   assert.match(result.stderr, /실행 중이라 등록이 남은 자동 시작: paseo\./);
   assert.doesNotMatch(result.stderr, /에이전트 Chrome이 실행 중/);
+});
+
+
+test('colima 자동 시작: 메모리·소유 기록 후 한 번 등록, add·apply-active 재적용은 실행 중인 VM을 재시작하지 않는다', t => {
+  const f = sandbox(t);
+  writeFileSync(join(f.mock, 'colima-running'), '');
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().colima_service, 'role');
+  assert.equal(existsSync(join(f.mock, 'registered')), true);
+  assert.equal(readFileSync(join(f.mock, 'config-at-start'), 'utf8'), COLIMA.replace('memory: 2', 'memory: 6'));
+  assert.deepEqual(f.serviceChanges(), ['services start colima']);
+  const before = tree(f.home);
+  for (const args of [['add', 'verifier'], ['apply-active']]) {
+    result = f.role(...args);
+    assert.equal(result.status, 0, out(result));
+    assert.deepEqual(tree(f.home), before);
+    assert.deepEqual(f.serviceChanges(), [], '기등록 서비스에 start·restart·stop 없음');
+  }
+  assert.deepEqual(f.calls('colima'), ['status'], '메모리 변경 때 조회만 했고 VM 조작 없음');
+  result = f.role('remove', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.deepEqual(f.serviceChanges(), ['services stop colima']);
+  assert.equal(existsSync(join(f.mock, 'registered')), false);
+  assert.equal(existsSync(f.state), false);
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.deepEqual(f.serviceChanges(), []);
+});
+
+test('기존 등록은 실행 여부와 무관하게 보존하고 구버전 역할 파일도 기존 서비스로 기록한다', t => {
+  const f = sandbox(t);
+  writeFileSync(join(f.mock, 'registered'), 'user service');
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().colima_service, 'existing');
+  assert.equal(f.role('add', 'verifier').status, 0);
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.deepEqual(f.serviceChanges(), []);
+  assert.equal(readFileSync(join(f.mock, 'registered'), 'utf8'), 'user service');
+
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  writeFileSync(f.state, readFileSync(f.state, 'utf8').replace(/^colima_service=.*\n/m, ''));
+  assert.equal(f.role('status', 'verifier').status, 1, '자동 시작 소유 기록 없는 구버전 상태는 재적용 필요');
+  result = f.role('apply-active');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().colima_service, 'existing');
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.deepEqual(f.serviceChanges(), []);
+});
+
+test('기존 등록이 사라지면 재적용으로 만든 서비스부터 role 소유가 된다', t => {
+  const f = sandbox(t);
+  writeFileSync(join(f.mock, 'registered'), '');
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  rmSync(join(f.mock, 'registered'));
+  assert.equal(f.role('apply-active').status, 0);
+  assert.equal(f.stateOf().colima_service, 'role');
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.deepEqual(f.serviceChanges(), ['services start colima', 'services stop colima']);
+});
+
+test('colima 서비스 등록·해제 실패나 성공 코드만 준 무변경을 감지하며 소유 기록으로 재시도한다', t => {
+  for (const failure of ['start-fail', 'start-noop', 'start-partial']) {
+    const f = sandbox(t);
+    writeFileSync(join(f.mock, failure), '');
+    let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+    assert.equal(result.status, 1, out(result));
+    assert.equal(f.stateOf().colima_service, 'role');
+    assert.match(result.stderr, /등록 실패/);
+    rmSync(join(f.mock, failure));
+    result = f.role('add', 'verifier');
+    assert.equal(result.status, 0, out(result));
+    assert.equal(f.stateOf().colima_service, 'role', '실패 뒤 생긴 등록을 기존 것으로 오인하지 않음');
+    for (const stop of ['stop-fail', 'stop-noop', 'info-fail']) {
+      writeFileSync(join(f.mock, stop), '');
+      result = f.role('remove', 'verifier');
+      assert.equal(result.status, 1, out(result));
+      assert.equal(f.stateOf().colima_service, 'role');
+      assert.equal(existsSync(f.auth), true, '실패하면 키·상태를 지우기 전에 멈춤');
+      rmSync(join(f.mock, stop));
+    }
+    assert.equal(f.role('remove', 'verifier').status, 0);
+    assert.equal(existsSync(f.state), false);
+    assert.equal(existsSync(join(f.mock, 'registered')), false);
+  }
+});
+
+test('colima 서비스 조회 실패·잘못된 JSON·root 서비스·brew 없음은 미등록으로 오인해 덮어쓰지 않는다', t => {
+  const f = sandbox(t);
+  for (const [marker, content] of [
+    ['info-fail', ''], ['brew-missing', ''], ['info-json', 'not JSON'],
+    ['info-json', '[]'], ['info-json', '[{"name":"colima","registered":"false"}]'],
+    ['info-json', JSON.stringify([{ name: 'colima', registered: true, user: 'root', file: '/Library/LaunchDaemons/sh.brew.colima.plist' }])],
+    ['info-json', JSON.stringify([{ name: 'colima', registered: true, file: '/other/sh.brew.colima.plist' }])],
+  ]) {
+    writeFileSync(join(f.mock, marker), content);
+    const before = tree(f.home);
+    const result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+    assert.equal(result.status, 1, out(result));
+    assert.match(result.stderr, /자동 시작 설정 조회 실패/);
+    assert.deepEqual(tree(f.home), before);
+    assert.deepEqual(f.serviceChanges(), []);
+    rmSync(join(f.mock, marker));
+  }
+});
+
+test('status는 자동 시작 등록과 현재 Docker 응답을 분리하며 실패 1이 수동 대기 2보다 우선한다', t => {
+  const f = sandbox(t);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  f.serviceChanges();
+  let result = f.role('status', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.match(result.stdout, /colima 자동 시작 설정: 등록됨/);
+  assert.match(result.stdout, /지금 Docker 응답: 정상/);
+  writeFileSync(join(f.mock, 'docker-off'), '');
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stdout, /colima 자동 시작 설정: 등록됨/);
+  assert.match(result.stderr, /지금 Docker 응답: 없음/);
+  writeFileSync(join(f.mock, 'sshd-off'), '');
+  assert.equal(f.role('status', 'verifier').status, 1, '실행 실패가 수동 대기보다 우선');
+  rmSync(join(f.mock, 'docker-off'));
+  rmSync(join(f.mock, 'sshd-off'));
+  rmSync(join(f.mock, 'registered'));
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /colima 자동 시작 설정: 미등록/);
+  assert.match(result.stdout, /지금 Docker 응답: 정상/, 'Docker 응답만으로 준비 완료는 아님');
+  assert.deepEqual(f.serviceChanges(), [], 'status는 서비스를 고치지 않는다');
+  assert.equal(f.role('add', 'verifier').status, 0);
+  for (const marker of ['info-fail', 'brew-missing', 'docker-missing']) {
+    writeFileSync(join(f.mock, marker), '');
+    assert.equal(f.role('status', 'verifier').status, 1, marker);
+    rmSync(join(f.mock, marker));
+  }
+});
+
+test('Docker 검사는 다른 context·host·TLS 설정을 무시하고 COLIMA_HOME의 기본 소켓을 쓴다', t => {
+  const f = sandbox(t);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  const custom = join(f.root, 'custom colima');
+  mkdirSync(join(custom, 'default'), { recursive: true });
+  copyFileSync(f.colima, join(custom, 'default/colima.yaml'));
+  Object.assign(f.env, { COLIMA_HOME: custom, DOCKER_CONTEXT: 'remote', DOCKER_HOST: 'tcp://remote:2376',
+    DOCKER_TLS_VERIFY: '1', DOCKER_CERT_PATH: '/remote/certs' });
+  const result = f.role('status', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.deepEqual(f.calls('docker'), [`--host unix://${custom}/default/docker.sock info context= host= tls= cert=`]);
+});
+
+test('인스턴스 없음은 수동 대기 2로 두고 준비 후 등록하며 dry-run은 서비스도 바꾸지 않는다', t => {
+  const f = sandbox(t);
+  rmSync(join(f.home, '.colima'), { recursive: true });
+  writeFileSync(join(f.mock, 'docker-off'), '');
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 2, out(result));
+  assert.deepEqual(f.serviceChanges(), [], '설정 없이 기본 VM을 자동 생성하지 않음');
+  assert.equal(f.role('status', 'verifier').status, 2);
+  mkdirSync(join(f.colima, '..'), { recursive: true });
+  writeFileSync(f.colima, COLIMA);
+  result = f.role('add', 'verifier', '--dry-run');
+  assert.equal(result.status, 0, out(result));
+  assert.match(result.stdout, /\[dry-run\] colima 자동 시작 설정: brew services start colima/);
+  assert.deepEqual(f.serviceChanges(), []);
+  assert.equal(f.role('add', 'verifier').status, 0);
+  assert.deepEqual(f.serviceChanges(), ['services start colima']);
+  const before = tree(f.home);
+  result = f.role('remove', 'verifier', '--dry-run');
+  assert.equal(result.status, 0, out(result));
+  assert.match(result.stdout, /\[dry-run\] colima 자동 시작 설정: brew services stop colima/);
+  assert.deepEqual(f.serviceChanges(), []);
+  assert.deepEqual(tree(f.home), before);
+  assert.equal(existsSync(join(f.mock, 'registered')), true);
 });
