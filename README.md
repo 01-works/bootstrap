@@ -104,6 +104,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 켜면 하는 일 (여러 번 실행해도 같다):
 
 - colima 메모리: `~/.colima/default/colima.yaml`의 `memory:`를 기본 6 GiB로 바꾼다(`--colima-memory`로 변경). 원래 값을 기록한다. 실행 중인 VM은 다시 시작하지 않으므로 다음 시작부터 적용된다. colima 설정이 아직 없으면 `colima start --memory 6`을 한 번 실행한 뒤 다시 켠다.
+- colima 자동 시작: 일반 기기는 수동 시작이 기본이다. verifier role은 `brew services start colima`로 사용자 로그인 서비스를 등록한다(sudo 사용 안 함). 이미 등록돼 있으면 start를 다시 호출하지 않는다. 상태 파일의 `colima_service=role|existing|pending`에 소유 여부를 기록한다. 등록 미시도는 `pending`으로 두고 실제 start 직전에만 `role`로 바꾼다(일부 등록 후 실패해도 복원 가능). `pending` 중 외부에서 등록한 서비스는 remove가 보존하고 재적용하면 `existing`으로 기록한다. 기존 역할 파일은 첫 관측 때 기존 서비스를 보존한다. 인스턴스 설정이 없으면 수동 준비 후 재적용할 때 등록한다. 실행 중인 VM은 재시작하지 않는다.
 - 자동 시작 끄기: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 등록하지 않고 있으면 내린다. 이미 떠 있는 Paseo 데몬과 실행 중인 에이전트 Chrome은 끄지 않는다(이 명령을 Paseo 세션에서 실행할 수 있어서). Chrome은 끝내거나 다음 로그인부터 꺼진다.
 - 로그 디렉터리: `~/.local/state/verifier/logs`(권한 700). 검증을 돌리는 쪽이 여기에 로그를 남긴다. 이 경로가 그쪽과의 약속이다.
 - 읽기 전용 SSH: `~/.ssh/authorized_keys`에 `restrict,command="~/.local/bin/verifier-logs" … bootstrap-role-verifier` 한 줄을 넣는다. 이 키로 접속하면 어떤 명령을 보내도 `verifier-logs`만 실행되고, 로그 디렉터리의 파일을 `ls`, `tail [-n N] <파일>`, `cat <파일>`로만 읽는다. 같은 키가 제한 없는 다른 줄에 있으면 읽기 전용이 되지 않으므로 고치지 않고 실패한다.
@@ -113,7 +114,13 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
   ssh <verifier 기기> tail -n 200 <파일>
   ```
 
-끄면 colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
+끄면 role이 등록한 colima 서비스만 `brew services stop colima`로 해제한다(서비스로 실행 중인 VM도 멈출 수 있음). 기존 서비스나 소유 기록이 없는 구버전 역할의 서비스는 보존한다. 해제 실패 시 소유 기록을 남겨 다시 실행할 수 있다. colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
+
+`role status`는 **colima 자동 시작 설정**과 **지금 Docker 응답**을 따로 보고한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
+
+- **0 준비 완료**: 자동 시작 등록·소유 기록, Docker 응답과 기존 역할 검사가 모두 정상이다. 인자 없는 `role status`는 켠 역할이 없어도 기존처럼 0이다.
+- **2 수동 작업 대기**: colima 인스턴스 설정이 없어 최초 준비가 필요하거나(등록 미시도 `pending` 포함), 원격 로그인이 꺼져 있거나, 실행 중인 에이전트의 등록 해제가 대기 중이다.
+- **1 실패·꺼짐**: 명시한 역할이 꺼져 있거나, 서비스 조회 실패·미등록·소유 기록 누락, 인스턴스가 있는데 Docker 미응답(CLI 없음 포함), 기존 설정 어긋남이다. 등록만으로 실행 준비 완료라고 판정하지 않는다.
 
 사용자 작업:
 

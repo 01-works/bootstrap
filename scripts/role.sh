@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 기기 역할: ./bootstrap.sh role add|status|remove verifier
 # 모든 기기가 같은 세팅이다. 일부 기기에만 필요한 설정은 역할로 켠다 (README "기기 역할"). 지금은 verifier 하나다.
-# verifier: 무거운 검증을 맡는 기기. colima 메모리를 정하고, 에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작을 끄고,
+# verifier: 무거운 검증을 맡는 기기. colima 메모리·로그인 자동 시작을 정하고, 에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작을 끄고,
 #   로그 디렉터리를 만들고, 그 로그만 읽는 SSH 키(강제 명령 verifier-logs)를 등록한다.
 # 켠 역할은 상태 파일(~/.config/bootstrap/roles/<역할>)로 남는다. roles 단계가 저장된 값으로 다시 맞춘다(apply-active).
 # 특정 프로젝트를 알지 않는다. 로그 디렉터리 경로(~/.local/state/verifier/logs)만 로그를 남기는 쪽과의 약속이다.
@@ -18,7 +18,7 @@ usage() {
   ./bootstrap.sh role status [verifier]
                              역할 상태 (0 준비 완료, 2 수동 작업 대기, 1 실패·꺼짐)
   ./bootstrap.sh role remove verifier [--dry-run]
-                             역할 끄기. 바꾼 설정을 되돌리고 자동 시작을 다시 켠다. 남은 로그는 지우지 않는다
+                             역할 끄기. colima 서비스는 소유한 것만 해제하고, 에이전트 자동 시작을 복구한다. 남은 로그는 지우지 않는다
   ./bootstrap.sh role apply-active
                              켠 역할을 저장된 값으로 다시 맞춘다 (roles 단계)
 EOF
@@ -35,6 +35,7 @@ paths() {
   ROLE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles"
   STATE_FILE="$ROLE_DIR/verifier"
   COLIMA_CONFIG="${COLIMA_HOME:-$HOME/.colima}/default/colima.yaml"
+  COLIMA_SOCKET="${COLIMA_HOME:-$HOME/.colima}/default/docker.sock"
   LOG_DIR="$HOME/.local/state/verifier/logs"
   LOGS_SRC="$BOOTSTRAP_ROOT/scripts/verifier-logs.sh"
   LOGS_BIN="$HOME/.local/bin/verifier-logs"
@@ -95,6 +96,79 @@ own_lines_filter() {
 
 colima_memory_now() { awk '/^memory:/ { print $2; exit }' "$COLIMA_CONFIG" 2>/dev/null; }
 colima_running() { has colima && colima status >/dev/null 2>&1; }
+
+# 등록은 실행 여부와 별개다. brew services info의 registered는 plist 존재를 뜻한다.
+# root 서비스는 사용자 로그인 서비스가 아니므로 거부한다. 조회·JSON 실패를 미등록으로 간주하지 않는다.
+colima_service_now() {
+  [[ "$EUID" != 0 ]] && has brew && has node || return 1
+  brew services info colima --json | node -e '
+    const fs = require("node:fs"), path = require("node:path");
+    try {
+      const rows = JSON.parse(fs.readFileSync(0, "utf8"));
+      if (!Array.isArray(rows) || rows.length !== 1 || rows[0].name !== "colima" ||
+          typeof rows[0].registered !== "boolean") throw Error("invalid service info");
+      const service = rows[0];
+      if (service.registered && (service.user === "root" || typeof service.file !== "string" ||
+          path.dirname(service.file) !== path.join(process.env.HOME, "Library/LaunchAgents"))) {
+        throw Error("not a user login service");
+      }
+      console.log(service.registered ? "registered" : "absent");
+    } catch (error) { console.error(error.message); process.exitCode = 1; }
+  '
+}
+
+# 서비스 등록은 한 번만 한다. 이미 등록돼 있으면 start조차 호출하지 않아 실행 중인 VM을 건드리지 않는다.
+# 미시도는 pending으로 두고, 실제 start 직전에만 role 소유를 기록한다. 일부 성공·중단 뒤에도 remove로 복원할 수 있다.
+colima_service_add() {
+  # 소유 판정과 같은 관측값을 사용한다. 그 사이 기존 서비스가 사라졌다면 다음 재적용에서 등록한다.
+  local current="$1" owner="$2"
+  if [[ "$current" == registered ]]; then
+    ok "colima 자동 시작 설정: 등록됨 ($owner)"
+  elif [[ ! -f "$COLIMA_CONFIG" || -z "$(colima_memory_now)" ]]; then
+    warn 'colima 자동 시작 설정: 인스턴스 설정을 먼저 준비한 뒤 ./bootstrap.sh role add verifier'
+    return 2
+  elif ! changing; then
+    dry 'colima 자동 시작 설정: brew services start colima (사용자 서비스)'
+  else
+    # 상태 파일은 add가 먼저 만들었다. 미시도 상태를 원자적으로 바꾼 뒤에만 서비스를 등록한다.
+    if ! write_atomic "$STATE_FILE" 600 sed 's/^colima_service=.*/colima_service=role/' "$STATE_FILE"; then
+      fail 'colima 서비스 소유 기록 저장 실패. 서비스를 등록하지 않았습니다 → 고친 뒤 ./bootstrap.sh role add verifier'
+      return 1
+    fi
+    if brew services start colima && [[ "$(colima_service_now)" == registered ]]; then
+      ok 'colima 자동 시작 설정: 등록함 (role 소유)'
+    else
+      fail 'colima 자동 시작 설정 등록 실패 → 고친 뒤 ./bootstrap.sh role add verifier (소유 기록 보존)'
+      return 1
+    fi
+  fi
+}
+
+colima_service_remove() {
+  local current owner
+  owner="$(state_get colima_service)"
+  if [[ "$owner" != role ]]; then
+    info 'colima 자동 시작 설정: 기존 서비스 보존 (role 소유 아님)'
+    return 0
+  fi
+  current="$(colima_service_now)" || { fail 'colima 자동 시작 설정 조회 실패. 소유 기록을 보존합니다 → 고친 뒤 ./bootstrap.sh role remove verifier'; return 1; }
+  if [[ "$current" == absent ]]; then
+    ok 'colima 자동 시작 설정: 이미 해제됨'
+  elif ! changing; then
+    dry 'colima 자동 시작 설정: brew services stop colima (role이 등록한 서비스만)'
+  elif brew services stop colima && [[ "$(colima_service_now)" == absent ]]; then
+    ok 'colima 자동 시작 설정: role이 등록한 서비스 해제함'
+  else
+    fail 'colima 자동 시작 설정 해제 실패. 소유 기록을 보존합니다 → 고친 뒤 ./bootstrap.sh role remove verifier'
+    return 1
+  fi
+}
+
+# 다른 Docker context나 DOCKER_HOST가 응답한다고 verifier가 준비된 것은 아니다. 기본 colima 소켓을 직접 검사한다.
+colima_docker_ready() {
+  has docker && DOCKER_CONTEXT='' DOCKER_HOST='' DOCKER_TLS_VERIFY='' DOCKER_CERT_PATH='' \
+    docker --host "unix://$COLIMA_SOCKET" info >/dev/null 2>&1
+}
 
 # 최상위 memory: 한 줄만 바꾼다. 같은 디렉터리의 임시 파일에 쓰고 mv로 바꾼다.
 colima_memory_set() {
@@ -167,7 +241,7 @@ agents() {
 }
 
 verifier_add() {
-  local key_file='' memory='' key saved current before added line others r st=0 first=0
+  local key_file='' memory='' key saved current before added line others service owner r st=0 first=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --ssh-key) [[ -n "${2:-}" ]] || { usage; fail '--ssh-key 다음에 공개키 파일이 필요합니다'; return 1; }; key_file="$2"; shift ;;
@@ -209,6 +283,17 @@ verifier_add() {
   fi
   has node || { fail 'Node 없음. ./bootstrap.sh --only runtimes 후 다시 실행하세요'; return 1; }
 
+  # 기존 역할 파일도 처음 관측한 서비스는 기존 것으로 간주한다. 모르는 소유 값은 덮어쓰지 않는다.
+  service="$(colima_service_now)" || { fail 'colima 자동 시작 설정 조회 실패 (brew services info colima --json). 사용자 권한·Homebrew 확인. 고치지 않았습니다'; return 1; }
+  owner="$(state_get colima_service)"
+  case "$owner" in
+    role) ;; # 등록 시도 후 부분 실패의 소유 기록은 유지한다.
+    existing | pending | '')
+      if [[ "$service" == registered ]]; then owner=existing; else owner=pending; fi
+      ;;
+    *) fail '알 수 없는 colima 서비스 소유 기록. 상태 파일을 확인하세요'; return 1 ;;
+  esac
+
   # 상태 파일: 이 파일이 있으면 역할이 켜진 것이다. colima의 원래 값은 처음 본 값 하나만 남긴다(끌 때 되돌림).
   current=''
   [[ -f "$COLIMA_CONFIG" ]] && current="$(colima_memory_now)"
@@ -218,11 +303,11 @@ verifier_add() {
   added="${added:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   if changing; then
     mkdir -p "$ROLE_DIR" || return 1
-    write_atomic "$STATE_FILE" 600 printf 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\n' \
-      "$memory" "$before" "$key" "$added" || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
+    write_atomic "$STATE_FILE" 600 printf 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\ncolima_service=%s\n' \
+      "$memory" "$before" "$key" "$added" "$owner" || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
     ok "verifier 켬 ($(pretty "$STATE_FILE"))"
   else
-    dry "상태 파일 $(pretty "$STATE_FILE") (colima_memory=$memory)"
+    dry "상태 파일 $(pretty "$STATE_FILE") (colima_memory=$memory, colima_service=$owner)"
   fi
 
   # 1. colima 메모리. 인스턴스 설정이 없으면 템플릿 대신 사람에게 맡긴다. colima 0.10은 템플릿을 그대로 쓰므로
@@ -244,6 +329,11 @@ verifier_add() {
     fail "colima 설정을 바꾸지 못했습니다: $(pretty "$COLIMA_CONFIG")"
     st=1
   fi
+
+  # colima 서비스는 메모리 설정 후 등록한다. 새 인스턴스는 기존 수동 준비 절차를 유지한다.
+  r=0
+  colima_service_add "$service" "$owner" || r=$?
+  case "$r" in 0) ;; 2) [[ "$st" == 1 ]] || st=2 ;; *) st=1 ;; esac
 
   # 2. 자동 시작 끄기. 이미 떠 있는 Paseo 데몬은 끄지 않는다(이 명령을 Paseo 세션에서 실행 중일 수 있다).
   r=0
@@ -303,7 +393,7 @@ verifier_add() {
 }
 
 verifier_status() {
-  local bad=0 wait=0 memory current key line others name r
+  local bad=0 wait=0 memory current key line others name service owner r
   s_ok() { ok "$*"; }
   s_bad() { fail "$*"; bad=1; }
   s_wait() { warn "$*"; wait=1; }
@@ -319,6 +409,31 @@ verifier_status() {
   else
     current="$(colima_memory_now)"
     if [[ -n "$memory" && "$current" == "$memory" ]]; then s_ok "colima 메모리 ${memory} GiB"; else s_bad "colima 메모리가 ${current:-없음} (verifier 값 ${memory:-없음}) → ./bootstrap.sh role add verifier"; fi
+  fi
+
+  owner="$(state_get colima_service)"
+  if ! service="$(colima_service_now)"; then
+    s_bad 'colima 자동 시작 설정: 조회 실패 (brew services info colima --json). 사용자 권한·Homebrew 확인'
+  elif [[ "$owner" != role && "$owner" != existing && "$owner" != pending ]]; then
+    s_bad 'colima 자동 시작 설정: 소유 기록 없음 또는 알 수 없음 → ./bootstrap.sh role add verifier'
+  elif [[ "$service" == registered ]]; then
+    if [[ "$owner" == pending ]]; then
+      s_ok 'colima 자동 시작 설정: 등록됨 (role 등록 미시도; 기존 서비스 보존)'
+    else
+      s_ok "colima 자동 시작 설정: 등록됨 ($owner)"
+    fi
+  elif [[ ! -f "$COLIMA_CONFIG" ]]; then
+    s_wait 'colima 자동 시작 설정: 인스턴스 준비 후 ./bootstrap.sh role add verifier'
+  else
+    s_bad 'colima 자동 시작 설정: 미등록 → ./bootstrap.sh role add verifier'
+  fi
+  # 미응답은 준비 완료가 아니다. 인스턴스가 없으면 알려진 수동 준비(2), 나머지는 실행 실패(1).
+  if colima_docker_ready; then
+    s_ok '지금 Docker 응답: 정상 (기본 colima 소켓)'
+  elif [[ ! -f "$COLIMA_CONFIG" ]]; then
+    s_wait "지금 Docker 응답: 없음 → colima start --memory ${memory} 후 ./bootstrap.sh role add verifier"
+  else
+    s_bad '지금 Docker 응답: 없음 (기본 colima 소켓). colima status·Docker CLI·서비스 로그를 확인하세요'
   fi
 
   for name in $VERIFIER_AGENTS; do
@@ -395,6 +510,9 @@ verifier_remove() {
       return 1
     fi
   fi
+
+  # 해제가 실패하면 소유 기록을 지우지 않고 재시도할 수 있게 멈춘다.
+  colima_service_remove || return 1
 
   # 이 역할이 넣은 줄만 지운다. 링크이거나 읽을 수 없으면 알리고 남긴다.
   if [[ -L "$SSH_DIR" || -L "$AUTH_KEYS" ]]; then
