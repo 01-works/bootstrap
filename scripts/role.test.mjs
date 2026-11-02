@@ -36,9 +36,12 @@ brew() {
     'services info colima --json')
       [[ ! -e "$MOCK/info-fail" ]] || return 1
       if [[ -e "$MOCK/info-json" ]]; then cat "$MOCK/info-json"; return; fi
-      local registered=false
-      [[ ! -e "$MOCK/registered" ]] || registered=true
-      printf '[{"name":"colima","registered":%s,"running":false,"file":"%s/Library/LaunchAgents/sh.brew.colima.plist"}]\\n' "$registered" "$HOME"
+      local registered=false file='/opt/homebrew/opt/colima/sh.brew.colima.plist'
+      if [[ -e "$MOCK/registered" ]]; then
+        registered=true
+        file="$HOME/Library/LaunchAgents/sh.brew.colima.plist"
+      fi
+      printf '[{"name":"colima","service_name":"sh.brew.colima","registered":%s,"running":false,"file":"%s"}]\\n' "$registered" "$file"
       ;;
     'services start colima')
       [[ ! -e "$MOCK/start-fail" ]] || return 1
@@ -648,4 +651,70 @@ test('인스턴스 없음은 수동 대기 2로 두고 준비 후 등록하며 d
   assert.deepEqual(f.serviceChanges(), []);
   assert.deepEqual(tree(f.home), before);
   assert.equal(existsSync(join(f.mock, 'registered')), true);
+});
+
+
+test('등록 미시도 뒤 사용자가 등록한 서비스는 remove가 해제하지 않는다', t => {
+  const f = sandbox(t);
+  rmSync(join(f.home, '.colima'), { recursive: true });
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 2, out(result));
+  assert.deepEqual(f.serviceChanges(), [], '인스턴스가 없어 등록하지 않았음');
+  const ownerBefore = f.stateOf().colima_service;
+  writeFileSync(join(f.mock, 'registered'), 'user registered');
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 2, out(result));
+  assert.match(result.stdout, /colima 자동 시작 설정: 등록됨/);
+  result = f.role('remove', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.deepEqual(f.serviceChanges(), [], '외부 등록에 stop을 호출하면 안 됨');
+  assert.equal(readFileSync(join(f.mock, 'registered'), 'utf8'), 'user registered');
+  assert.equal(ownerBefore, 'pending', '미시도는 role 소유가 아님');
+});
+
+test('등록 미시도 뒤 외부 등록을 apply-active가 기존 서비스로 기록하고 이후 remove도 보존한다', t => {
+  const f = sandbox(t);
+  rmSync(join(f.home, '.colima'), { recursive: true });
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 2);
+  assert.deepEqual(f.serviceChanges(), []);
+  writeFileSync(join(f.mock, 'registered'), 'user registered');
+  let result = f.role('apply-active');
+  assert.equal(result.status, 2, out(result));
+  assert.equal(f.stateOf().colima_service, 'existing');
+  assert.deepEqual(f.serviceChanges(), []);
+  mkdirSync(join(f.colima, '..'), { recursive: true });
+  writeFileSync(f.colima, COLIMA);
+  result = f.role('apply-active');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().colima_service, 'existing');
+  assert.equal(f.role('status', 'verifier').status, 0);
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.deepEqual(f.serviceChanges(), []);
+  assert.equal(readFileSync(join(f.mock, 'registered'), 'utf8'), 'user registered');
+});
+
+test('등록 미시도는 status 2·재적용·dry-run에서 pending을 유지하고 실제 start 직전에만 role이 된다', t => {
+  const f = sandbox(t);
+  rmSync(join(f.home, '.colima'), { recursive: true });
+  writeFileSync(join(f.mock, 'docker-off'), '');
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 2);
+  assert.equal(f.stateOf().colima_service, 'pending');
+  let result = f.role('status', 'verifier');
+  assert.equal(result.status, 2, out(result));
+  assert.match(result.stderr, /colima 자동 시작 설정: 인스턴스 준비/);
+  assert.equal(f.role('apply-active').status, 2);
+  assert.equal(f.stateOf().colima_service, 'pending');
+  assert.deepEqual(f.serviceChanges(), []);
+  mkdirSync(join(f.colima, '..'), { recursive: true });
+  writeFileSync(f.colima, COLIMA);
+  assert.equal(f.role('add', 'verifier', '--dry-run').status, 0);
+  assert.equal(f.stateOf().colima_service, 'pending');
+  assert.deepEqual(f.serviceChanges(), []);
+  writeFileSync(join(f.mock, 'start-partial'), '');
+  result = f.role('apply-active');
+  assert.equal(result.status, 1, out(result));
+  assert.equal(f.stateOf().colima_service, 'role', '등록 시도 후 부분 실패의 소유 기록은 보존');
+  assert.deepEqual(f.serviceChanges(), ['services start colima']);
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.deepEqual(f.serviceChanges(), ['services stop colima']);
 });

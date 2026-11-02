@@ -118,7 +118,7 @@ colima_service_now() {
 }
 
 # 서비스 등록은 한 번만 한다. 이미 등록돼 있으면 start조차 호출하지 않아 실행 중인 VM을 건드리지 않는다.
-# 소유 의도는 start 전에 상태 파일에 기록한다. start가 일부만 성공하거나 중단돼도 remove가 복원할 수 있다.
+# 미시도는 pending으로 두고, 실제 start 직전에만 role 소유를 기록한다. 일부 성공·중단 뒤에도 remove로 복원할 수 있다.
 colima_service_add() {
   # 소유 판정과 같은 관측값을 사용한다. 그 사이 기존 서비스가 사라졌다면 다음 재적용에서 등록한다.
   local current="$1" owner="$2"
@@ -129,11 +129,18 @@ colima_service_add() {
     return 2
   elif ! changing; then
     dry 'colima 자동 시작 설정: brew services start colima (사용자 서비스)'
-  elif brew services start colima && [[ "$(colima_service_now)" == registered ]]; then
-    ok 'colima 자동 시작 설정: 등록함 (role 소유)'
   else
-    fail 'colima 자동 시작 설정 등록 실패 → 고친 뒤 ./bootstrap.sh role add verifier (소유 기록 보존)'
-    return 1
+    # 상태 파일은 add가 먼저 만들었다. 미시도 상태를 원자적으로 바꾼 뒤에만 서비스를 등록한다.
+    if ! write_atomic "$STATE_FILE" 600 sed 's/^colima_service=.*/colima_service=role/' "$STATE_FILE"; then
+      fail 'colima 서비스 소유 기록 저장 실패. 서비스를 등록하지 않았습니다 → 고친 뒤 ./bootstrap.sh role add verifier'
+      return 1
+    fi
+    if brew services start colima && [[ "$(colima_service_now)" == registered ]]; then
+      ok 'colima 자동 시작 설정: 등록함 (role 소유)'
+    else
+      fail 'colima 자동 시작 설정 등록 실패 → 고친 뒤 ./bootstrap.sh role add verifier (소유 기록 보존)'
+      return 1
+    fi
   fi
 }
 
@@ -280,12 +287,12 @@ verifier_add() {
   service="$(colima_service_now)" || { fail 'colima 자동 시작 설정 조회 실패 (brew services info colima --json). 사용자 권한·Homebrew 확인. 고치지 않았습니다'; return 1; }
   owner="$(state_get colima_service)"
   case "$owner" in
-    role | existing) ;;
-    '') if [[ "$service" == registered ]]; then owner=existing; else owner=role; fi ;;
+    role) ;; # 등록 시도 후 부분 실패의 소유 기록은 유지한다.
+    existing | pending | '')
+      if [[ "$service" == registered ]]; then owner=existing; else owner=pending; fi
+      ;;
     *) fail '알 수 없는 colima 서비스 소유 기록. 상태 파일을 확인하세요'; return 1 ;;
   esac
-  # 이전에 보존하던 서비스가 사라졌으면 이번 등록부터 role이 소유한다.
-  [[ "$service" != absent ]] || owner=role
 
   # 상태 파일: 이 파일이 있으면 역할이 켜진 것이다. colima의 원래 값은 처음 본 값 하나만 남긴다(끌 때 되돌림).
   current=''
@@ -407,10 +414,14 @@ verifier_status() {
   owner="$(state_get colima_service)"
   if ! service="$(colima_service_now)"; then
     s_bad 'colima 자동 시작 설정: 조회 실패 (brew services info colima --json). 사용자 권한·Homebrew 확인'
-  elif [[ "$owner" != role && "$owner" != existing ]]; then
+  elif [[ "$owner" != role && "$owner" != existing && "$owner" != pending ]]; then
     s_bad 'colima 자동 시작 설정: 소유 기록 없음 또는 알 수 없음 → ./bootstrap.sh role add verifier'
   elif [[ "$service" == registered ]]; then
-    s_ok "colima 자동 시작 설정: 등록됨 ($owner)"
+    if [[ "$owner" == pending ]]; then
+      s_ok 'colima 자동 시작 설정: 등록됨 (role 등록 미시도; 기존 서비스 보존)'
+    else
+      s_ok "colima 자동 시작 설정: 등록됨 ($owner)"
+    fi
   elif [[ ! -f "$COLIMA_CONFIG" ]]; then
     s_wait 'colima 자동 시작 설정: 인스턴스 준비 후 ./bootstrap.sh role add verifier'
   else
