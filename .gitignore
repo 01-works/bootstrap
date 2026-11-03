@@ -5,6 +5,12 @@
 .env.*
 .zsh_secrets
 *.local
+# 예외는 어디서나 쓰는 bootstrap 링크 하나뿐이다. ~/.local의 나머지(상태·인증 등)는 계속 막는다.
+!home/bootstrap/.local/
+home/bootstrap/.local/*
+!home/bootstrap/.local/bin/
+home/bootstrap/.local/bin/*
+!home/bootstrap/.local/bin/bootstrap
 auth.json
 hosts.yml
 id_*

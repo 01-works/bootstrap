@@ -2,7 +2,16 @@
 # 새 Mac 세팅 진입점. 처음이면 README.md의 "새 Mac에서" 순서를 먼저 볼 것.
 set -euo pipefail
 
-BOOTSTRAP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 어디서나 쓰는 ~/.local/bin/bootstrap은 이 파일로 가는 링크다 (dotfiles 단계). 링크를 따라가 저장소 위치를 찾는다.
+# 상대 링크의 ..는 링크가 실제로 있는 폴더 기준이라, 중간 폴더가 링크여도 맞도록 물리 경로(cd -P)로 푼다.
+self="${BASH_SOURCE[0]}"
+while [[ -L "$self" ]]; do
+  link="$(readlink "$self")"
+  [[ "$link" == /* ]] || link="$(cd -P "$(dirname "$self")" && pwd)/$link"
+  self="$link"
+done
+BOOTSTRAP_ROOT="$(cd -P "$(dirname "$self")" && pwd)"
+unset self link
 export BOOTSTRAP_ROOT
 # shellcheck source=scripts/lib.sh
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
