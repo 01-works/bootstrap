@@ -5,6 +5,8 @@
 .env.*
 .zsh_secrets
 *.local
+# ~/.local 폴더는 기기별 파일이 아니다 (~/.local/bin/bootstrap 링크).
+!home/*/.local/
 auth.json
 hosts.yml
 id_*

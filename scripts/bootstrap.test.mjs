@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, statSync, lstatSync, readlinkSync, readdirSync,
-  openSync, readSync, closeSync } from 'node:fs';
+  openSync, readSync, closeSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +43,20 @@ test('전체 실행은 doctor 실패·수동 대기를 보존하고 부분 실�
   assert.equal(existsSync(join(root, 'next-ran')), true);
   writeFileSync(join(root, 'scripts/steps/30-next.sh'), 'exit 1\n');
   assert.equal(run('--only', 'homebrew,next').status, 1, '실패가 대기보다 우선');
+});
+
+test('어디서나 쓰는 bootstrap 링크(상대·연쇄 링크)로 실행해도 저장소 위치를 찾는다', t => {
+  const { root } = sandbox(t);
+  writeFileSync(join(root, 'scripts/steps/10-mock.sh'), 'exit 0\n');
+  // 저장소 안의 링크 home/bootstrap/.local/bin/bootstrap → ../../../../bootstrap.sh, ~/.local/bin/bootstrap → 그 링크
+  mkdirSync(join(root, 'home/bootstrap/.local/bin'), { recursive: true });
+  symlinkSync('../../../../bootstrap.sh', join(root, 'home/bootstrap/.local/bin/bootstrap'));
+  mkdirSync(join(root, 'bin'));
+  symlinkSync(join(root, 'home/bootstrap/.local/bin/bootstrap'), join(root, 'bin/bootstrap'));
+  const result = spawnSync('/bin/bash', [join(root, 'bin/bootstrap'), '--list'], { cwd: tmpdir(), encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /mock/);
+  assert.equal(readlinkSync(join(repo, 'home/bootstrap/.local/bin/bootstrap')), '../../../../bootstrap.sh');
 });
 
 // 원본 단계는 그대로 실행하고 외부 명령만 셸 함수로 대체한다.

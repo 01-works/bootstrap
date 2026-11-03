@@ -71,6 +71,8 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 ./bootstrap.sh --list              # 단계 목록
 ```
 
+`./bootstrap.sh` 대신 어느 폴더에서나 `bootstrap`으로 실행할 수 있다 (예: `bootstrap paseo-upgrade --force`). dotfiles 단계가 `~/.local/bin/bootstrap`을 저장소의 `bootstrap.sh`에 연결한다.
+
 새 도구를 설치했으면 `snapshot`으로 확인하고 Brewfile에 옮겨 적는다. 그래야 다음 기기에도 깔린다.
 
 ## 변경 전파
