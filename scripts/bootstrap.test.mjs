@@ -45,17 +45,21 @@ test('전체 실행은 doctor 실패·수동 대기를 보존하고 부분 실�
   assert.equal(run('--only', 'homebrew,next').status, 1, '실패가 대기보다 우선');
 });
 
-test('어디서나 쓰는 bootstrap 링크(상대·연쇄 링크)로 실행해도 저장소 위치를 찾는다', t => {
+test('어디서나 쓰는 bootstrap 링크(상대·연쇄·폴더 링크, 공백 경로)로 실행해도 저장소 위치를 찾는다', t => {
   const { root } = sandbox(t);
   writeFileSync(join(root, 'scripts/steps/10-mock.sh'), 'exit 0\n');
   // 저장소 안의 링크 home/bootstrap/.local/bin/bootstrap → ../../../../bootstrap.sh, ~/.local/bin/bootstrap → 그 링크
   mkdirSync(join(root, 'home/bootstrap/.local/bin'), { recursive: true });
   symlinkSync('../../../../bootstrap.sh', join(root, 'home/bootstrap/.local/bin/bootstrap'));
-  mkdirSync(join(root, 'bin'));
-  symlinkSync(join(root, 'home/bootstrap/.local/bin/bootstrap'), join(root, 'bin/bootstrap'));
-  const result = spawnSync('/bin/bash', [join(root, 'bin/bootstrap'), '--list'], { cwd: tmpdir(), encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /mock/);
+  mkdirSync(join(root, 'my bin'));
+  symlinkSync(join(root, 'home/bootstrap/.local/bin/bootstrap'), join(root, 'my bin/bootstrap'));
+  // 중간 폴더가 링크면 상대 링크의 ..는 실제 폴더 기준이다
+  symlinkSync(join(root, 'home/bootstrap/.local/bin'), join(root, 'linked bin'));
+  for (const entry of ['my bin/bootstrap', 'linked bin/bootstrap']) {
+    const result = spawnSync('/bin/bash', [join(root, entry), '--list'], { cwd: tmpdir(), encoding: 'utf8' });
+    assert.equal(result.status, 0, `${entry}: ${result.stderr}`);
+    assert.match(result.stdout, /mock/, entry);
+  }
   assert.equal(readlinkSync(join(repo, 'home/bootstrap/.local/bin/bootstrap')), '../../../../bootstrap.sh');
 });
 
