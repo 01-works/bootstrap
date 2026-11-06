@@ -17,6 +17,28 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 - 기본 스킬: Paseo가 `~/.claude/skills/paseo*`(Claude Code)와 `~/.agents/skills/paseo*`에 설치한다. 각 폴더의 `.paseo-managed-files.json`이 Paseo가 관리한다는 표시다. 저장소에 넣지 않는다. 데몬은 이미 설치된 스킬만 자동 갱신하고 처음 설치는 앱 설정(Orchestration skills)에서 해야 해서, `paseo` 단계가 하나도 없을 때만 데몬에 설치를 요청한다(`scripts/paseo-skills.mjs`). 앱의 내부 모듈을 쓰므로 Paseo 버전이 바뀌어 실패하면 앱 설정에서 설치한다. 앱에서 스킬을 하나도 고르지 않은 기기는 그대로 둔다. 앱의 제거(Uninstall)만 하면 다음 `paseo` 단계가 다시 설치하므로, 빼려면 선택을 비운다.
 - 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md)는 이 저장소에서 관리한다. `paseo` 단계가 같은 원본 폴더를 `~/.agents/skills/yw-supervisor`와 `~/.claude/skills/yw-supervisor`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
 
+## Claude API 키와 프로필
+
+기존 `claude-api` provider의 키를 바꾸려면 터미널에서 실행한다.
+
+```sh
+python3 ~/dev/bootstrap/scripts/paseo-api-key.py
+```
+
+새 키를 숨김 입력으로 받아 로컬 Paseo의 `config.json`에서 해당 provider의 `ANTHROPIC_API_KEY`만 교체한다. 다른 설정을 보존하고 파일 권한을 600으로 설정한 뒤 `paseo reload`를 실행한다. 새 키는 해당 API provider로 새 에이전트를 시작해서 사용한다. 키를 명령 인자나 저장소에 넣지 않는다.
+
+키를 병행하려면 별도 provider와 선택용 프로필을 함께 만든다. 아래 명령은 두 번째 키를 입력받은 뒤에만 저장한다. 기존 `claude-api`의 키와 프로필은 유지된다.
+
+```sh
+python3 ~/dev/bootstrap/scripts/paseo-api-key.py --create --provider claude-api-2 --profile-name 'Claude API 2'
+```
+
+Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해당 키를 사용한다. 새 프로필은 모델·모드·추론 수준을 고정하지 않으므로 생성 화면에서 선택한다. 이후 두 번째 키를 교체할 때는 `--provider claude-api-2`만 지정한다. 기존 provider에도 `--profile-name '원하는 이름'`을 붙이면 선택용 프로필을 추가할 수 있고, 이미 있는 프로필의 모델·모드 등은 보존한다. 같은 이름이 다른 provider에 쓰이면 중단한다.
+
+기본 home은 `PASEO_HOME`, 없으면 `~/.paseo`다. 다른 로컬 home은 `--home <경로>`, 파일만 저장하려면 `--no-reload`를 쓴다. reload 실패 시 키는 저장된 상태로 남으며 스크립트가 실패를 알린다. 이 스크립트는 수동 실행용이며 bootstrap 설치·자동 갱신 과정에서 키를 요구하지 않는다. 키와 개인 API 프로필은 각 기기에만 저장하며 공유 프로필 manifest에는 넣지 않는다. ZeroSub 구독 계정 전환과는 별개로, API 키 사이의 자동 전환은 하지 않는다.
+
+검증: `python3 scripts/paseo-api-key.test.py` (가짜 키·임시 home·reload 대역만 사용).
+
 ## 프로필
 
 중요한 판단과 시각적 완성도가 중요한 UI 구현은 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.1 Sol에 맡긴다. Opus 한도 소진·접속 불가 시에만 Astra 대체 프로필을 선택한다.
