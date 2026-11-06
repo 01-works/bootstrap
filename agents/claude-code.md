@@ -17,6 +17,8 @@
 
 링크된 파일이라 Claude Code가 `settings.json`에 저장한 변경은 저장소에도 바로 반영된다. `git diff`로 확인하고 커밋한다.
 
+공통 설정은 `gh pr merge`를 묻지 않고 허용한다. 이 저장소는 `main`이 모든 기기에서 자동 실행되므로 저장소의 [`.claude/settings.json`](../.claude/settings.json)이 같은 명령을 `ask`로 덮어, 이 저장소 안에서 merge할 때는 사람이 확인한다(ask가 allow보다 우선). 다른 폴더에서 `-R`로 merge하는 경우는 막지 않는다.
+
 Claude Code가 `settings.json`을 저장하면서 링크를 일반 파일로 바꿔 버릴 수도 있다. `./bootstrap.sh doctor`가 "링크가 아니라 일반 파일"이라고 알려주면, 바뀐 내용을 저장소 파일에 옮기고 `./bootstrap.sh --only dotfiles`로 다시 연결한다.
 
 ## 로그인
