@@ -166,9 +166,10 @@ owner_v2() {
 }
 
 # 회수·이어받기 기록: 기록 파일과 stderr에 한 줄. 기록에 실패해도 계속한다.
+# task 등은 /tmp의 표지·owner 파일에서 읽은 값이라 제어 문자와 $·`를 지운다 (한 줄 유지, 기록을 읽는 셸 보호).
 note() {
   local msg
-  msg="$(date -u +%Y-%m-%dT%H:%M:%SZ) $* by=$$:${ID:--}"
+  msg="$(printf '%s' "$(date -u +%Y-%m-%dT%H:%M:%SZ) $* by=$$:${ID:--}" | LC_ALL=C tr -d '\000-\037\177$`')"
   say "$msg"
   { printf '%s\n' "$msg" >>"$LOG"; } 2>/dev/null || true
 }

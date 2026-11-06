@@ -143,6 +143,10 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   f.push({ 'scripts/verifier-logs.sh': '# verifier-logs\n' });
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['roles 1'], '읽기 전용 SSH 강제 명령도 roles 단계');
+
+  f.push({ 'home/한글 파일': 'x\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['dotfiles 1'], '비ASCII 경로도 따옴표 없이 경로 규칙과 비교');
 });
 
 test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 실행하면 다시 실행한다', t => {
@@ -222,6 +226,31 @@ test('받은 커밋의 update.sh 규칙으로 단계를 고른다', t => {
   assert.deepEqual(f.calls(), ['dotfiles 1']);
   assert.equal((result.stdout.match(/^\[\d{4}-/gm) || []).length, 1, '다시 시작해도 시각은 한 번만 기록');
   assert.ok(!existsSync(join(f.root, 'state/bootstrap/lock')), '다시 시작한 뒤에도 잠금을 푼다');
+});
+
+test('실행 중에 이 기기로 들어온 커밋은 적용 기록에 넣지 않고 다음 갱신이 실행한다', t => {
+  const f = fixture(t);
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  // $MOCK/land가 있으면 dotfiles 단계가 도는 동안 이 기기에서 home/ 변경을 커밋한다.
+  const land = 'if [[ -f "$MOCK/land" ]]; then rm "$MOCK/land"; echo x >>"$BOOTSTRAP_ROOT/home/landed"\n' +
+    '  git -C "$BOOTSTRAP_ROOT" add home/landed && git -C "$BOOTSTRAP_ROOT" commit -q -m landed; fi\n';
+  f.push({ 'scripts/steps/40-dotfiles.sh': mockStep('dotfiles').replace('exit ', land + 'exit ') });
+  writeFileSync(join(f.mock, 'land'), '');
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['dotfiles 1']);
+  assert.notEqual(f.head(), f.remoteHead(), '실행 중에 커밋이 들어옴');
+  assert.equal(f.applied(), f.remoteHead(), '시작한 커밋까지만 적용으로 기록');
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['dotfiles 1'], '들어온 커밋의 단계는 다음 갱신이 실행');
+  assert.equal(f.applied(), f.head());
+
+  const start = f.head();
+  writeFileSync(join(f.mock, 'land'), '');
+  assert.equal(f.install().status, 0);
+  f.calls();
+  assert.notEqual(f.head(), start);
+  assert.equal(f.applied(), start, '전체 설치도 시작한 커밋을 기록');
 });
 
 test('Homebrew 자체가 실패하면 실행하지 못한 뒤 단계도 실패로 남긴다', t => {
@@ -320,4 +349,38 @@ test('전체 설치가 끝나면 적용 기록을 남겨 자동 갱신이 다시
   assert.equal(f.applied(), f.head());
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), []);
+});
+
+test('전체 설치의 실패·대기는 상태로 남겨 터미널의 update가 이어서 다시 실행한다', t => {
+  const f = fixture(t);
+  f.exitWith('power', 2);
+  let result = f.install();
+  assert.equal(result.status, 2, output(result));
+  f.calls();
+  assert.equal(f.status().result, 'pending');
+  assert.equal(f.status().pending, 'power');
+  assert.equal(f.applied(), f.head(), '대기는 적용 기록을 막지 않음');
+  f.exitWith('power', null);
+  result = f.update();
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.calls(), ['power 0'], '설치에서 대기로 남은 단계를 다시 실행');
+  assert.equal(f.status().result, 'ok');
+
+  // 적용 기록이 있는 기기에서 전체 설치가 부분 실패하면 기록은 그대로 두고 실패를 남긴다.
+  const applied = f.applied();
+  f.push({ 'README.md': 'docs\n' });
+  f.git(f.work, 'pull', '-q');
+  f.exitWith('homebrew', 3);
+  result = f.install();
+  assert.equal(result.status, 1, output(result));
+  f.calls();
+  assert.equal(f.status().result, 'failed');
+  assert.equal(f.status().failed, 'homebrew');
+  assert.equal(f.applied(), applied, '실패하면 적용 기록을 옮기지 않음');
+  f.exitWith('homebrew', null);
+  result = f.update();
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.calls(), ['homebrew 0'], '설치에서 실패한 단계를 다시 실행');
+  assert.equal(f.status().result, 'ok');
+  assert.equal(f.applied(), f.head());
 });
