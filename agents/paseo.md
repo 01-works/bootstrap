@@ -106,7 +106,7 @@ node scripts/paseo-profiles.mjs --update
 | 플러그인 | 기능 | 소스 | 버전 |
 |---|---|---|---|
 | mac-monitor | 시스템 지표·상위 앱·프로세스 종료·정리 검사 | `github:01-works/paseo-plugin:mac-monitor` | `ref` (커밋) |
-| agent-list | 현재 워크스페이스의 에이전트 목록·검색·대화 이동·닫기·오래된 대화 정리 | `github:01-works/paseo-plugin:agent-list` | `ref` (커밋) |
+| agent-list | 현재 워크스페이스의 에이전트 목록·검색·대화 이동·닫기, 이어진 대화 묶기·작업 이름 정리·오래된 대화 정리 | `github:01-works/paseo-plugin:agent-list` | `ref` (커밋) |
 | ZeroSub | Claude·ChatGPT 구독 계정 선택·한도 도달 시 전환 (Kapybara 배포) | `kapybara-org/zerosub` (Paseo 레지스트리) | `version` |
 
 `paseo` 단계가 하는 일:
