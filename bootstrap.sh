@@ -124,6 +124,9 @@ if [[ "$DRY_RUN" != 1 && -t 0 ]] && { contains homebrew $selected || contains po
   while kill -0 "$$" 2>/dev/null; do sudo -n true; sleep 50; done >/dev/null 2>&1 &
 fi
 
+# 적용 기록에는 이 실행을 시작한 커밋을 남긴다. 실행 중에 이 기기로 들어온 커밋은 다음 갱신이 적용한다.
+start_head="$(git -C "$BOOTSTRAP_ROOT" rev-parse HEAD 2>/dev/null || true)"
+
 # 종료 코드: 0 완료, 1 실패, 2 수동 작업 대기. 단계의 3은 부분 실패(계속 진행 후 최종 실패).
 failed=''
 pending=''
@@ -142,6 +145,15 @@ for name in $(all_steps); do
   fi
   if [[ "$status" != 3 ]] && contains "$name" preflight xcode homebrew; then
     fail "'$name' 단계에서 멈췄습니다. 뒤 단계가 이 단계에 기댑니다. 고친 뒤: ./bootstrap.sh --only $name"
+    # 전체 설치면 멈춘 단계와 실행하지 못한 뒤 단계도 실패로 남긴다 (preflight는 갱신이 fetch로 대신 확인한다).
+    if [[ -z "$only" && "$DRY_RUN" != 1 ]]; then
+      reached=0
+      for later in $(all_steps); do
+        [[ "$later" == "$name" ]] && reached=1
+        [[ "$reached" == 1 && "$later" != preflight ]] && failed="$failed $later"
+      done
+      settle "${failed# }" "${pending# }" >/dev/null
+    fi
     exit 1
   fi
   fail "'$name' 단계 실패. 나머지 단계는 계속합니다"
@@ -149,9 +161,10 @@ for name in $(all_steps); do
 done
 
 # 전체 설치가 실패 없이 끝나면 이 커밋까지 적용한 것으로 기록한다. 자동 갱신은 여기부터 바뀐 것만 실행한다.
-if [[ -z "$only" && "$DRY_RUN" != 1 && -z "$failed" ]]; then
-  mark_applied
-  rm -f "$BOOTSTRAP_UPDATE_STATE/status"
+# 실패·대기 단계는 자동 갱신과 같은 상태 파일에 남긴다. ./bootstrap.sh update가 이어서 다시 실행한다.
+if [[ -z "$only" && "$DRY_RUN" != 1 ]]; then
+  [[ -n "$failed" ]] || mark_applied "$start_head"
+  settle "${failed# }" "${pending# }" >/dev/null
 fi
 
 doctor_status=0
