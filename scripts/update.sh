@@ -126,6 +126,22 @@ hold() {
   notify "held|$1" 'bootstrap 갱신 보류' "$2 → $3" push
 }
 
+# 키 순서·들여쓰기만 HEAD와 다른 JSON 파일 (한 줄에 하나). Node가 없으면 고르지 않는다.
+# ~/.claude/settings.json은 저장소 파일 링크라, Claude Code가 설정을 다시 쓰며 키 순서만 바꿔도 커밋 안 된 변경이 된다.
+reordered_json() {
+  has node || return 0
+  local path
+  git_ diff --name-only HEAD -- '*.json' | while IFS= read -r path; do
+    git_ show "HEAD:$path" 2>/dev/null | node -e '
+      const fs = require("fs");
+      const sort = v => Array.isArray(v) ? v.map(sort) : v && typeof v === "object"
+        ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sort(v[k])])) : v;
+      const norm = text => JSON.stringify(sort(JSON.parse(text)));
+      try { process.exit(norm(fs.readFileSync(0, "utf8")) === norm(fs.readFileSync(process.argv[1], "utf8")) ? 0 : 1); }
+      catch { process.exit(1); }' "$BOOTSTRAP_ROOT/$path" && printf '%s\n' "$path"
+  done
+}
+
 # --auto는 할 일이 있을 때만 시각과 함께 기록한다 (update.log). 아무것도 안 한 확인은 남기지 않는다.
 header() {
   [[ "$AUTO" == 1 && "$HEADER_DONE" == 0 ]] || return 0
@@ -199,6 +215,23 @@ main() {
   if [[ "$behind" != 0 && "$ahead" != 0 ]]; then
     hold diverged "이 기기의 커밋과 원격 커밋($remote)이 갈라졌습니다" "git -C $repo pull --rebase 후 push"
     return
+  fi
+  # 새 커밋을 받아야 하는데 내용이 같은 JSON만 걸려 있으면 HEAD로 되돌리고 받는다. 잃는 설정이 없다.
+  if [[ "$behind" != 0 && -n "$dirty" ]]; then
+    local path excludes=()
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      header
+      if [[ "$DRY_RUN" == 1 ]]; then
+        info "[dry-run] 키 순서만 바뀐 $path 되돌리기"
+      else
+        git_ checkout HEAD -- "$path" && info "키 순서만 바뀐 $path 되돌림"
+      fi
+      excludes+=(":(exclude)$path")
+    done <<<"$(reordered_json)"
+    if ((${#excludes[@]})); then
+      dirty="$(git_ status --porcelain --untracked-files=no -- . "${excludes[@]}")"
+    fi
   fi
   if [[ "$behind" != 0 && -n "$dirty" ]]; then
     hold dirty "커밋 안 된 변경이 있어 새 커밋($remote)을 받지 않았습니다" "git -C $repo status 로 확인하고 커밋·push 또는 되돌리기"
