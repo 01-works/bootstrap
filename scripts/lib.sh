@@ -62,7 +62,7 @@ ensure_standalone_uv() {
   ok 'uv 공식 바이너리 설치됨 (셸 설정 유지)'
 }
 
-# $HOME을 ~로 줄여서 보여준다.
+# ${HOME}을 ~로 줄여서 보여준다.
 pretty() {
   case "$1" in
     "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;
@@ -108,11 +108,40 @@ no_restart_flag() { if unattended; then printf '%s' --no-restart; fi; }
 # 자동 갱신 상태 (scripts/update.sh). applied는 이 기기에 마지막으로 적용한 커밋.
 BOOTSTRAP_UPDATE_STATE="$BOOTSTRAP_STATE/update"
 
-# 이 기기에 저장소의 현재 커밋까지 적용했다고 기록한다 (전체 설치·갱신 성공).
+# 이 기기에 저장소의 커밋까지 적용했다고 기록한다 (전체 설치·갱신 성공): mark_applied [실행을 시작한 커밋]
+# 실행 중에 이 기기로 커밋·pull이 들어와도 그 커밋의 단계를 건너뛰지 않게 시작한 커밋을 넘긴다. 없으면 지금 HEAD.
 mark_applied() {
-  local head
-  head="$(git -C "$BOOTSTRAP_ROOT" rev-parse HEAD 2>/dev/null)" || return 0
+  local head="${1:-}"
+  [[ -n "$head" ]] || head="$(git -C "$BOOTSTRAP_ROOT" rev-parse HEAD 2>/dev/null)" || return 0
   mkdir -p "$BOOTSTRAP_UPDATE_STATE" && printf '%s\n' "$head" >"$BOOTSTRAP_UPDATE_STATE/applied"
+}
+
+# 자동 갱신 상태 파일 (doctor·새 터미널이 읽는다): write_update_status <결과> <실패 단계> <대기 단계> <새 터미널에 보일 한 줄>
+# paseo-upgrade.sh에는 자기 상태 파일을 쓰는 write_status가 따로 있어 이름을 나눈다.
+write_update_status() {
+  [[ "$DRY_RUN" == 1 ]] && return 0
+  mkdir -p "$BOOTSTRAP_UPDATE_STATE"
+  printf 'result=%s\ncommit=%s\nat=%s\nfailed=%s\npending=%s\nbanner=%s\n' \
+    "$1" "$(git -C "$BOOTSTRAP_ROOT" rev-parse --short HEAD 2>/dev/null)" "$(date +%s)" "$2" "$3" "$4" >"$BOOTSTRAP_UPDATE_STATE/status.tmp"
+  mv "$BOOTSTRAP_UPDATE_STATE/status.tmp" "$BOOTSTRAP_UPDATE_STATE/status"
+}
+
+# 실패·대기 단계로 결과를 정해 기록하고 결과 이름을 출력한다: settle <실패 단계> <대기 단계>
+# 갱신(update.sh)과 전체 설치(bootstrap.sh)가 같이 쓴다. ./bootstrap.sh update가 실패·대기 단계를 이어서 다시 실행한다.
+settle() {
+  local repo log=''
+  repo="$(pretty "$BOOTSTRAP_ROOT")"
+  [[ "${AUTO:-0}" == 1 ]] && log=" (기록: $(pretty "$BOOTSTRAP_UPDATE_STATE")/update.log)"
+  if [[ -n "$1" ]]; then
+    write_update_status failed "$1" "$2" "bootstrap 갱신 실패: $1 → $repo/bootstrap.sh update$log"
+    printf failed
+  elif [[ -n "$2" ]]; then
+    write_update_status pending '' "$2" "bootstrap 수동 작업 대기: $2 → $repo/bootstrap.sh update"
+    printf pending
+  else
+    write_update_status ok '' '' ''
+    printf ok
+  fi
 }
 
 # 설치와 자동 갱신이 동시에 돌지 않게 잡는 잠금. 얻으면 0, 다른 실행이 잡고 있으면 1. 끝날 때(EXIT) 푼다.

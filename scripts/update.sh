@@ -22,7 +22,8 @@ usage() {
 EOF
 }
 
-git_() { git -C "$BOOTSTRAP_ROOT" "$@"; }
+# 비ASCII 경로를 따옴표로 감싸지 않아야 경로 규칙·파일 비교와 맞는다.
+git_() { git -C "$BOOTSTRAP_ROOT" -c core.quotePath=false "$@"; }
 
 # 단계 이름 (실행 순서).
 all_steps() {
@@ -83,30 +84,7 @@ ordered() {
 
 status_get() { sed -n "s/^$1=//p" "$STATE/status" 2>/dev/null | head -1; }
 
-# write_status <결과> <실패 단계> <대기 단계> <새 터미널에 보일 한 줄>
-write_status() {
-  [[ "$DRY_RUN" == 1 ]] && return 0
-  printf 'result=%s\ncommit=%s\nat=%s\nfailed=%s\npending=%s\nbanner=%s\n' \
-    "$1" "$(git_ rev-parse --short HEAD)" "$(date +%s)" "$2" "$3" "$4" >"$STATE/status.tmp"
-  mv "$STATE/status.tmp" "$STATE/status"
-}
-
-# 실패·대기 단계로 결과를 정해 기록하고 결과 이름을 출력한다: settle <실패 단계> <대기 단계>
-settle() {
-  local repo log=''
-  repo="$(pretty "$BOOTSTRAP_ROOT")"
-  [[ "$AUTO" == 1 ]] && log=" (기록: $(pretty "$STATE")/update.log)"
-  if [[ -n "$1" ]]; then
-    write_status failed "$1" "$2" "bootstrap 갱신 실패: $1 → $repo/bootstrap.sh update$log"
-    printf failed
-  elif [[ -n "$2" ]]; then
-    write_status pending '' "$2" "bootstrap 수동 작업 대기: $2 → $repo/bootstrap.sh update"
-    printf pending
-  else
-    write_status ok '' '' ''
-    printf ok
-  fi
-}
+# 상태 파일 쓰기(write_update_status)와 결과 정하기(settle)는 전체 설치(bootstrap.sh)와 함께 쓰도록 lib.sh에 있다.
 
 # 같은 내용은 한 번만 알린다: notify <중복 확인 키> <제목> <내용> [push]
 notify() {
@@ -122,7 +100,7 @@ hold() {
     fail "$2 → $3"
     return 1
   fi
-  write_status held "$(status_get failed)" "$(status_get pending)" "bootstrap 갱신 보류: $2 → $3"
+  write_update_status held "$(status_get failed)" "$(status_get pending)" "bootstrap 갱신 보류: $2 → $3"
   notify "held|$1" 'bootstrap 갱신 보류' "$2 → $3" push
 }
 
@@ -300,7 +278,7 @@ main() {
       info '[dry-run] 다시 실행할 단계 없음'
       return 0
     fi
-    [[ "$applied" == "$target" ]] || mark_applied  # 문서처럼 기기에 적용할 것이 없는 변경
+    [[ "$applied" == "$target" ]] || mark_applied "$target"  # 문서처럼 기기에 적용할 것이 없는 변경
     # 실패·대기로 남은 단계가 저장소에서 없어졌으면 상태에서도 뺀다.
     local kept_failed kept_pending
     # shellcheck disable=SC2086
@@ -352,7 +330,7 @@ main() {
   failed="${failed# }"
   # shellcheck disable=SC2086
   pending="$(ordered $pending)"
-  mark_applied
+  mark_applied "$target"
   result="$(settle "$failed" "$pending")"
 
   local commit
