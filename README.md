@@ -85,7 +85,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 - 실패: 적용 기록은 앞으로 옮기고, 실패한 단계만 `status`의 `failed`에 남겨 다음 실행 때 다시 실행한다. 자동 갱신은 같은 커밋이면 한 시간 뒤, 새 커밋이 오면 바로 다시 시도한다. 전체 설치(`./bootstrap.sh`)의 실패·대기도 같은 상태에 남아 `./bootstrap.sh update`가 이어서 실행한다. 전체 설치는 실패가 있으면 적용 기록을 옮기지 않는다.
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
 - 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
-- 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다. 그래서 `main`은 PR로만 바뀌고, GitHub Actions의 `test`(macOS에서 전체 테스트)가 통과해야 병합된다. 승인은 요구하지 않아 에이전트도 병합할 수 있다. 직접 push는 관리자도 막힌다(브랜치 보호).
+- 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다. 그래서 `main`은 PR로 바꾸고, GitHub Actions의 `test`(macOS에서 전체 테스트)가 통과한 뒤 병합한다. 에이전트도 병합할 수 있다. 브랜치 보호로 강제하지는 않으므로 `main`에 직접 push하지 않는다.
 - 끄기: `launchctl bootout gui/$(id -u)/local.bootstrap.update` 후 `~/Library/LaunchAgents/local.bootstrap.update.plist`를 지운다.
 
 ## 기기 역할
