@@ -11,7 +11,8 @@ const script = process.env.YW_HEAVY_SCRIPT || fileURLToPath(new URL('./yw-heavy.
 const legacyFixture = fileURLToPath(new URL('./fixtures/cc-yw-heavy-legacy.sh', import.meta.url));
 const quote = s => "'" + String(s).replaceAll("'", "'\\''") + "'";
 const pause = ms => new Promise(r => setTimeout(r, ms));
-const read = p => existsSync(p) ? readFileSync(p, 'utf8') : '';
+// 작업자가 확인과 읽기 사이에 지울 수 있어 없으면 빈 값으로 본다.
+const read = p => { try { return readFileSync(p, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return ''; throw e; } };
 const dead = '2147483647';
 // 구버전 대기자가 실제로 쓰는 경로는 이 기기의 실제 작업 때문에 바뀔 수 있다. 거기에는 테스트 표지(worker w·wk, 새 버전 편집 표지)가
 // 들어가지 않았는지만 보고, 구버전이 건드리지 않는 경로는 inode·mtime이 그대로인지 본다.
@@ -166,6 +167,9 @@ test('D3-gate: 구형식 줄이 있으면 죽은 v2 holder도 보존, 구형식 
 
 test('D3-stress: 구버전 3개·새 버전 여럿 동시 실행과 holder kill -9에도 이중 보유 0', async t => {
   const f = fixture(t);
+  // 새 버전 대기자는 주기마다 대기열 잠금과 편집 표지를 잡는다. 기본 .05초면 대기자 셋이 표지를 거의 늘 쥐고 있어
+  // 구버전 mkdir 편집 lock이 밀린다(실제 주기 30초에서는 생기지 않음). 실제와 비슷한 비율이 되게 늘린다.
+  f.env.YW_HEAVY_POLL = '.3';
   const legacy = f.legacy(), inside = join(f.dir, 'inside'), fails = join(f.dir, 'fails');
   const crit = name => `{ mkdir ${quote(inside)} 2>/dev/null || echo ${name} >> ${quote(fails)}; echo ${name} > ${quote(inside)}/who; /bin/sleep .15; rm -rf ${quote(inside)}; }`;
   const S = quote(script), L = quote(legacy);
@@ -177,7 +181,8 @@ test('D3-stress: 구버전 3개·새 버전 여럿 동시 실행과 holder kill 
   // 구버전 줄이 모두 들어간 뒤에 온 대기자는 구버전 줄이 다 빠진 뒤(관문 열림)에 차례를 받는다.
   await f.wait(() => [1, 2, 3].every(i => read(f.q).includes(`L${i} `) || workers[i - 1].result), 'legacy enqueued', 5000);
   const victim = f.start(['-c', `${S} acquire H2 w sh2 --holder $$ >/dev/null && { mkdir ${quote(inside)} 2>/dev/null || echo H2 >> ${quote(fails)}; echo H2 > ${quote(inside)}/who; exec /bin/sleep 30; }`]);
-  await pause(30);
+  // H3·R3가 H2 뒤에 서야 H2가 죽었을 때 기다리던 쪽이 회수한다.
+  await f.wait(() => read(f.q).includes('H2 '), 'victim enqueued', 5000);
   workers.push(f.start(['-c', `${S} acquire H3 w sh3 --holder $$ >/dev/null && ${crit('H3')}; ${S} release H3 >/dev/null`]));
   workers.push(f.cli('run', 'R3', 'w', 'sr3', '--', '/bin/bash', '-c', crit('R3')));
   await f.wait(() => read(join(inside, 'who')).trim() === 'H2', 'victim inside', 15000);

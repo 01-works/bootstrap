@@ -251,10 +251,12 @@ TAILSCALE_APP_CLI="${TAILSCALE_APP_CLI:-/Applications/Tailscale.app/Contents/Mac
 # Tailscale 상태를 "<연결 상태> <키 만료 시각>" 한 줄로 출력한다. 연결 상태는 Running·Stopped·NeedsLogin 등이고,
 # 앱이 꺼져 있거나 없으면 아무것도 출력하지 않는다. 만료 시각이 없으면(관리 콘솔에서 키 만료를 껐거나 로그인 전) -.
 tailscale_status() {
-  local json state
+  local json state expiry
   json="$("$TAILSCALE_APP_CLI" status --json 2>/dev/null)"
   state="$(plutil -extract BackendState raw -o - - <<<"$json" 2>/dev/null)" || return 0
-  printf '%s %s\n' "$state" "$(plutil -extract Self.KeyExpiry raw -o - - <<<"$json" 2>/dev/null || echo -)"
+  # 값이 없으면 plutil이 오류 문구를 stdout에 내므로 출력 대신 종료 코드로 판단한다.
+  expiry="$(plutil -extract Self.KeyExpiry raw -o - - <<<"$json" 2>/dev/null)" || expiry=-
+  printf '%s %s\n' "$state" "$expiry"
 }
 
 # Tailscale 앱 설정의 "로그인 시 실행". 공개되지 않은 앱 내부 설정값이라 앱이 바뀌면 틀릴 수 있다.

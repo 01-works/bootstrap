@@ -1,0 +1,22 @@
+# PR과 main push마다 전체 테스트를 macOS에서 돌린다. main은 이 검사가 통과한 PR로만 바뀐다 (README "변경 전파").
+name: test
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node --test scripts/*.test.mjs
+      - run: python3 -I scripts/paseo-api-key.test.py
