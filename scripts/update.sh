@@ -224,8 +224,10 @@ main() {
       header
       if [[ "$DRY_RUN" == 1 ]]; then
         info "[dry-run] 키 순서만 바뀐 $path 되돌리기"
+      elif git_ checkout HEAD -- "$path"; then
+        info "키 순서만 바뀐 $path 되돌림"
       else
-        git_ checkout HEAD -- "$path" && info "키 순서만 바뀐 $path 되돌림"
+        continue
       fi
       excludes+=(":(exclude)$path")
     done <<<"$(reordered_json)"
