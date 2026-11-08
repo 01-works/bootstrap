@@ -30,6 +30,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - **소유 확인:** 할당 전에 같은 파일·기능을 바꾸거나 은퇴·대체하는 lane이 있는지 공유 기록(열린·최근 머지 PR, 이슈 claim)과 등록된 호스트의 workspace에서 확인한다. 호스트마다 `serverId`를 명시해 `list_workspaces`로 workspace를 찾고, 대상 `cwd`를 지정해 `list_agents`로 조회한다. 전체 확인이면 `includeBackground: true`를 쓴다. claim은 저장소 규칙대로 남긴다.
 - **정체된 claim 인수:** 공유 기록에 적힌 다음 단계 대비 진척이 없다는 근거를 남기고 사용자 승인을 받는다. 브랜치·PR이 없거나 내 Paseo에서 보이지 않는 것만으로는 근거가 되지 않는다. 원 lane이 다시 나타나면 소유 lane을 하나로 정하는 조정 기록을 남긴다.
 - 독립 구현은 별도 worktree/workspace에서 병렬로 진행하고, 같은 checkout에 수정 작업자 둘을 두지 않는다. 선행 결과가 필요한 후속 작업은 그 결과가 통합된 뒤 시작한다. 병렬도는 독립 작업 수와 한도·예산에 맞추고, 대기 작업을 미리 에이전트로 만들지 않는다.
+- **새 workspace:** `create_workspace`에 소유 프로젝트의 `projectId`(같은 프로젝트 workspace의 `list_workspaces` 결과, CLI는 `paseo project ls`)를 넘긴다. 빠뜨리면 경로마다 새 프로젝트가 생겨 정리 뒤에도 남는다. 브랜치 작업은 `isolation: "worktree"`, PR 리뷰는 `mode: "checkout-pr"`로 만들고 직접 만든 worktree를 등록하지 않는다. 읽기 전용 리뷰어 여럿은 한 workspace를 함께 쓴다. 끝난 workspace는 `archive_workspace`로 정리한다.
 - 다른 에이전트·세션의 프로세스·worktree는 소유를 확인하기 전에 종료·정리하지 않는다. 넓은 패턴의 프로세스 종료는 금지한다.
 - 메모리를 많이 쓰는 명령(전체 타입 검사·린트·테스트·빌드, dev 서버, 앱 설정 전체 로딩)은 기기마다 하나씩 실행하도록 그 기기의 `yw-heavy` 차례를 쓰게 한다(`agents/heavy-queue.md`). 메모리 여유가 확인된 경우에만 병렬을 늘리고, 검증이 끝난 dev 서버는 종료하게 한다. 감독 세션 사이에 쓸 새 잠금·대기열은 임의로 만들지 않고 제안한다.
 - 브라우저 작업은 `agents/browser.md`(공유 연결, 작업자별 own target, 조작 차례), 기기 GUI 작업은 `agents/computer-use.md`를 따른다. Paseo 작업자에게 GUI 작업을 기본으로 배정하지 않는다.
