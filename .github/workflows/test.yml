@@ -1,4 +1,4 @@
-# PR과 main push마다 전체 테스트를 macOS에서 돌린다. main은 이 검사가 통과한 PR로만 바뀐다 (README "변경 전파").
+# PR과 main push마다 전체 테스트를 macOS에서 돌린다. PR은 이 검사가 통과한 뒤 병합한다 (README "변경 전파").
 name: test
 on:
   pull_request:
