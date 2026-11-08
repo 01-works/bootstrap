@@ -266,6 +266,38 @@ test('커밋 안 된 변경이 있으면 새 커밋을 받지 않고 한 번만 
   assert.equal(f.status().result, 'ok');
 });
 
+test('키 순서만 바뀐 JSON은 되돌리고 받으며, 값이 바뀐 JSON은 보류한다', t => {
+  const f = fixture(t);
+  f.push({ 'home/claude/.claude/settings.json': '{\n  "a": true,\n  "theme": "dark",\n  "list": [1, 2]\n}\n' });
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  const settings = join(f.work, 'home/claude/.claude/settings.json');
+  const reordered = '{\n  "theme": "dark",\n  "list": [1, 2],\n  "a": true\n}\n';
+
+  writeFileSync(settings, reordered);
+  f.push({ 'home/zsh/.zshrc': '# changed\n' });
+  const dry = f.update('--dry-run');
+  assert.equal(dry.status, 0);
+  assert.match(output(dry), /\[dry-run\] 키 순서만 바뀐 home\/claude\/\.claude\/settings\.json 되돌리기/);
+  assert.equal(readFileSync(settings, 'utf8'), reordered, 'dry-run은 되돌리지 않음');
+  assert.equal(f.update('--auto').status, 0);
+  assert.equal(f.head(), f.remoteHead(), '받음');
+  assert.equal(f.git(f.work, 'status', '--porcelain', '--untracked-files=no'), '');
+  assert.deepEqual(f.calls(), ['dotfiles 1']);
+  assert.equal(f.status().result, 'ok');
+
+  writeFileSync(settings, '{\n  "theme": "light",\n  "list": [1, 2],\n  "a": true\n}\n');
+  f.push({ 'home/zsh/.zshrc': '# again\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.notEqual(f.head(), f.remoteHead(), '값이 바뀌면 받지 않음');
+  assert.equal(f.status().result, 'held');
+  assert.match(readFileSync(settings, 'utf8'), /"light"/, '사용자 변경은 그대로');
+
+  writeFileSync(settings, '{\n  "theme": "dark",\n  "list": [2, 1],\n  "a": true\n}\n');
+  assert.equal(f.update('--auto').status, 0);
+  assert.equal(f.status().result, 'held', '배열 순서는 값으로 본다');
+});
+
 test('갈라진 기록이나 main이 아닌 브랜치는 받지 않는다', t => {
   const f = fixture(t);
   assert.equal(f.update('--auto').status, 0);
