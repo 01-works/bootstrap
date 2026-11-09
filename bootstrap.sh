@@ -36,6 +36,8 @@ usage() {
   --only      지정한 단계만 실행 (예: --only dotfiles,agents)
   --dry-run   아무것도 바꾸지 않고 할 일만 출력
   --yes       확인 질문에 모두 예
+  --migrate-claude-settings
+              --only dotfiles와 함께 사용. Claude Code를 모두 종료한 뒤 기존 설정 링크를 한 번 전환
 EOF
 }
 
@@ -66,6 +68,7 @@ esac
 
 cmd=install
 only=''
+migrate_claude_settings=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     doctor | snapshot) cmd="$1" ;;
@@ -78,6 +81,7 @@ while [[ $# -gt 0 ]]; do
       [[ -n "${1#*=}" ]] || { usage; die "--only 다음에 값이 필요합니다"; }
       only="${1#*=}" ;;
     --dry-run) DRY_RUN=1 ;;
+    --migrate-claude-settings) migrate_claude_settings=1 ;;
     -y | --yes) ASSUME_YES=1 ;;
     -h | --help) usage; exit 0 ;;
     *) usage; die "알 수 없는 인자: $1" ;;
@@ -85,6 +89,9 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 export DRY_RUN ASSUME_YES
+if [[ "$migrate_claude_settings" == 1 && ( "$cmd" != install || "$only" != dotfiles ) ]]; then
+  die '--migrate-claude-settings는 --only dotfiles와 함께 사용하세요'
+fi
 
 if [[ "$cmd" == list ]]; then
   printf '단계 (실행 순서): %s\n' "$(all_steps)"
@@ -134,7 +141,11 @@ for name in $(all_steps); do
   contains "$name" $selected || continue
   step "$name"
   status=0
-  bash "$(step_file "$name")" || status=$?
+  if [[ "$name" == dotfiles && "$migrate_claude_settings" == 1 ]]; then
+    bash "$(step_file "$name")" --migrate-claude-settings || status=$?
+  else
+    bash "$(step_file "$name")" || status=$?
+  fi
   # 자동 갱신(update.sh)이 단계별 결과를 받아 간다.
   [[ -z "${BOOTSTRAP_RESULTS:-}" ]] || printf '%s %s\n' "$name" "$status" >>"$BOOTSTRAP_RESULTS"
   [[ "$status" == 0 ]] && continue

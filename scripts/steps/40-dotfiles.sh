@@ -4,9 +4,27 @@
 #   - 이미 있는 파일은 ~/.local/state/bootstrap/backup/<시각>-<번호>/ 으로 옮긴 뒤 링크한다.
 #   - 저장소 안의 심볼릭 링크(같은 내용을 두 도구가 쓰는 파일)도 연결 대상이다.
 #   - .seed 파일과 claude/.claude/settings.json은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일용.
-#     기존 링크는 내용을 백업한 뒤 같은 내용의 로컬 일반 파일로 바꾼다.
+#     기존 링크는 수동 작업 대기로 두고, 명시적인 수동 옵션으로만 일반 파일로 전환한다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
+
+migrate_claude_settings=0
+case "${1:-}" in
+  '') ;;
+  --migrate-claude-settings)
+    [[ "$#" == 1 ]] || die '전환 옵션 뒤에는 인자를 받지 않습니다'
+    unattended && die '자동 실행에서는 기존 설정 링크를 전환하지 않습니다'
+    # comm은 인자를 제외한 실행 파일 경로다. ps를 대역으로 바꿔 테스트할 수 있다.
+    processes="$(ps -axo comm=)" || die '프로세스를 조회하지 못해 전환을 거부합니다'
+    if printf '%s\n' "$processes" | awk '
+      { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); n = split($0, parts, "/"); if (parts[n] == "claude") found = 1 }
+      END { exit !found }'; then
+      die 'Claude Code(claude)가 실행 중이라 전환을 거부합니다. 모두 종료하고 전환이 끝날 때까지 새로 실행하지 마세요'
+    fi
+    migrate_claude_settings=1
+    ;;
+  *) die "알 수 없는 인자: $1" ;;
+esac
 
 backup_dir="$BOOTSTRAP_STATE/backup/$(date +%Y%m%d-%H%M%S)-$$"
 pending=0
@@ -41,6 +59,11 @@ link_file() {
 seed_file() {
   local src="$1" dst="$2"
   if [[ -L "$dst" ]]; then
+    if [[ "$migrate_claude_settings" != 1 ]]; then
+      warn "$(pretty "$dst") 기존 링크 전환 필요: Claude Code를 모두 종료하고 새로 실행하지 않는 동안 ./bootstrap.sh --only dotfiles --migrate-claude-settings 를 한 번 실행하세요. 전환 전에는 갱신 보류가 다시 생길 수 있습니다"
+      pending=2
+      return
+    fi
     local target bak="$backup_dir/${dst#"$HOME"/}"
     target="$(readlink "$dst")"
     [[ -f "$dst" ]] || die "$(pretty "$dst") 링크 대상을 읽을 수 없어 그대로 둡니다"
@@ -63,6 +86,9 @@ seed_file() {
     fi
     run mv -f "$seed_tmp" "$dst"
     seed_tmp=''
+    if [[ ! -f "$dst" || -L "$dst" ]] || ! cmp -s "$dst" "$bak"; then
+      die "$(pretty "$dst") 전환 후 내용 확인 실패. 현재 파일과 백업을 보존합니다: $(pretty "$bak")"
+    fi
     ok "$(pretty "$dst") 로컬 일반 파일로 전환"
     return
   fi
@@ -96,6 +122,9 @@ seed_file() {
 for src_root in "$BOOTSTRAP_ROOT"/home/*; do
   info "[$(basename "$src_root")]"
   while IFS= read -r src; do
+    if [[ "$migrate_claude_settings" == 1 && "$src" != "$BOOTSTRAP_ROOT/home/claude/.claude/settings.json" ]]; then
+      continue
+    fi
     rel="${src#"$src_root"/}"
     case "${src#"$BOOTSTRAP_ROOT/home/"}" in
       *.seed | claude/.claude/settings.json) seed_file "$src" "$HOME/${rel%.seed}" ;;

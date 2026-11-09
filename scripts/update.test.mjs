@@ -34,6 +34,7 @@ function fixture(t) {
   // 알림 대역: macOS 알림과 휴대폰 알림 내용을 남긴다.
   writeFileSync(join(bin, 'osascript'), '#!/bin/sh\nshift 6; printf "%s | %s\\n" "$1" "$2" >> "$MOCK/notify"\n', { mode: 0o755 });
   writeFileSync(join(bin, 'curl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$MOCK/push"\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'ps'), '#!/bin/sh\nprintf \'%s\\n\' codex\n', { mode: 0o755 });
   writeFileSync(join(bin, 'scutil'), '#!/bin/sh\necho TestMac\n', { mode: 0o755 });
 
   const write = (dir, files) => {
@@ -73,6 +74,7 @@ function fixture(t) {
       git(seed, 'push', '-q');
     },
     update: (...args) => spawnSync('/bin/bash', [join(work, 'bootstrap.sh'), 'update', ...args], { env, encoding: 'utf8' }),
+    migrate: () => spawnSync('/bin/bash', [join(work, 'bootstrap.sh'), '--only', 'dotfiles', '--migrate-claude-settings'], { env, encoding: 'utf8' }),
     install: () => spawnSync('/bin/bash', [join(work, 'bootstrap.sh')], { env, encoding: 'utf8' }),
     // 기록된 단계 호출을 돌려주고 비운다.
     calls() { const result = lines(join(mock, 'calls')); rmSync(join(mock, 'calls'), { force: true }); return result; },
@@ -344,6 +346,36 @@ ln -sf "$BOOTSTRAP_ROOT/${path}" "$HOME/.claude/settings.json"
   return { f, path, original, dotfiles, local };
 }
 
+test('자동 갱신은 기존 링크 전환을 pending으로 남기고 다른 단계와 후속 커밋 적용을 계속한다', t => {
+  const { f, original, dotfiles, local } = linkedSettings(t);
+  // 리뷰어의 마지막 cmp 직후 저장 주입. 자동 실행은 이 cmp 경로를 호출하지 않아야 한다.
+  writeFileSync(join(f.root, 'bin/cmp'), `#!/bin/bash
+/usr/bin/cmp "$@" || exit "$?"
+touch "$MOCK/cmp-called"
+printf '%s\\n' '{"theme":"late-save"}' > "$HOME/.claude/saved.json"
+mv -f "$HOME/.claude/saved.json" "$HOME/.claude/settings.json"
+`, { mode: 0o755 });
+  f.push({ 'scripts/steps/40-dotfiles.sh': dotfiles, 'Brewfile': 'brew "gh"\n',
+    'scripts/steps/65-paseo.sh': mockStep('paseo') + '# changed\n' });
+  let result = f.update('--auto');
+  assert.equal(result.status, 2, output(result));
+  assert.equal(f.status().result, 'pending');
+  assert.equal(f.status().pending, 'dotfiles');
+  assert.equal(f.status().failed, '');
+  assert.deepEqual(f.calls(), ['homebrew 1', 'paseo 1'], '뒤 단계도 계속 실행');
+  assert.equal(readFileSync(local, 'utf8'), original);
+  assert.ok(lstatSync(local).isSymbolicLink());
+  assert.ok(!existsSync(join(f.mock, 'cmp-called')));
+  assert.equal(f.applied(), f.head());
+  f.push({ 'README.md': 'next docs\n' });
+  result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.equal(f.head(), f.remoteHead());
+  assert.equal(f.status().pending, 'dotfiles', '새 커밋을 받아도 수동 전환 대기는 유지');
+  assert.deepEqual(f.calls(), []);
+  assert.ok(lstatSync(local).isSymbolicLink());
+});
+
 test('링크 상태의 값 변경은 보류하고 전환 후 로컬 변경은 clean 상태로 새 커밋을 받는다', t => {
   const { f, path, original, dotfiles, local } = linkedSettings(t);
   const changed = JSON.stringify({ ...JSON.parse(original), theme: 'light', enabledPlugins: { 'sentry@sentry': true } });
@@ -355,8 +387,12 @@ test('링크 상태의 값 변경은 보류하고 전환 후 로컬 변경은 cl
   assert.equal(readFileSync(local, 'utf8'), changed);
   f.git(f.work, 'checkout', '--', path); // 테스트에서 보존 확인을 마친 로컬 변경 정리
   result = f.update('--auto');
-  assert.equal(result.status, 0, output(result));
+  assert.equal(result.status, 2, output(result));
   assert.equal(f.head(), f.remoteHead());
+  assert.ok(lstatSync(local).isSymbolicLink());
+  assert.equal(f.status().pending, 'dotfiles');
+  result = f.migrate();
+  assert.equal(result.status, 0, output(result));
   assert.ok(lstatSync(local).isFile());
   assert.equal(readFileSync(local, 'utf8'), original);
   const backup = join(f.root, 'state/bootstrap/backup');
@@ -391,8 +427,11 @@ test('fast-forward 후 앞 단계 실패와 자동 재시도 생략 중에도 �
   assert.deepEqual(f.calls(), []);
   assert.equal(readFileSync(local, 'utf8'), original);
   f.exitWith('homebrew', null);
-  assert.equal(f.update().status, 0);
+  assert.equal(f.update().status, 2, '기본 수동 update도 전환하지 않음');
+  assert.ok(lstatSync(local).isSymbolicLink());
+  assert.equal(f.migrate().status, 0);
   assert.ok(lstatSync(local).isFile());
+  assert.equal(f.update().status, 0, '전환 뒤 기존 pending을 정리');
   assert.equal(readFileSync(local, 'utf8'), original);
 });
 
@@ -402,8 +441,10 @@ test('전환과 후속 초기값 변경 여러 커밋을 함께 받아도 기존
   const current = JSON.stringify({ ...JSON.parse(original), theme: 'system' });
   f.push({ [path]: current });
   const result = f.update('--auto');
-  assert.equal(result.status, 0, output(result));
+  assert.equal(result.status, 2, output(result));
   assert.equal(f.head(), f.remoteHead());
+  assert.ok(lstatSync(local).isSymbolicLink());
+  assert.equal(f.migrate().status, 0);
   assert.ok(lstatSync(local).isFile());
   // 전환 전까지는 같은 경로의 저장소 값 변경이 기존 링크를 통해 반영된다.
   assert.equal(readFileSync(local, 'utf8'), current);
