@@ -935,3 +935,38 @@ test('R4-handoff: 30초 sleep 치환 없이 해제 뒤 다음 요청이 짧게 �
   assert.ok(Date.now() - began < 3500, '30초 polling이면 기한 내 끝나지 않는다');
   assert.doesNotMatch(read(sleeps), /^30$/m, '실제 대기 호출도 fast poll이어야 한다');
 });
+
+test('R5-no-reclaim: 취소 큐 삭제 직후 SIGKILL된 감독자는 다른 대기자 복구 없이 재등록해도 끝에 붙는다', async t => {
+  const f = fixture(t); enable(f);
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  const h = await holding(f);
+  const owner = f.ownerText();
+  const killAfterDrop = f.hookWith(`mv() {
+    command mv "$@" || return
+    if [ "$3" = "$YW_HEAVY_QUEUE" ] && ! grep -q '^CANCEL ' "$3"; then builtin kill -9 $$; fi
+    return 0
+  }`);
+  const cancelled = f.cliEnv({ BASH_ENV: killAfterDrop }, 'run', 'CANCEL', 'w', 'S', '--', 'true');
+  await f.wait(() => read(f.q + '.rotation').includes('S\n'), 'S registered');
+  // B가 편집 잠금 밖에서 대기하게 해 재등록 전에 다른 대기자가 ring을 복구할 가능성을 없앤다.
+  const blockB = f.hookWith(`sleep() {
+    : > "$YW_HEAVY_QUEUE.b-sleep"
+    while [ ! -e "$YW_HEAVY_QUEUE.allow-b" ]; do /bin/sleep .01; done
+    /bin/sleep "$@"
+  }`);
+  const b = f.cliEnv({ BASH_ENV: blockB }, 'run', 'B', 'w', 'B', '--', 'true');
+  await f.wait(() => existsSync(f.q + '.b-sleep'), 'B asleep outside flock');
+  const bLine = read(f.q).split('\n').find(l => l.startsWith('B '));
+  cancelled.kill('SIGTERM'); assert.equal((await cancelled.done).signal, 'SIGKILL');
+  assert.doesNotMatch(read(f.q), /^CANCEL /m);
+  assert.equal(read(f.q + '.rotation').trim(), 'H\nS\nB', '정리 전 S의 옛 위치가 남는다');
+  const rejoin = f.cli('run', 'REJOIN', 'w', 'S', '--', 'true');
+  await f.wait(() => read(f.q).includes('REJOIN '), 'REJOIN registered');
+  assert.equal(f.ownerText(), owner, 'no-reclaim 중 실행 owner는 보존');
+  assert.equal(read(f.q).split('\n').find(l => l.startsWith('B ')), bLine, 'B의 기존 줄도 보존');
+  assert.ok(existsSync(f.env.YW_HEAVY_NO_RECLAIM));
+  writeFileSync(f.q + '.allow-b', ''); h.stdin.end('done\n');
+  for (const p of [h, b, rejoin]) assert.equal(await f.finish(p, 5000), 0, p.err);
+  assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'B', 'REJOIN']);
+  assert.equal(events(f).filter(e => e.event === 'reclaim').length, 0);
+});

@@ -640,7 +640,9 @@ control() {
     *) usage >&2; return 2 ;; esac
   lock_queue || return 1
   case "$cmd" in
-    reclaim) if [ "$(mode_read)" = round-robin ]; then rr_reclaim; else reclaim_dead; fi ;;
+    reclaim)
+      if [ "$(mode_read)" = round-robin ]; then rr_reclaim && ring_sync; else reclaim_dead; fi
+      ;;
     pause) (umask 077; touch "$PAUSED") ;;
     resume) rm -f "$PAUSED" ;;
     mode)
@@ -806,7 +808,7 @@ rr_reclaim() {
   done <<EOF_QUEUE
 $(q_lines)
 EOF_QUEUE
-  ring_sync
+  return 0
 }
 rr_cancel() {
   local l
@@ -833,6 +835,8 @@ rr_acquire() {
       if [ "$rc" != 1 ]; then unlock_queue; return "$rc"; fi
       if [ -e "$PAUSED" ]; then unlock_queue; say "신규 제출이 중지됐습니다"; return 4; fi
       rr_reclaim "$ID" || { unlock_queue; return 1; }
+      # 회수 금지는 실행 lock·대기 줄에만 적용한다. 새 줄을 쓰기 전에 빈 감독자의 옛 위치를 없앤다.
+      ring_sync || { unlock_queue; return 1; }
       if [ "$(json_str "$(owner_read)" task)" = "$ID" ]; then unlock_queue; say "이미 실행 중인 요청 ID"; return 3; fi
       l="$(q_line "$ID")"
       if [ -n "$l" ]; then
