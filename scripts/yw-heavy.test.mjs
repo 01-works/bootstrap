@@ -40,7 +40,7 @@ function tree(dir) {
 const procStart = pid => spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' }, encoding: 'utf8' })
   .stdout.trim().split(/\s+/).join('_');
 
-function fixture(t) {
+function fixture(t, { waitTimeout = 3500 } = {}) {
   const before = snapshot(strictLivePaths);
   const dir = mkdtempSync(join(tmpdir(), 'yw-heavy-test-'));
   const q = join(dir, 'q'), x = join(dir, 'x'), e = join(dir, 'e');
@@ -67,7 +67,7 @@ function fixture(t) {
   // 살아 있는 프로세스 (holder·대기자 대역). 테스트가 끝나면 정리한다.
   const live = () => track(spawn('/bin/sleep', ['30'], { stdio: 'ignore', detached: true }));
   const sync = (...args) => spawnSync('/bin/bash', [script, ...args], { env, encoding: 'utf8' });
-  const wait = async (fn, message = 'condition', timeout = 3500) => {
+  const wait = async (fn, message = 'condition', timeout = waitTimeout) => {
     const end = Date.now() + timeout;
     while (!fn()) { if (Date.now() >= end) assert.fail(`timeout: ${message}`); await pause(20); }
   };
@@ -92,7 +92,7 @@ function fixture(t) {
     assert.doesNotMatch(readFileSync(path, 'utf8'), /\/tmp\/yw-heavy/, '구버전 사본은 실제 /tmp 경로를 쓰지 않는다');
     return path;
   };
-  return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, finish, owner, ownerText, line, legacy, hookWith, log: () => read(env.YW_HEAVY_LOG) };
+  return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, waitTimeout, finish, owner, ownerText, line, legacy, hookWith, log: () => read(env.YW_HEAVY_LOG) };
 }
 
 // ---- 반려 결함 재현 (구 CLI만 쓰는 *-legacy는 반려 구현에서 실패해야 한다) ----
@@ -559,6 +559,18 @@ function enable(f) {
 }
 const releaseLease = (f, lease) => f.sync('release', '--generation', lease.generation, '--token', lease.token, '--lease', lease.lease);
 const events = f => read(f.env.YW_HEAVY_EVENTS).trim().split('\n').filter(Boolean).map(JSON.parse);
+// 시간 상한은 정체를 감지하는 watchdog이다. polling 회귀는 실제 호출 인자로 판정한다.
+function observeFastPolling(f) {
+  const sleeps = join(f.dir, 'sleeps');
+  f.env.YW_HEAVY_POLL = '30';
+  f.env.YW_HEAVY_FAST_POLL = '.2'; // 운영 기본값. 여러 대기자의 과도한 .05초 경합을 피한다.
+  f.env.BASH_ENV = f.hookWith(`sleep() {
+    builtin printf '%s\\n' "$1" >> ${quote(sleeps)}
+    case "$1" in 30) builtin printf 'unexpected 30-second poll\\n' >&2; exit 97;; esac
+    /bin/sleep "$@"
+  }`);
+  return sleeps;
+}
 async function acquireLease(f, id = 'ROOT', sup = 'S', extra = {}) {
   const p = f.cliEnv(extra, 'acquire', id, 'w', sup, '--json', '--holder', String(process.pid));
   assert.equal(await f.finish(p), 0, p.err);
@@ -660,7 +672,7 @@ exit "$rc"`;
 
 async function holding(f, id = 'H', sup = 'H', extra = {}) {
   const p = f.cliEnv(extra, 'run', id, 'w', sup, '--', '/bin/sh', '-c', 'echo ready; read line');
-  await f.wait(() => p.out.includes('ready'), 'holder ready', 5000);
+  await f.wait(() => p.out.includes('ready'), 'holder ready', Math.max(5000, f.waitTimeout));
   return p;
 }
 
@@ -707,26 +719,26 @@ test('v3 PID 재사용은 token 거절·회수, ps 실패는 token 거절·owner
 });
 
 test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉시 등록, 30초 poll 없이 인계', async t => {
-  const f = fixture(t); enable(f);
-  f.env.YW_HEAVY_POLL = '30'; // fast poll은 따로 쓰므로 인계가 30초에 묶이지 않는다.
-  f.env.BASH_ENV = f.hookWith('sleep() { /bin/sleep "$@"; }'); // 30초 치환을 쓰면 회귀를 숨긴다.
+  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const sleeps = observeFastPolling(f);
   const h = await holding(f, 'A0', 'A');
   const order = join(f.dir, 'order');
   const start = (id, sup) => f.cli('run', id, 'w', sup, '--', '/bin/sh', '-c', `echo ${id} >> ${quote(order)}`);
-  const a1 = start('A1', 'A'); await f.wait(() => read(f.q).includes('A1 '));
-  const a2 = start('A2', 'A'); await f.wait(() => read(f.q).includes('A2 '));
-  const a3 = start('A3', 'A'); await f.wait(() => read(f.q).includes('A3 '));
-  const b1 = start('B1', 'B'); await f.wait(() => read(f.q).includes('B1 '));
-  const b2 = start('B2', 'B'); await f.wait(() => read(f.q).includes('B2 '));
-  const c1 = start('C1', 'C'); await f.wait(() => read(f.q).includes('C1 '));
+  const a1 = start('A1', 'A'); await f.wait(() => read(f.q).includes('A1 '), 'A1 enqueued');
+  const a2 = start('A2', 'A'); await f.wait(() => read(f.q).includes('A2 '), 'A2 enqueued');
+  const a3 = start('A3', 'A'); await f.wait(() => read(f.q).includes('A3 '), 'A3 enqueued');
+  const b1 = start('B1', 'B'); await f.wait(() => read(f.q).includes('B1 '), 'B1 enqueued');
+  const b2 = start('B2', 'B'); await f.wait(() => read(f.q).includes('B2 '), 'B2 enqueued');
+  const c1 = start('C1', 'C'); await f.wait(() => read(f.q).includes('C1 '), 'C1 enqueued');
   const original = read(f.q).split('\n').find(l => l.startsWith('A2 '));
   const retry = start('A2', 'A');
   assert.equal(await f.finish(a2), 3);
   const current = read(f.q).split('\n').find(l => l.startsWith('A2 '));
   assert.deepEqual(current.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort(), original.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort());
-  const began = Date.now(); h.stdin.end('done\n');
-  for (const p of [h, a1, retry, a3, b1, b2, c1]) assert.equal(await f.finish(p, 10000), 0, p.err);
-  assert.ok(Date.now() - began < 10000);
+  h.stdin.end('done\n');
+  for (const p of [h, a1, retry, a3, b1, b2, c1]) assert.equal(await f.finish(p), 0, p.err);
+  assert.ok(read(sleeps).trim(), '실제로 polling하며 대기했다');
+  assert.doesNotMatch(read(sleeps), /^30$/m, '느린 poll 경로를 호출하지 않는다');
   assert.deepEqual(read(order).trim().split('\n'), ['B1', 'C1', 'A1', 'B2', 'A2', 'A3']);
   const log = events(f);
   assert.equal(log.filter(e => e.event === 'enqueue' && e.requestId === 'A2').length, 1);
@@ -922,17 +934,15 @@ test('R3-umask: v3 run은 호출자 umask와 명령의 생성 권한을 호환 �
 });
 
 test('R4-handoff: 30초 sleep 치환 없이 해제 뒤 다음 요청이 짧게 인계', async t => {
-  const f = fixture(t); enable(f);
-  f.env.YW_HEAVY_POLL = '30';
-  const sleeps = join(f.dir, 'sleeps');
-  f.env.BASH_ENV = f.hookWith(`sleep() { builtin printf '%s\\n' "$1" >> ${quote(sleeps)}; /bin/sleep "$@"; }`);
+  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const sleeps = observeFastPolling(f);
   const h = await holding(f);
   const next = f.cli('run', 'NEXT', 'w', 'S', '--', 'true');
   await f.wait(() => read(sleeps).trim(), 'waiter entered real sleep');
-  const began = Date.now(); h.stdin.end('done\n');
+  assert.doesNotMatch(read(sleeps), /^30$/m, '해제를 기다리는 중에도 30초 poll을 쓰지 않는다');
+  h.stdin.end('done\n');
   assert.equal(await f.finish(h), 0);
-  assert.equal(await f.finish(next, 3500), 0);
-  assert.ok(Date.now() - began < 3500, '30초 polling이면 기한 내 끝나지 않는다');
+  assert.equal(await f.finish(next), 0);
   assert.doesNotMatch(read(sleeps), /^30$/m, '실제 대기 호출도 fast poll이어야 한다');
 });
 
