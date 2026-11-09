@@ -746,7 +746,9 @@ test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉
 });
 
 test('v3 감독자·전체 pending 한도는 사유와 함께 즉시 거절하고 재시도는 허용', async t => {
-  const f = fixture(t); enable(f);
+  // CI 경합 중 재시도 인계가 3.5초를 넘을 수 있다. 60초는 성능 판정이 아닌 정체 감지용이다.
+  // holder를 끝까지 보유하므로 거절은 슬롯 반환 없이 완료되어야 한다.
+  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
   f.env.YW_HEAVY_MAX_PENDING_SUPERVISOR = '2'; f.env.YW_HEAVY_MAX_PENDING = '3';
   await holding(f);
   const a = f.cli('run', 'A', 'w', 'A', '--', 'true'); await f.wait(() => read(f.q).includes('A '));
@@ -758,7 +760,7 @@ test('v3 감독자·전체 pending 한도는 사유와 함께 즉시 거절하�
   assert.equal(await f.finish(full), 5); assert.match(full.err, /total=3\/3/);
   const retry = f.cli('run', 'A', 'w', 'A', '--', 'true');
   assert.equal(await f.finish(a), 3); assert.equal(retry.result, undefined);
-  assert.equal(read(f.q).trim().split('\n').length, 3);
+  assert.deepEqual(read(f.q).trim().split('\n').map(l => l.split(' ')[0]).sort(), ['A', 'B', 'D'], '거절된 요청은 등록하지 않고 재시도는 기존 줄을 이어받는다');
 });
 
 test('v3 종료·실패·취소·회수 기록 구분, TERM은 자식 종료까지 보유, 비밀 인자·환경·token은 기록하지 않음', async t => {
