@@ -2,6 +2,14 @@
 
 전체 타입 검사·테스트·빌드, dev 서버처럼 메모리를 많이 쓰는 명령은 같은 기기에서 하나씩 실행한다. 감독 세션과 worktree가 달라도 같은 대기열을 쓴다. 원본은 `scripts/yw-heavy.sh`이고, 모든 기기에서 `heavy` 단계가 `~/.local/bin/yw-heavy`로 설치한다. 자동 갱신이 원본 변경을 전파한다.
 
+## verifier 역할 기기
+
+`${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier` 파일이 있으면 compat·round-robin 모두 `acquire`·`run`의 supervisor가 정확히 `verifier-loop`일 때만 허용한다. 기존 verifier 호출은 `acquire VERIFIER-01-software nightly-local verifier-loop --holder <루프 PID>`이며, 호출을 바꿀 필요가 없다. 역할이 꺼져 있으면 기존 동작 그대로다. 조회·해제·제어 명령에는 이 제한을 적용하지 않는다.
+
+다른 요청은 대기열에 넣기 전에 코드 **4**로 거절한다. 예외 실행은 `YW_HEAVY_VERIFIER_OVERRIDE_REASON='<사유>' yw-heavy run ...`처럼 명시한다. 제어 문자를 제거한 뒤 비어 있거나 공백뿐인 사유는 거절한다. 사유는 실행 lock의 `owner.txt`에 `verifierOverrideReason`으로, 제출 시 진단 로그(`$YW_HEAVY_LOG`)에도 남긴다. 비밀값을 쓰지 않는다.
+
+supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS 사용자의 식별자 사칭이나 구버전 도구의 직접 lock 사용을 막는 보안 경계가 아니다.
+
 ## 모드와 전환 원칙
 
 설치·자동 갱신의 기본은 **compat**다. 기존 FIFO, 감독자당 2줄, v2 출력·파일 형식을 유지한다. 재진입·라운드로빈·작업 이벤트는 감독자가 기기에서 **round-robin**을 명시적으로 켠 뒤에만 동작한다. `capabilities`의 기능 목록은 설치된 구현의 지원 목록이고, 소비자는 `mode`도 반드시 확인한다.

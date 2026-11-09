@@ -46,7 +46,7 @@ brew() {
     'services start colima')
       [[ ! -e "$MOCK/start-fail" ]] || return 1
       # 소유 기록과 메모리를 start 전에 남겼는지 확인한다.
-      grep -qx 'colima_service=role' "$HOME/.config/bootstrap/roles/verifier" || return 99
+      grep -qx 'colima_service=role' "\${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" || return 99
       cp "$HOME/.colima/default/colima.yaml" "$MOCK/config-at-start"
       [[ -e "$MOCK/start-noop" ]] || touch "$MOCK/registered"
       [[ ! -e "$MOCK/start-partial" ]]
@@ -72,7 +72,7 @@ const code = [\`\${process.env.MOCK}/agents-exit\${suffix}-\${only}\`, \`\${proc
 process.exitCode = code ? Number(readFileSync(code, 'utf8')) : 0;
 `);
   const env = { ...process.env, HOME: home, MOCK: mock, BOOTSTRAP_ROOT: root, XDG_STATE_HOME: join(root, 'state'),
-    BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'), DRY_RUN: '0', ASSUME_YES: '0' };
+    BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'), DRY_RUN: '0', ASSUME_YES: '0', YW_HEAVY_VERIFIER_OVERRIDE_REASON: '' };
   for (const key of ['XDG_CONFIG_HOME', 'COLIMA_HOME', 'BOOTSTRAP_LOCKED', 'BOOTSTRAP_UNATTENDED', 'BOOTSTRAP_RESULTS']) delete env[key];
   const keyFile = join(root, 'key.pub');
   writeFileSync(keyFile, `ssh-ed25519 ${BODY} reader@other-mac\n`);
@@ -110,6 +110,35 @@ function tree(dir) {
   walk(dir);
   return result;
 }
+
+test('역할 기본값은 작업 기기: worker 역할 없음, verifier add·remove 상태를 heavy가 같은 경로에서 감지', t => {
+  for (const xdg of [false, true]) {
+    const f = sandbox(t);
+    if (xdg) f.env.XDG_CONFIG_HOME = join(f.root, 'config');
+    const heavyEnv = { ...f.env,
+      YW_HEAVY_QUEUE: join(f.root, 'q'), YW_HEAVY_EXEC_LOCK: join(f.root, 'x'),
+      YW_HEAVY_EDIT_LOCK: join(f.root, 'edit'), YW_HEAVY_FLOCK: join(f.root, 'flock'),
+      YW_HEAVY_LOG: join(f.root, 'heavy-log'), YW_HEAVY_NO_RECLAIM: join(f.root, 'no-reclaim'),
+      YW_HEAVY_EVENTS: join(f.root, 'events'), YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '',
+    };
+    const heavy = () => spawnSync('/bin/bash', [join(repo, 'scripts/yw-heavy.sh'), 'run', 'ROLE-CHECK', 'w', 's', '--', 'true'],
+      { env: heavyEnv, encoding: 'utf8' });
+    let result = f.role('status');
+    assert.equal(result.status, 0, out(result));
+    assert.match(result.stdout, /기기 역할 없음/);
+    assert.equal(f.role('add', 'worker').status, 1);
+    result = heavy(); assert.equal(result.status, 0, out(result));
+    result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+    assert.equal(result.status, 0, out(result));
+    const state = join(f.env.XDG_CONFIG_HOME || join(f.home, '.config'), 'bootstrap/roles/verifier');
+    assert.ok(existsSync(state));
+    result = heavy(); assert.equal(result.status, 4, out(result));
+    assert.match(result.stderr, /verifier 역할/);
+    result = f.role('remove', 'verifier'); assert.equal(result.status, 0, out(result));
+    assert.equal(existsSync(state), false);
+    result = heavy(); assert.equal(result.status, 0, out(result));
+  }
+});
 
 test('처음 켤 때 --ssh-key가 없으면 아무것도 바꾸지 않고 실패한다', t => {
   const f = sandbox(t);

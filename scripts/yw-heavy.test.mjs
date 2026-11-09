@@ -51,7 +51,7 @@ function fixture(t, { waitTimeout = 3500 } = {}) {
   // 기본 대역에 셸 함수를 더한 BASH_ENV (특정 구간에서 자기 자신을 kill -9하는 shim 등).
   let hooks = 0;
   const hookWith = extra => { const path = join(dir, `bash-env-${++hooks}`); writeFileSync(path, baseHook + extra + '\n'); return path; };
-  const env = { ...process.env, HOME: join(dir, 'home'), BASH_ENV: hook, YW_HEAVY_QUEUE: q, YW_HEAVY_EXEC_LOCK: x, YW_HEAVY_EDIT_LOCK: e,
+  const env = { ...process.env, HOME: join(dir, 'home'), XDG_CONFIG_HOME: join(dir, 'config'), YW_HEAVY_VERIFIER_OVERRIDE_REASON: '', BASH_ENV: hook, YW_HEAVY_QUEUE: q, YW_HEAVY_EXEC_LOCK: x, YW_HEAVY_EDIT_LOCK: e,
     YW_HEAVY_FLOCK: join(dir, 'flock'), YW_HEAVY_LOG: join(dir, 'log'), YW_HEAVY_NO_RECLAIM: join(dir, 'no-reclaim'), YW_HEAVY_EVENTS: join(dir, 'events'), YW_HEAVY_FAST_POLL: '.05', YW_HEAVY_POLL: '.05', YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '' };
   mkdirSync(env.HOME);
   const children = [];
@@ -93,6 +93,101 @@ function fixture(t, { waitTimeout = 3500 } = {}) {
     return path;
   };
   return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, waitTimeout, finish, owner, ownerText, line, legacy, hookWith, log: () => read(env.YW_HEAVY_LOG) };
+}
+
+// ---- verifier 역할: 실제 역할·대기열을 바꾸지 않는 양 모드 회귀 검사 ----
+for (const mode of ['compat', 'round-robin']) {
+  test(`verifier 역할 (${mode}): 역할 off는 기존 acquire·run 그대로`, async t => {
+    const f = fixture(t, { waitTimeout: 60000 });
+    if (mode === 'round-robin') enable(f);
+    f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON = 'off에서는 사용하지 않는 사유';
+    const p = f.start(['-c', `${quote(script)} acquire ORDINARY w S --holder $$ && read -r _`]);
+    await f.wait(() => p.out.trim(), 'ordinary acquired');
+    assert.equal(JSON.parse(f.ownerText()).verifierOverrideReason, undefined);
+    releaseOwner(f);
+    p.stdin.end('done\n'); assert.equal(await f.finish(p), 0, p.err);
+    const run = f.cli('run', 'NEXT', 'w', 'S', '--', '/bin/sh', '-c', 'exit 17');
+    assert.equal(await f.finish(run), 17, run.err);
+    assert.equal(existsSync(f.x), false);
+    assert.doesNotMatch(f.log(), /verifier-override/);
+  });
+
+  test(`verifier 역할 (${mode}): 일반 요청·빈 사유 거절, 상태·큐 변경 없음`, t => {
+    const f = fixture(t);
+    if (mode === 'round-robin') enable(f);
+    enableVerifierRole(f);
+    const before = tree(f.dir);
+    for (const reason of [undefined, '', '  ', '\n\t\r\x1b']) {
+      if (reason === undefined) delete f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON;
+      else f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON = reason;
+      for (const args of [
+        ['acquire', 'VERIFIER-01-software', 'nightly-local', 'ordinary'],
+        ['run', 'ORDINARY', 'w', 'verifier-loop-other', '--', '/bin/sh', '-c', `touch ${quote(join(f.dir, 'ran'))}`],
+      ]) {
+        const result = f.sync(...args);
+        assert.equal(result.status, 4, result.stderr);
+        assert.equal(result.stdout, '');
+        assert.match(result.stderr, /YW_HEAVY_VERIFIER_OVERRIDE_REASON/);
+        assert.deepEqual(tree(f.dir), before, '거절은 큐·owner·기록과 명령을 건드리지 않는다');
+      }
+    }
+    for (const cmd of ['status', 'capabilities']) assert.equal(f.sync(cmd).status, 0);
+    assert.deepEqual(tree(f.dir), before);
+  });
+
+  test(`verifier 역할 (${mode}): 실제 verifier-loop acquire 호출과 run 허용`, async t => {
+    const f = fixture(t, { waitTimeout: 60000 });
+    if (mode === 'round-robin') enable(f);
+    enableVerifierRole(f);
+    // verifier-loop.mjs acquireFifo: FIFO_ID, STATUS_CONTEXT, supervisor, --holder loop PID.
+    const p = f.start(['-c', `${quote(script)} acquire VERIFIER-01-software nightly-local verifier-loop --holder $$ && read -r _`]);
+    await f.wait(() => p.out.trim(), 'verifier acquired');
+    const owner = JSON.parse(f.ownerText());
+    assert.equal(owner.task, 'VERIFIER-01-software');
+    assert.equal(owner.supervisor, 'verifier-loop');
+    assert.equal(owner.holder, p.pid);
+    assert.equal(owner.verifierOverrideReason, undefined);
+    releaseOwner(f); // 역할이 켜진 상태에서도 기존 해제 프로토콜 그대로다.
+    p.stdin.end('done\n'); assert.equal(await f.finish(p), 0, p.err);
+    const run = f.cli('run', 'VERIFIER-RUN', 'nightly-local', 'verifier-loop', '--', 'true');
+    assert.equal(await f.finish(run), 0, run.err);
+    assert.equal(existsSync(f.x), false);
+  });
+
+  test(`verifier 역할 (${mode}): 명시한 override 사유를 acquire·run owner와 로그에 기록`, async t => {
+    const f = fixture(t, { waitTimeout: 60000 });
+    if (mode === 'round-robin') enable(f);
+    enableVerifierRole(f);
+    const reason = '승인된 "점검" \\ 임시\n작업\t';
+    const recorded = '승인된 "점검" \\ 임시작업';
+    f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON = reason;
+    for (const cmd of ['acquire', 'run']) {
+      const p = cmd === 'acquire'
+        ? f.start(['-c', `${quote(script)} acquire EXCEPTION w S --holder $$ && read -r _`])
+        : f.cli('run', 'EXCEPTION', 'w', 'S', '--', '/bin/sh', '-c', 'read -r _');
+      await f.wait(() => p.out.trim() || p.err.includes('ACQUIRED EXCEPTION'), `${cmd} acquired`);
+      const owner = JSON.parse(f.ownerText());
+      assert.equal(owner.verifierOverrideReason, recorded);
+      assert.ok(f.log().includes(`verifier-override task=EXCEPTION worker=w supervisor=S reason=${recorded}`));
+      if (cmd === 'acquire') releaseOwner(f);
+      p.stdin.end('done\n'); assert.equal(await f.finish(p), 0, p.err);
+      assert.equal(existsSync(f.x), false);
+    }
+  });
+}
+
+function enableVerifierRole(f) {
+  const dir = join(f.env.XDG_CONFIG_HOME, 'bootstrap/roles');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'verifier'), '', { mode: 0o600 });
+}
+function releaseOwner(f) {
+  const owner = JSON.parse(f.ownerText());
+  const args = owner.v === 3
+    ? ['release', '--generation', owner.generation, '--token', owner.token, '--lease', owner.lease]
+    : ['release', owner.task];
+  const result = f.sync(...args);
+  assert.equal(result.status, 0, result.stderr);
 }
 
 // ---- 반려 결함 재현 (구 CLI만 쓰는 *-legacy는 반려 구현에서 실패해야 한다) ----
