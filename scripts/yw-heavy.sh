@@ -8,6 +8,9 @@
 #   실행 lock YW_HEAVY_EXEC_LOCK (/tmp/yw-heavy-check.lock/owner.txt)
 #   편집 lock YW_HEAVY_FLOCK ($Q.flock, 커널 flock) + 호환 표지 파일 YW_HEAVY_EDIT_LOCK (/tmp/yw-heavy-queue.edit.lock)
 #   회수 기록 YW_HEAVY_LOG ($Q.log), 회수 끄기 YW_HEAVY_NO_RECLAIM ($Q.no-reclaim), 대기 주기 YW_HEAVY_POLL (30초)
+#   v3 모드 $Q.mode (없으면 compat), 신규 제출 중지 $Q.paused, 감독자 순환 $Q.rotation
+#   v3 작업 이벤트 YW_HEAVY_EVENTS ($Q.events), 내부 재확인 YW_HEAVY_FAST_POLL (.2초)
+#   v3 pending 한도 YW_HEAVY_MAX_PENDING_SUPERVISOR (128), YW_HEAVY_MAX_PENDING (1024)
 #   owner 없는 실행 lock 회수까지 YW_HEAVY_OWNERLESS_AGE (60초), 구형식 편집 lock 경고까지 YW_HEAVY_EDIT_WARN (120초)
 
 usage() {
@@ -19,7 +22,15 @@ usage() {
   yw-heavy release <ID>                                 차례(그 ID의 것일 때)와 그 ID의 대기 줄을 지운다
   yw-heavy enqueue <ID> <worker> <supervisor>           구버전 acquire 호환 전용 (구형식 줄)
   yw-heavy status                                       읽기 전용 상태
+  yw-heavy capabilities                                 JSON 프로토콜·현재 모드 (version도 동일)
+  yw-heavy reclaim                                      확정 사망 항목만 회수 (pause 중 drain용)
+  yw-heavy pause | resume                               신규 제출 중지·재개 (기존 대기는 drain)
+  yw-heavy mode [compat|round-robin]                     조회·전환 (pause + 빈 대기열 필요)
+  yw-heavy acquire <ID> <worker> <supervisor> --json [--holder PID]
+                                                        v3 JSON lease (활성 모드 전용)
+  yw-heavy release --generation G --token T --lease L    v3 세대별 해제 (빌린 lease는 no-op)
 종료 코드: 0 성공, 1 내부 오류, 2 사용법 오류·holder가 처음부터 끝나 있음,
+           4 제출 중지·모드 비활성·전환 거절, 5 pending 한도 초과, 6 lease·생존 검증 실패,
            3 대기 줄 제거·이어받힘·holder 종료·같은 ID가 이미 차례를 가짐·같은 ID의 구버전 줄
 EOF
 }
@@ -35,6 +46,11 @@ init() {
   LOG="${YW_HEAVY_LOG:-$Q.log}"
   NR="${YW_HEAVY_NO_RECLAIM:-$Q.no-reclaim}"
   POLL="${YW_HEAVY_POLL:-30}"
+  MODE="$Q.mode" PAUSED="$Q.paused" RING="$Q.rotation" EVENTS="${YW_HEAVY_EVENTS:-$Q.events}"
+  FAST_POLL="${YW_HEAVY_FAST_POLL:-.2}"
+  MAX_SUP="${YW_HEAVY_MAX_PENDING_SUPERVISOR:-128}" MAX_ALL="${YW_HEAVY_MAX_PENDING:-1024}"
+  GEN='' TOKEN='' LEASE='' BORROWED=false JSON=0 EXIT_CODE=unknown
+  IN_GEN="${YW_HEAVY_GENERATION:-}" IN_TOKEN="${YW_HEAVY_TOKEN:-}"
   EDIT_WARN="${YW_HEAVY_EDIT_WARN:-120}"
   OWNERLESS_AGE="${YW_HEAVY_OWNERLESS_AGE:-60}"
   # 구버전 편집 lock이 풀리기를 기다리는 주기. 1초보다 짧은 대기 주기(테스트)면 그것을 쓴다.
@@ -355,6 +371,8 @@ do_acquire() {
       return 3
     fi
     if [ "$registered" = 0 ]; then
+      if [ "$(mode_read)" = round-robin ]; then unlock_queue; rr_acquire; return $?; fi
+      if [ -e "$PAUSED" ]; then unlock_queue; say "신규 제출이 중지됐습니다"; return 4; fi
       reclaim_dead "$ID"
       if [ "$(json_str "$(owner_read)" task)" = "$ID" ]; then
         unlock_queue
@@ -440,6 +458,9 @@ do_acquire() {
 release_id() {
   local rc=0
   lock_queue || return 1
+  if [ "$(json_num "$(owner_read)" v)" = 3 ] || [ "$(lf "$(q_line "$ID")" v)" = 3 ]; then
+    unlock_queue; say "v3 차례는 세대·token·lease로 해제해야 합니다"; return 6
+  fi
   if [ "$(json_str "$(owner_read)" task)" = "$ID" ]; then
     rm -f "$XL/owner.txt"
     if ! rmdir "$XL" 2>/dev/null; then
@@ -459,6 +480,9 @@ release_id() {
 do_enqueue_legacy() {
   while :; do
     lock_queue || return 1
+    if [ "$(mode_read)" != compat ] || [ -e "$PAUSED" ]; then
+      unlock_queue; say "구버전 enqueue를 받지 않습니다"; return 4
+    fi
     reclaim_dead
     if [ -n "$(q_line "$ID")" ]; then
       unlock_queue
@@ -481,19 +505,24 @@ do_run() {
   trap 'SIG=TERM' TERM
   trap 'SIG=INT' INT
   trap 'SIG=HUP' HUP
-  trap '[ "$HELD" = 0 ] || release_id' EXIT
+  trap '[ "$HELD" = 0 ] || finish_release' EXIT
   HOLDER="$$"
   HOLDER_START="$MYSTART"
   do_acquire || return $?
   say "ACQUIRED $ID"
   if [ -n "$SIG" ]; then
-    release_id
+    finish_release
     sig_code
     return
   fi
-  "$@" 9>&-
+  if [ -n "$GEN" ]; then
+    YW_HEAVY_GENERATION="$GEN" YW_HEAVY_TOKEN="$TOKEN" "$@" 9>&-
+  else
+    "$@" 9>&-
+  fi
   rc=$?
-  release_id
+  EXIT_CODE="$rc"
+  finish_release
   if [ -n "$SIG" ]; then
     sig_code
     return
@@ -503,6 +532,9 @@ do_run() {
 
 do_status() {
   local l n=0 legacy=0 id pid start st owner task holder hs target age
+  printf '모드: %s, 신규 제출: ' "$(mode_read)"
+  if [ -e "$PAUSED" ]; then printf '중지\n'; else printf '허용\n'; fi
+  if [ "$(mode_read)" = round-robin ]; then printf '감독자 순환: %s\n' "$(ring_read | tr '\n' ' ')"; fi
   printf '대기열: %s\n' "$Q"
   while IFS= read -r l; do
     [ -n "$l" ] || continue
@@ -512,7 +544,7 @@ do_status() {
       pid="$(lf "$l" pid)"
       start="$(lf "$l" start)"
       if [ "${pid:--}" = - ]; then st='holder 없음 (자동 회수 안 함)'; else st="pid $pid $(proc_state "$pid" "${start:--}")"; fi
-      printf '  %d. %s  v2  %s  [%s]\n' "$n" "$id" "$(lf "$l" supervisor)" "$st"
+      printf '  %d. %s  v%s  %s  [%s]\n' "$n" "$id" "$(lf "$l" v)" "$(lf "$l" supervisor)" "$st"
     else
       legacy=$((legacy + 1))
       printf '  %d. %s  구형식  %s  [생존 판정 불가]\n' "$n" "$id" "$(lf "$l" supervisor)"
@@ -580,7 +612,7 @@ EOF
 # ID·worker·supervisor는 줄의 한 단어이자 JSON 문자열이다.
 valid_word() {
   case "$1" in
-    '' | -* | *[[:space:]\\\"]*) return 1 ;;
+    '' | -* | *[[:space:][:cntrl:]\\\"]*) return 1 ;;
   esac
   return 0
 }
@@ -594,14 +626,292 @@ need_task() {
   done
 }
 
+# ---- v3: 명시적으로 활성화하는 단일 세대·감독자 순환 --------------------------
+# 기본 모드는 계속 v2 FIFO다. 제어 명령도 기존 편집 잠금 아래에서 직렬화한다.
+mode_read() { if [ -f "$MODE" ]; then cat "$MODE"; else printf compat; fi; }
+capabilities() {
+  printf '{"protocol":3,"mode":"%s","paused":%s,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl"]}\n' \
+    "$(mode_read)" "$(if [ -e "$PAUSED" ]; then echo true; else echo false; fi)"
+}
+control() {
+  local cmd="$1" target="${2:-}" tmp
+  if [ "$cmd" = mode ] && [ $# = 1 ]; then mode_read; echo; return; fi
+  case "$cmd:$#:$target" in reclaim:1: | pause:1: | resume:1: | mode:2:compat | mode:2:round-robin) ;;
+    *) usage >&2; return 2 ;; esac
+  lock_queue || return 1
+  case "$cmd" in
+    reclaim) if [ "$(mode_read)" = round-robin ]; then rr_reclaim; else reclaim_dead; fi ;;
+    pause) (umask 077; touch "$PAUSED") ;;
+    resume) rm -f "$PAUSED" ;;
+    mode)
+      if [ ! -e "$PAUSED" ] || [ -n "$(q_lines)" ] || [ -e "$XL" ]; then
+        unlock_queue; say "전환 거절: pause 후 실행·대기자(구버전 포함)를 모두 drain해야 합니다"; return 4
+      fi
+      tmp="$(mktemp "$MODE.tmp.XXXXXX")" || { unlock_queue; return 1; }
+      if ! { printf '%s\n' "$target" >"$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$MODE"; }; then
+        rm -f "$tmp"; unlock_queue; return 1
+      fi
+      rm -f "$RING"
+      ;;
+  esac
+  local rc=$?
+  unlock_queue
+  return "$rc"
+}
+random_id() { /usr/bin/openssl rand -hex 24; }
+# 검증에는 시작 시각이 반드시 필요하다. 조회 실패를 재진입 허용으로 바꾸지 않는다.
+verified_process() {
+  [ -n "$2" ] && [ "$2" != - ] && [ "$(proc_state "$1" "$2")" = alive ] &&
+    [ "$(proc_start "$1")" = "$2" ]
+}
+is_ancestor() {
+  local target="$1" start="$2" pid="$$" parent n=0
+  verified_process "$target" "$start" || return 1
+  while [ "$n" -lt 128 ]; do
+    [ "$pid" != "$target" ] || return 0
+    parent="$(ps -o ppid= -p "$pid" 2>/dev/null)" || return 1
+    parent="$(printf '%s' "$parent" | tr -d ' ')"
+    case "$parent" in '' | 0 | *[!0-9]*) return 1 ;; esac
+    [ "$parent" != "$pid" ] || return 1
+    pid="$parent"; n=$((n + 1))
+  done
+  return 1
+}
+lease_response() {
+  printf '{"protocol":3,"requestId":"%s","generation":"%s","token":"%s","lease":"%s","borrowed":%s}\n' \
+    "$(json_esc "$ID")" "$GEN" "$TOKEN" "$LEASE" "$BORROWED"
+}
+# 0 빌림, 1 일반 제출, 6 만료/잘못된 상속. queue lock 아래에서만 읽는다.
+try_borrow() {
+  local owner="$1" holder start
+  holder="$(json_num "$owner" holder)"; start="$(json_str "$owner" holderStart)"
+  if [ -n "$IN_GEN$IN_TOKEN" ]; then
+    if [ "$(json_num "$owner" v)" != 3 ] || [ "$IN_GEN" != "$(json_str "$owner" generation)" ] ||
+       [ "$IN_TOKEN" != "$(json_str "$owner" token)" ] || ! verified_process "$holder" "$start"; then
+      say "만료됐거나 검증할 수 없는 재진입 token"; return 6
+    fi
+  elif [ "$(json_num "$owner" v)" != 3 ] || ! is_ancestor "$holder" "$start"; then
+    return 1
+  fi
+  GEN="$(json_str "$owner" generation)" TOKEN="$(json_str "$owner" token)"
+  LEASE="b-$(random_id)" || return 6
+  BORROWED=true HELD=1
+  return 0
+}
+# 기록에는 token·lease·환경·명령·worker·cwd를 넣지 않는다. 시간 단위는 초다.
+event() {
+  local kind="$1" id="$2" gen="$3" sup="$4" queued="$5" started="$6" code="${7:-unknown}" signal="${8:-unknown}" now wait=0 held=0
+  now="$(date +%s)"
+  case "$queued:$started" in *[!0-9:]*) ;; *)
+    if [ "$started" -gt 0 ]; then wait=$((started - queued)); held=$((now - started)); else wait=$((now - queued)); fi ;;
+  esac
+  [ "$wait" -ge 0 ] || wait=0; [ "$held" -ge 0 ] || held=0
+  { printf '{"event":"%s","at":%s,"requestId":"%s","generation":"%s","supervisor":"%s","waitSeconds":%s,"heldSeconds":%s,"exitCode":"%s","signal":"%s"}\n' \
+      "$kind" "$now" "$(json_esc "$id")" "$gen" "$(json_esc "$sup")" "$wait" "$held" "$code" "$signal" >>"$EVENTS"; } 2>/dev/null || say "작업 이벤트를 기록하지 못했습니다"
+}
+line_event() { event "$1" "$(line_id "$2")" "$(lf "$2" generation)" "$(lf "$2" supervisor)" "$(lf "$2" queued)" 0 unknown "${3:-unknown}"; }
+owner_event() { event "$1" "$(json_str "$2" task)" "$(json_str "$2" generation)" "$(json_str "$2" supervisor)" "$(json_num "$2" queued)" "$(json_num "$2" started)" "${3:-unknown}" "${4:-unknown}"; }
+# ring은 실행 중 감독자를 포함한다. 그 차례가 끝날 때만 남은 작업이 있으면 끝으로 돌린다.
+ring_read() { cat "$RING" 2>/dev/null; return 0; }
+ring_write() {
+  local tmp
+  tmp="$(mktemp "$RING.tmp.XXXXXX")" || return 1
+  { if [ -n "$1" ]; then printf '%s\n' "$1"; fi; } >"$tmp"
+  chmod 600 "$tmp" && mv -f "$tmp" "$RING"
+}
+ring_prune() {
+  local active s kept=''
+  active="$(json_str "$(owner_read)" supervisor)"
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    if [ "$s" = "$active" ] || q_lines | awk -v s="supervisor=$s" '{for(i=2;i<=NF;i++) if($i==s) found=1} END{exit !found}'; then
+      kept="${kept:+$kept
+}$s"
+    fi
+  done <<EOF_RING
+$(ring_read)
+EOF_RING
+  ring_write "$kept"
+}
+ring_add() {
+  local cur
+  ring_prune || return 1
+  cur="$(ring_read)"
+  printf '%s\n' "$cur" | awk -v s="$1" '$0 == s { found=1 } END { exit !found }' && return 0
+  ring_write "${cur:+$cur
+}$1"
+}
+ring_rotate() {
+  local cur
+  cur="$(ring_read | awk -v s="$1" '$0 != s')"
+  if q_lines | awk -v s="supervisor=$1" '{ for (i=2;i<=NF;i++) if ($i==s) found=1 } END { exit !found }'; then
+    cur="${cur:+$cur
+}$1"
+  fi
+  ring_write "$cur"
+}
+rr_head() {
+  local s l
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    l="$(q_lines | awk -v s="supervisor=$s" '{ for(i=2;i<=NF;i++) if($i==s) {print $1; exit} }')"
+    if [ -n "$l" ]; then printf '%s' "$l"; return; fi
+  done <<EOF_RING
+$(ring_read)
+EOF_RING
+}
+rr_reclaim() {
+  local protect="${1:-}" owner holder start state l id changed=0
+  [ ! -e "$NR" ] || return 0
+  owner="$(owner_read)"
+  if [ "$(json_num "$owner" v)" = 3 ]; then
+    holder="$(json_num "$owner" holder)" start="$(json_str "$owner" holderStart)"
+    state="$(proc_state "$holder" "$start")"
+    case "$state" in dead:*)
+      [ "$(ls -A "$XL" | wc -l | tr -d ' ')" = 1 ] || return 0
+      rm -f "$XL/owner.txt"
+      if rmdir "$XL" 2>/dev/null; then
+        owner_event reclaim "$owner"
+        ring_rotate "$(json_str "$owner" supervisor)" || return 1
+      fi ;;
+    esac
+  elif [ -z "$owner" ] && [ -d "$XL" ]; then
+    # v3도 확정할 수 없는 owner는 기존의 유예 시간 뒤 빈 디렉터리만 회수한다.
+    if [ "$(ownerless_age)" -ge "$OWNERLESS_AGE" ]; then rmdir "$XL" 2>/dev/null || true; fi
+  fi
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    id="$(line_id "$l")"
+    [ "$id" != "$protect" ] || continue
+    [ "$(lf "$l" v)" = 3 ] || continue
+    state="$(proc_state "$(lf "$l" pid)" "$(lf "$l" start)")"
+    case "$state" in dead:*)
+      q_drop "$id" || return 1
+      line_event reclaim "$l"
+      changed=1
+      # 순환 위치는 유지한다. 빈 감독자는 rr_head가 건너뛴다.
+      ;;
+    esac
+  done <<EOF_QUEUE
+$(q_lines)
+EOF_QUEUE
+  [ "$changed" = 0 ] || ring_prune
+}
+rr_cancel() {
+  local l
+  l="$(q_line "$ID")"
+  if [ "$(lf "$l" pid)" = "$$" ]; then
+    q_drop "$ID" || return 1
+    line_event cancel "$l" "${SIG:-unknown}"
+    ring_prune
+  fi
+}
+rr_acquire() {
+  local registered=0 l owner rc count supcount now json head
+  umask 077
+  case "$MAX_SUP:$MAX_ALL" in *[!0-9:]* | :* | *: | 0:* | *:0) say "pending 한도는 양의 정수여야 합니다"; return 2 ;; esac
+  # 장기 holder는 호출자의 조상이어야 하며 시작 시각을 검증할 수 있어야 한다.
+  [ -n "$HOLDER" ] || { HOLDER="$PPID"; HOLDER_START="$(proc_start "$PPID")" || HOLDER_START=-; }
+  is_ancestor "$HOLDER" "$HOLDER_START" || { say "holder의 조상 관계·시작 시각을 검증하지 못했습니다"; return 6; }
+  while :; do
+    lock_queue || return 1
+    if [ "$(mode_read)" != round-robin ]; then unlock_queue; say "round-robin이 꺼져 있습니다"; return 4; fi
+    if [ "$registered" = 0 ]; then
+      owner="$(owner_read)"
+      try_borrow "$owner"; rc=$?
+      if [ "$rc" = 0 ]; then unlock_queue; return 0; fi
+      if [ "$rc" != 1 ]; then unlock_queue; return "$rc"; fi
+      if [ -e "$PAUSED" ]; then unlock_queue; say "신규 제출이 중지됐습니다"; return 4; fi
+      rr_reclaim "$ID" || { unlock_queue; return 1; }
+      if [ "$(json_str "$(owner_read)" task)" = "$ID" ]; then unlock_queue; say "이미 실행 중인 요청 ID"; return 3; fi
+      l="$(q_line "$ID")"
+      if [ -n "$l" ]; then
+        if [ "$(lf "$l" v)" != 3 ] || [ "$(lf "$l" supervisor)" != "$SUP" ]; then
+          unlock_queue; say "재시도 요청의 감독자·버전이 다릅니다"; return 3
+        fi
+        q_set_ps "$ID" "$$" "$MYSTART" || { unlock_queue; return 1; }
+      else
+        count="$(q_lines | awk 'END {print NR+0}')"; supcount="$(sup_count)"
+        if [ "$count" -ge "$MAX_ALL" ] || [ "$supcount" -ge "$MAX_SUP" ]; then
+          unlock_queue; say "pending 한도 초과: supervisor=$supcount/$MAX_SUP total=$count/$MAX_ALL"; return 5
+        fi
+        GEN="$(random_id)" || { unlock_queue; return 1; }
+        now="$(date +%s)"
+        l="$ID worker=$WORKER supervisor=$SUP v=3 pid=$$ start=$MYSTART generation=$GEN queued=$now"
+        q_append "$l" && ring_add "$SUP" || { unlock_queue; return 1; }
+        line_event enqueue "$l"
+      fi
+      registered=1
+    else
+      rr_reclaim || { unlock_queue; return 1; }
+    fi
+    l="$(q_line "$ID")"
+    if [ -z "$l" ] || [ "$(lf "$l" pid)" != "$$" ]; then unlock_queue; say "대기 줄이 제거되거나 다른 재시도가 이어받았습니다"; return 3; fi
+    if [ -n "$SIG" ] || holder_dead; then
+      rr_cancel; unlock_queue
+      if [ -n "$SIG" ]; then sig_code; return; fi
+      say "holder가 끝나 대기를 취소했습니다"; return 3
+    fi
+    # 구버전이 활성화 후 잘못 들어오면 새 구현은 보수적으로 멈춘다.
+    if q_lines | awk '{ok=0; for(i=2;i<=NF;i++) if($i=="v=3") ok=1; if(!ok) bad=1} END{exit !bad}'; then
+      rr_cancel; unlock_queue; say "활성 모드에 구버전 줄이 있어 획득을 거절합니다"; return 4
+    fi
+    head="$(rr_head)"
+    if [ "$head" = "$ID" ] && mkdir "$XL" 2>/dev/null; then
+      GEN="$(lf "$l" generation)" TOKEN="$(random_id)" LEASE="r-$(random_id)" now="$(date +%s)"
+      if [ -z "$TOKEN" ] || [ "$LEASE" = r- ]; then rmdir "$XL"; unlock_queue; return 1; fi
+      json="{\"v\":3,\"pid\":$HOLDER,\"holder\":$HOLDER,\"holderStart\":\"$HOLDER_START\",\"task\":\"$(json_esc "$ID")\",\"supervisor\":\"$(json_esc "$SUP")\",\"generation\":\"$GEN\",\"token\":\"$TOKEN\",\"lease\":\"$LEASE\",\"queued\":$(lf "$l" queued),\"started\":$now}"
+      if ! { printf '%s\n' "$json" >"$XL/owner.txt" && q_drop "$ID"; }; then
+        rm -f "$XL/owner.txt"; rmdir "$XL"; unlock_queue; return 1
+      fi
+      owner_event start "$json"
+      BORROWED=false HELD=1
+      unlock_queue; return 0
+    fi
+    unlock_queue
+    sleep "$FAST_POLL" 9>&-
+  done
+}
+rr_release() {
+  local owner rc=0
+  lock_queue || return 1
+  owner="$(owner_read)"
+  # 중복·오래된 세대 해제는 멱등 no-op이다. 사람이 붙인 ID로 해제하지 않는다.
+  if [ "$(json_num "$owner" v)" != 3 ] || [ "$GEN" != "$(json_str "$owner" generation)" ]; then
+    unlock_queue; HELD=0; return 0
+  fi
+  if [ -z "$TOKEN" ] || [ "$TOKEN" != "$(json_str "$owner" token)" ]; then
+    unlock_queue; say "해제 token이 일치하지 않습니다"; return 6
+  fi
+  case "$LEASE" in
+    b-*) unlock_queue; HELD=0; return 0 ;;
+  esac
+  if [ "$LEASE" != "$(json_str "$owner" lease)" ]; then unlock_queue; say "해제 lease가 일치하지 않습니다"; return 6; fi
+  # 다른 파일이 있으면 owner를 보존한다. 실패한 해제를 다음 요청이 성공으로 오인하지 않는다.
+  if [ "$(ls -A "$XL" | wc -l | tr -d ' ')" != 1 ]; then unlock_queue; say "실행 lock에 다른 파일이 있어 보존합니다"; return 1; fi
+  rm -f "$XL/owner.txt"
+  if rmdir "$XL" 2>/dev/null; then
+    owner_event end "$owner" "$EXIT_CODE" "${SIG:-unknown}"
+    ring_rotate "$(json_str "$owner" supervisor)" || rc=1
+  else rc=1; fi
+  unlock_queue; HELD=0; return "$rc"
+}
+finish_release() { if [ -n "$GEN" ]; then rr_release; else release_id; fi; }
+
 main() {
   init
   local cmd="${1:-}" st
   [ $# -gt 0 ] && shift
   case "$cmd" in
     status) do_status; return ;;
+    capabilities | version) capabilities; return ;;
+    pause | resume | mode | reclaim) control "$cmd" "$@"; return ;;
     -h | --help | help) usage; return 0 ;;
     release)
+      if [ $# = 6 ] && [ "$1" = --generation ] && [ "$3" = --token ] && [ "$5" = --lease ]; then
+        GEN="$2" TOKEN="$4" LEASE="$6"
+        rr_release; return
+      fi
       [ $# = 1 ] || { usage >&2; return 2; }
       need_task "$1" || return
       ID="$1"
@@ -622,6 +932,7 @@ main() {
       do_enqueue_legacy
       ;;
     acquire)
+      if [ "${1:-}" = --json ]; then JSON=1; shift; fi
       if [ $# = 2 ] && [ "$1" = --holder ]; then
         case "$2" in '' | 0* | *[!0-9]*) usage >&2; say "--holder는 PID 숫자입니다: $2"; return 2 ;; esac
         HOLDER="$2"
@@ -632,8 +943,14 @@ main() {
         usage >&2
         return 2
       fi
+      if [ "$JSON" = 1 ] && [ "$(mode_read)" != round-robin ]; then
+        say "기계 프로토콜은 round-robin 활성화 뒤에 사용합니다"; return 4
+      fi
+      if [ "$(mode_read)" = round-robin ]; then
+        trap 'SIG=TERM' TERM; trap 'SIG=INT' INT; trap 'SIG=HUP' HUP
+      fi
       do_acquire || return $?
-      echo "ACQUIRED $ID"
+      if [ -n "$GEN" ]; then lease_response; else echo "ACQUIRED $ID"; fi
       ;;
     run)
       [ "${1:-}" = -- ] && [ $# -ge 2 ] || { usage >&2; return 2; }

@@ -2,6 +2,7 @@
 # 공용 heavy 대기열 도구 yw-heavy를 ~/.local/bin에 설치한다. 모든 기기가 같다. 사용법·전환 절차는 agents/heavy-queue.md.
 # 실행 중인 대기자가 이전 파일을 끝까지 읽도록 복사본을 같은 디렉터리에 만든 뒤 mv로 바꾼다. 저장소로 연결하는 링크는 쓰지 않는다
 # (브랜치·worktree를 바꾸면 실행 중인 도구가 바뀐다). 예전 경로 /tmp/cc-yw-heavy.sh는 없을 때만 링크로 만들고, 있으면 그대로 둔다.
+# 설치·자동 갱신은 모드·제출 중지·실행 상태를 만들거나 바꾸지 않는다. 새 모드는 감독자가 drain 뒤 명시적으로 켠다.
 # /tmp는 재시동 때 비워진다. 링크는 이 단계가 다시 돌 때(yw-heavy 변경, 전체 설치, --only heavy)만 생긴다. 정식 경로는 ~/.local/bin/yw-heavy다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
