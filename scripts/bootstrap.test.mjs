@@ -258,10 +258,20 @@ test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경�
   assert.equal(readFileSync(dst, 'utf8'), readFileSync(join(repo, 'scripts/yw-heavy.sh'), 'utf8'));
   assert.equal(statSync(dst).mode & 0o777, 0o755);
   assert.equal(readlinkSync(compat), dst);
+  const queue = join(root, 'queue');
+  const protocol = () => JSON.parse(spawnSync('/bin/bash', [dst, 'capabilities'], {
+    env: { ...process.env, YW_HEAVY_QUEUE: queue }, encoding: 'utf8'
+  }).stdout);
+  assert.equal(protocol().mode, 'compat', '설치는 새 모드를 활성화하지 않는다');
+  assert.equal(existsSync(queue + '.mode'), false);
+  writeFileSync(queue + '.mode', 'round-robin\n');
+  writeFileSync(queue + '.paused', '');
   const ino = statSync(dst).ino;
   result = step();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(statSync(dst).ino, ino, '같으면 그대로 둔다');
+  assert.equal(protocol().mode, 'round-robin', '설치는 기존 모드도 바꾸지 않는다');
+  assert.equal(protocol().paused, true);
   assert.deepEqual(readdirSync(join(home, '.local/bin')), ['yw-heavy'], '임시 파일을 남기지 않는다');
 
   // 실행 중인 대기자가 연 이전 파일은 이전 내용을 끝까지 읽는다.

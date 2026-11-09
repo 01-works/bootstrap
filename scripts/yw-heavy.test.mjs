@@ -14,9 +14,8 @@ const pause = ms => new Promise(r => setTimeout(r, ms));
 // 작업자가 확인과 읽기 사이에 지울 수 있어 없으면 빈 값으로 본다.
 const read = p => { try { return readFileSync(p, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return ''; throw e; } };
 const dead = '2147483647';
-// 구버전 대기자가 실제로 쓰는 경로는 이 기기의 실제 작업 때문에 바뀔 수 있다. 거기에는 테스트 표지(worker w·wk, 새 버전 편집 표지)가
-// 들어가지 않았는지만 보고, 구버전이 건드리지 않는 경로는 inode·mtime이 그대로인지 본다.
-const strictLivePaths = ['/tmp/yw-heavy-queue.flock', '/tmp/yw-heavy-queue.log', '/tmp/yw-heavy-queue.no-reclaim', '/tmp/cc-yw-heavy.sh',
+// 실제 대기열은 다른 세션이 계속 바꿀 수 있다. 테스트 worker가 없고 설치본·호환 링크가 그대로인지 확인한다.
+const strictLivePaths = ['/tmp/cc-yw-heavy.sh',
   join(process.env.HOME, '.local/bin/yw-heavy')];
 function snapshot(paths) {
   return paths.map(p => { try { const s = lstatSync(p); return [p, s.ino, s.mtimeMs]; } catch { return [p, null]; } });
@@ -25,8 +24,7 @@ function assertLiveUntouched(before) {
   assert.deepEqual(snapshot(strictLivePaths), before, '실제 heavy 경로의 inode/mtime은 바꾸지 않는다');
   assert.doesNotMatch(read('/tmp/yw-heavy-queue'), / worker=wk? /, '실제 대기열에 테스트 줄이 없다');
   assert.doesNotMatch(read('/tmp/yw-heavy-check.lock/owner.txt'), /"worker":"wk?"/, '실제 실행 lock이 테스트 것이 아니다');
-  let edit = null; try { edit = lstatSync('/tmp/yw-heavy-queue.edit.lock'); } catch {}
-  assert.ok(!edit || edit.isDirectory(), '실제 편집 lock 경로에 새 버전 표지가 없다');
+  // 실제 참여자도 v2 표지를 쓸 수 있다. 활동 중 대기열의 표지·로그·flock 변화는 테스트의 쓰기 증거가 아니다.
 }
 // 디렉터리 아래 모든 항목의 inode·mtime·크기 (status 읽기 전용 확인용).
 function tree(dir) {
@@ -42,7 +40,7 @@ function tree(dir) {
 const procStart = pid => spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' }, encoding: 'utf8' })
   .stdout.trim().split(/\s+/).join('_');
 
-function fixture(t) {
+function fixture(t, { waitTimeout = 3500 } = {}) {
   const before = snapshot(strictLivePaths);
   const dir = mkdtempSync(join(tmpdir(), 'yw-heavy-test-'));
   const q = join(dir, 'q'), x = join(dir, 'x'), e = join(dir, 'e');
@@ -54,7 +52,7 @@ function fixture(t) {
   let hooks = 0;
   const hookWith = extra => { const path = join(dir, `bash-env-${++hooks}`); writeFileSync(path, baseHook + extra + '\n'); return path; };
   const env = { ...process.env, HOME: join(dir, 'home'), BASH_ENV: hook, YW_HEAVY_QUEUE: q, YW_HEAVY_EXEC_LOCK: x, YW_HEAVY_EDIT_LOCK: e,
-    YW_HEAVY_FLOCK: join(dir, 'flock'), YW_HEAVY_LOG: join(dir, 'log'), YW_HEAVY_NO_RECLAIM: join(dir, 'no-reclaim'), YW_HEAVY_POLL: '.05' };
+    YW_HEAVY_FLOCK: join(dir, 'flock'), YW_HEAVY_LOG: join(dir, 'log'), YW_HEAVY_NO_RECLAIM: join(dir, 'no-reclaim'), YW_HEAVY_EVENTS: join(dir, 'events'), YW_HEAVY_FAST_POLL: '.05', YW_HEAVY_POLL: '.05', YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '' };
   mkdirSync(env.HOME);
   const children = [];
   const track = p => {
@@ -69,7 +67,7 @@ function fixture(t) {
   // 살아 있는 프로세스 (holder·대기자 대역). 테스트가 끝나면 정리한다.
   const live = () => track(spawn('/bin/sleep', ['30'], { stdio: 'ignore', detached: true }));
   const sync = (...args) => spawnSync('/bin/bash', [script, ...args], { env, encoding: 'utf8' });
-  const wait = async (fn, message = 'condition', timeout = 3500) => {
+  const wait = async (fn, message = 'condition', timeout = waitTimeout) => {
     const end = Date.now() + timeout;
     while (!fn()) { if (Date.now() >= end) assert.fail(`timeout: ${message}`); await pause(20); }
   };
@@ -94,7 +92,7 @@ function fixture(t) {
     assert.doesNotMatch(readFileSync(path, 'utf8'), /\/tmp\/yw-heavy/, '구버전 사본은 실제 /tmp 경로를 쓰지 않는다');
     return path;
   };
-  return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, finish, owner, ownerText, line, legacy, hookWith, log: () => read(env.YW_HEAVY_LOG) };
+  return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, waitTimeout, finish, owner, ownerText, line, legacy, hookWith, log: () => read(env.YW_HEAVY_LOG) };
 }
 
 // ---- 반려 결함 재현 (구 CLI만 쓰는 *-legacy는 반려 구현에서 실패해야 한다) ----
@@ -551,4 +549,434 @@ test('콜론 뒤 공백이 있는 owner JSON과 R1-heavy.py 형식 편집 lock�
   mkdirSync(h.e); writeFileSync(join(h.e, 'owner.txt'), 'pid=1 task=R1-prep\n');
   const w = h.cli('acquire', 'A', 'w', 's');
   await pause(300); assert.equal(w.out, ''); assert.match(h.sync('status').stdout, /편집 lock: 구형식 pid=1 task=R1-prep \(pid 1 unknown/);
+});
+
+// ---- v3: 모든 상태는 fixture 경로에만 기록한다 ----
+function enable(f) {
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 0);
+  assert.equal(f.sync('resume').status, 0);
+}
+const releaseLease = (f, lease) => f.sync('release', '--generation', lease.generation, '--token', lease.token, '--lease', lease.lease);
+const events = f => read(f.env.YW_HEAVY_EVENTS).trim().split('\n').filter(Boolean).map(JSON.parse);
+// 시간 상한은 정체를 감지하는 watchdog이다. polling 회귀는 실제 호출 인자로 판정한다.
+function observeFastPolling(f) {
+  const sleeps = join(f.dir, 'sleeps');
+  f.env.YW_HEAVY_POLL = '30';
+  f.env.YW_HEAVY_FAST_POLL = '.2'; // 운영 기본값. 여러 대기자의 과도한 .05초 경합을 피한다.
+  f.env.BASH_ENV = f.hookWith(`sleep() {
+    builtin printf '%s\\n' "$1" >> ${quote(sleeps)}
+    case "$1" in 30) builtin printf 'unexpected 30-second poll\\n' >&2; exit 97;; esac
+    /bin/sleep "$@"
+  }`);
+  return sleeps;
+}
+async function acquireLease(f, id = 'ROOT', sup = 'S', extra = {}) {
+  const p = f.cliEnv(extra, 'acquire', id, 'w', sup, '--json', '--holder', String(process.pid));
+  assert.equal(await f.finish(p), 0, p.err);
+  return JSON.parse(p.out);
+}
+
+test('v3 capability는 읽기 전용, 기본 compat, 설치는 활성화하지 않는다', t => {
+  const f = fixture(t), before = tree(f.dir);
+  const cap = JSON.parse(f.sync('capabilities').stdout);
+  assert.equal(cap.protocol, 3); assert.equal(cap.mode, 'compat'); assert.equal(cap.paused, false);
+  assert.deepEqual(tree(f.dir), before);
+  assert.equal(f.sync('acquire', 'X', 'w', 's', '--json').status, 4);
+  assert.equal(f.sync('mode', 'round-robin').status, 4, 'pause 필요');
+  enable(f);
+  assert.equal(JSON.parse(f.sync('version').stdout).mode, 'round-robin');
+});
+
+test('v3 실제 v2 참여자·구형식 fixture가 남으면 전환 거절, FIFO 호환과 drain 후 롤백', async t => {
+  const f = fixture(t);
+  const v2 = fileURLToPath(new URL('./fixtures/yw-heavy-v2.sh', import.meta.url));
+  const h = f.start([v2, 'acquire', 'H', 'w', 'H']);
+  assert.equal(await f.finish(h), 0);
+  const a = f.start([v2, 'acquire', 'A', 'w', 'S']);
+  await f.wait(() => read(f.q).includes('A '));
+  const b = f.cli('acquire', 'B', 'w', 'T');
+  await f.wait(() => read(f.q).includes('B '));
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 4);
+  assert.equal(f.sync('acquire', 'DENY', 'w', 'T').status, 4);
+  assert.equal(f.sync('release', 'H').status, 0);
+  assert.equal(await f.finish(a), 0); assert.equal(b.out, '');
+  assert.equal(f.sync('mode', 'round-robin').status, 4);
+  assert.equal(f.sync('release', 'A').status, 0);
+  assert.equal(await f.finish(b), 0);
+  assert.equal(f.sync('release', 'B').status, 0);
+  const old = f.start([f.legacy(), 'acquire', 'OLD', 'w', 'old']);
+  assert.equal(await f.finish(old), 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 4);
+  assert.equal(f.sync('release', 'OLD').status, 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 0);
+  assert.equal(f.sync('resume').status, 0);
+  const lease = await acquireLease(f);
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'compat').status, 4);
+  assert.equal(releaseLease(f, lease).status, 0);
+  assert.equal(f.sync('mode', 'compat').status, 0);
+  assert.equal(f.sync('resume').status, 0);
+  assert.equal(await f.finish(f.cli('run', 'C', 'w', 's', '--', 'true')), 0);
+  assert.equal(await f.finish(f.start([v2, 'run', 'V2', 'w', 's', '--', 'true'])), 0);
+  assert.equal(read(f.q), ''); assert.equal(existsSync(f.x), false);
+});
+
+test('v3 조상 재진입·token 재진입은 새 줄이 없고 중첩·중복·지연 해제는 바깥/다음 세대를 보존', async t => {
+  const f = fixture(t); enable(f);
+  const root = await acquireLease(f);
+  assert.match(root.generation, /^[a-f0-9]{48}$/); assert.match(root.token, /^[a-f0-9]{48}$/);
+  assert.notEqual(root.generation, root.token); assert.equal(root.borrowed, false);
+  const ancestor = await acquireLease(f, 'ANCESTOR');
+  const token = await acquireLease(f, 'TOKEN', 'T', { YW_HEAVY_GENERATION: root.generation, YW_HEAVY_TOKEN: root.token });
+  for (const borrowed of [ancestor, token]) {
+    assert.equal(borrowed.borrowed, true); assert.equal(borrowed.generation, root.generation);
+    assert.notEqual(borrowed.lease, root.lease);
+    assert.equal(read(f.q), '');
+    for (let i = 0; i < 2; i++) assert.equal(releaseLease(f, borrowed).status, 0);
+    assert.equal(JSON.parse(f.ownerText()).generation, root.generation);
+  }
+  assert.equal(f.sync('release', 'ROOT').status, 6);
+  assert.equal(releaseLease(f, { ...root, token: 'wrong' }).status, 6);
+  assert.equal(releaseLease(f, { ...root, lease: 'r-wrong' }).status, 6);
+  assert.equal(releaseLease(f, root).status, 0);
+  assert.equal(releaseLease(f, root).status, 0);
+  const next = await acquireLease(f);
+  assert.notEqual(root.generation, next.generation);
+  assert.equal(releaseLease(f, root).status, 0);
+  assert.equal(releaseLease(f, token).status, 0);
+  assert.equal(JSON.parse(f.ownerText()).generation, next.generation);
+  const stale = f.cliEnv({ YW_HEAVY_GENERATION: root.generation, YW_HEAVY_TOKEN: root.token }, 'acquire', 'STALE', 'w', 's', '--json');
+  assert.equal(await f.finish(stale), 6);
+  assert.equal(read(f.q), '');
+  assert.equal(releaseLease(f, next).status, 0);
+  assert.deepEqual(events(f).map(e => e.event), ['enqueue', 'start', 'end', 'enqueue', 'start', 'end']);
+});
+
+test('v3 run은 자식에게 token을 넘기고 직렬 중첩 run을 빌리며 실패 코드를 기록한다', async t => {
+  const f = fixture(t); enable(f);
+  const code = `test -n "$YW_HEAVY_TOKEN" && test -n "$YW_HEAVY_GENERATION" || exit 99
+${quote(script)} run INNER w T -- /bin/sh -c 'exit 7'
+rc=$?
+test -d ${quote(f.x)} || exit 98
+exit "$rc"`;
+  const p = f.cli('run', 'OUTER', 'w', 'S', '--', '/bin/bash', '-c', code);
+  assert.equal(await f.finish(p, 5000), 7, p.err);
+  assert.equal(existsSync(f.x), false);
+  const log = events(f);
+  assert.deepEqual(log.map(e => e.event), ['enqueue', 'start', 'end']);
+  assert.equal(log[2].exitCode, '7');
+  assert.doesNotMatch(read(f.env.YW_HEAVY_EVENTS), /token|lease|YW_HEAVY|INNER|exit 7/);
+});
+
+async function holding(f, id = 'H', sup = 'H', extra = {}) {
+  const p = f.cliEnv(extra, 'run', id, 'w', sup, '--', '/bin/sh', '-c', 'echo ready; read line');
+  await f.wait(() => p.out.includes('ready'), 'holder ready', Math.max(5000, f.waitTimeout));
+  return p;
+}
+
+test('v3 무관한 프로세스는 빌리지 않고 대기, TERM 취소와 만료 token 거절', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const root = JSON.parse(f.ownerText());
+  const waiter = f.cli('acquire', 'OTHER', 'w', 'S', '--json');
+  await f.wait(() => read(f.q).includes('OTHER '));
+  assert.equal(waiter.out, '');
+  waiter.kill('SIGTERM'); assert.equal(await f.finish(waiter), 143);
+  assert.equal(JSON.parse(f.ownerText()).generation, root.generation);
+  const borrowed = await acquireLease(f, 'TOKEN', 'T', { YW_HEAVY_GENERATION: root.generation, YW_HEAVY_TOKEN: root.token });
+  assert.equal(borrowed.borrowed, true);
+  assert.equal(releaseLease(f, borrowed).status, 0);
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+  const stale = f.cliEnv({ YW_HEAVY_GENERATION: root.generation, YW_HEAVY_TOKEN: root.token }, 'acquire', 'OLD', 'w', 'S', '--json');
+  assert.equal(await f.finish(stale), 6);
+  assert.equal(read(f.q), '');
+  const cancel = events(f).find(e => e.event === 'cancel');
+  assert.equal(cancel.requestId, 'OTHER'); assert.equal(cancel.signal, 'TERM');
+});
+
+test('v3 PID 재사용은 token 거절·회수, ps 실패는 token 거절·owner 보존', async t => {
+  for (const failPs of [false, true]) {
+    const f = fixture(t); enable(f);
+    const holder = f.live();
+    f.owner({ v: 3, task: 'OLD', supervisor: 'O', holder: holder.pid, holderStart: 'Thu_Jan_1_00:00:00_1970', generation: 'old', token: 'secret', lease: 'r-old', queued: 1, started: 2 });
+    const bin = join(f.dir, 'bin'); mkdirSync(bin);
+    writeFileSync(join(bin, 'ps'), `#!/bin/sh\ncase "$*" in *'${holder.pid}') exit 1;; esac\nexec /bin/ps "$@"\n`, { mode: 0o755 });
+    const extra = failPs ? { PATH: `${bin}:${process.env.PATH}` } : {};
+    const token = f.cliEnv({ ...extra, YW_HEAVY_GENERATION: 'old', YW_HEAVY_TOKEN: 'secret' }, 'acquire', 'TOKEN', 'w', 'S', '--json');
+    assert.equal(await f.finish(token), 6, token.err);
+    const other = f.cliEnv(extra, 'run', 'NEW', 'w', 'S', '--', 'true');
+    if (failPs) {
+      await f.wait(() => read(f.q).includes('NEW ')); await pause(200);
+      assert.equal(JSON.parse(f.ownerText()).task, 'OLD'); assert.equal(other.result, undefined);
+      other.kill('SIGTERM'); assert.equal(await f.finish(other), 143);
+    } else {
+      assert.equal(await f.finish(other), 0, other.err);
+      assert.equal(events(f).find(e => e.event === 'reclaim').requestId, 'OLD');
+    }
+  }
+});
+
+test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉시 등록, 30초 poll 없이 인계', async t => {
+  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const sleeps = observeFastPolling(f);
+  const h = await holding(f, 'A0', 'A');
+  const order = join(f.dir, 'order');
+  const start = (id, sup) => f.cli('run', id, 'w', sup, '--', '/bin/sh', '-c', `echo ${id} >> ${quote(order)}`);
+  const a1 = start('A1', 'A'); await f.wait(() => read(f.q).includes('A1 '), 'A1 enqueued');
+  const a2 = start('A2', 'A'); await f.wait(() => read(f.q).includes('A2 '), 'A2 enqueued');
+  const a3 = start('A3', 'A'); await f.wait(() => read(f.q).includes('A3 '), 'A3 enqueued');
+  const b1 = start('B1', 'B'); await f.wait(() => read(f.q).includes('B1 '), 'B1 enqueued');
+  const b2 = start('B2', 'B'); await f.wait(() => read(f.q).includes('B2 '), 'B2 enqueued');
+  const c1 = start('C1', 'C'); await f.wait(() => read(f.q).includes('C1 '), 'C1 enqueued');
+  const original = read(f.q).split('\n').find(l => l.startsWith('A2 '));
+  const retry = start('A2', 'A');
+  assert.equal(await f.finish(a2), 3);
+  const current = read(f.q).split('\n').find(l => l.startsWith('A2 '));
+  assert.deepEqual(current.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort(), original.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort());
+  h.stdin.end('done\n');
+  for (const p of [h, a1, retry, a3, b1, b2, c1]) assert.equal(await f.finish(p), 0, p.err);
+  assert.ok(read(sleeps).trim(), '실제로 polling하며 대기했다');
+  assert.doesNotMatch(read(sleeps), /^30$/m, '느린 poll 경로를 호출하지 않는다');
+  assert.deepEqual(read(order).trim().split('\n'), ['B1', 'C1', 'A1', 'B2', 'A2', 'A3']);
+  const log = events(f);
+  assert.equal(log.filter(e => e.event === 'enqueue' && e.requestId === 'A2').length, 1);
+  assert.equal(log.filter(e => e.event === 'start').length, 7);
+});
+
+test('v3 감독자·전체 pending 한도는 사유와 함께 즉시 거절하고 재시도는 허용', async t => {
+  const f = fixture(t); enable(f);
+  f.env.YW_HEAVY_MAX_PENDING_SUPERVISOR = '2'; f.env.YW_HEAVY_MAX_PENDING = '3';
+  await holding(f);
+  const a = f.cli('run', 'A', 'w', 'A', '--', 'true'); await f.wait(() => read(f.q).includes('A '));
+  f.cli('run', 'B', 'w', 'A', '--', 'true'); await f.wait(() => read(f.q).includes('B '));
+  const denied = f.cli('run', 'C', 'w', 'A', '--', 'true');
+  assert.equal(await f.finish(denied), 5); assert.match(denied.err, /supervisor=2\/2/);
+  f.cli('run', 'D', 'w', 'B', '--', 'true'); await f.wait(() => read(f.q).includes('D '));
+  const full = f.cli('run', 'E', 'w', 'C', '--', 'true');
+  assert.equal(await f.finish(full), 5); assert.match(full.err, /total=3\/3/);
+  const retry = f.cli('run', 'A', 'w', 'A', '--', 'true');
+  assert.equal(await f.finish(a), 3); assert.equal(retry.result, undefined);
+  assert.equal(read(f.q).trim().split('\n').length, 3);
+});
+
+test('v3 종료·실패·취소·회수 기록 구분, TERM은 자식 종료까지 보유, 비밀 인자·환경·token은 기록하지 않음', async t => {
+  const f = fixture(t); enable(f);
+  const p = f.cliEnv({ TOP_SECRET: 'do-not-log-env' }, 'run', 'R', 'w', 'S', '--', '/bin/sh', '-c', 'echo ready; /bin/sleep .5; exit 9', 'do-not-log-argv');
+  await f.wait(() => p.out.includes('ready'));
+  const owner = JSON.parse(f.ownerText());
+  p.kill('SIGTERM'); await pause(100); assert.equal(existsSync(f.x), true);
+  assert.equal(await f.finish(p), 143);
+  const end = events(f).find(e => e.event === 'end');
+  assert.equal(end.exitCode, '9'); assert.equal(end.signal, 'TERM');
+  assert.ok(end.waitSeconds >= 0); assert.ok(end.heldSeconds >= 0);
+  const victim = await holding(f, 'K', 'K');
+  victim.kill('SIGKILL'); await f.finish(victim);
+  const next = f.cli('run', 'NEXT', 'w', 'T', '--', 'true');
+  assert.equal(await f.finish(next), 0);
+  assert.equal(events(f).find(e => e.event === 'reclaim').requestId, 'K');
+  const text = read(f.env.YW_HEAVY_EVENTS) + f.log();
+  for (const secret of [owner.token, owner.lease, 'do-not-log-env', 'do-not-log-argv', 'TOP_SECRET', 'sleep .5']) assert.ok(!text.includes(secret), secret);
+});
+
+test('v3 pause 중 확정 사망 항목만 reclaim해 drain, unknown·no-reclaim·다른 파일은 보존', async t => {
+  const f = fixture(t); enable(f);
+  const victim = await holding(f);
+  const w = f.cli('run', 'WAIT', 'w', 'S', '--', 'true');
+  await f.wait(() => read(f.q).includes('WAIT '));
+  assert.equal(f.sync('pause').status, 0);
+  // 대기자부터 kill하여 자동 회수가 먼저 실행되는 경합을 막는다.
+  w.kill('SIGKILL'); await f.finish(w);
+  victim.kill('SIGKILL'); await f.finish(victim);
+  const owner = f.ownerText();
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  assert.equal(f.sync('reclaim').status, 0);
+  assert.equal(f.ownerText(), owner); assert.match(read(f.q), /^WAIT /);
+  rmSync(f.env.YW_HEAVY_NO_RECLAIM);
+  writeFileSync(join(f.x, 'foreign'), '');
+  assert.equal(f.sync('reclaim').status, 0);
+  assert.equal(f.ownerText(), owner, '예상하지 않은 내용이 있으면 owner도 보존한다');
+  rmSync(join(f.x, 'foreign'));
+  assert.equal(f.sync('reclaim').status, 0);
+  assert.equal(existsSync(f.x), false); assert.equal(read(f.q), '');
+  assert.equal(events(f).filter(e => e.event === 'reclaim').length, 2);
+  assert.equal(f.sync('mode', 'compat').status, 0);
+});
+
+test('v3 취소로 빈 감독자는 다시 제출할 때 순환 끝에 붙고 status는 token 없이 읽기 전용', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const owner = JSON.parse(f.ownerText());
+  const before = tree(f.dir), status = f.sync('status');
+  assert.equal(status.status, 0); assert.deepEqual(tree(f.dir), before);
+  assert.ok(!status.stdout.includes(owner.token)); assert.ok(!status.stdout.includes(owner.lease));
+  assert.equal(lstatSync(f.x).mode & 0o777, 0o700);
+  assert.equal(lstatSync(join(f.x, 'owner.txt')).mode & 0o777, 0o600);
+  assert.equal(lstatSync(f.env.YW_HEAVY_EVENTS).mode & 0o777, 0o600);
+  const b = f.cli('run', 'B', 'w', 'B', '--', 'true'); await f.wait(() => read(f.q).includes('B '));
+  const c = f.cli('run', 'C', 'w', 'C', '--', 'true'); await f.wait(() => read(f.q).includes('C '));
+  b.kill('SIGTERM'); assert.equal(await f.finish(b), 143);
+  const b2 = f.cli('run', 'B2', 'w', 'B', '--', 'true'); await f.wait(() => read(f.q).includes('B2 '));
+  await f.wait(() => read(f.q + '.rotation').trim().split('\n').join(',') === 'H,C,B', 'B rejoins rotation tail');
+  assert.deepEqual(read(f.q + '.rotation').trim().split('\n'), ['H', 'C', 'B']);
+  h.stdin.end('done\n');
+  for (const p of [h, c, b2]) assert.equal(await f.finish(p, 5000), 0);
+  assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'C', 'B2']);
+});
+
+// ---- PR #40 1차 리뷰: 중간 SIGKILL 복구와 실행 환경 보존 ----
+test('R1-ownerless: v3 owner 쓰기 직전 SIGKILL 후 빈 owner 회수·오류 전파·롤백', async t => {
+  for (const point of ['printf', 'mkdir']) {
+    const f = fixture(t); enable(f);
+    const hook = f.hookWith(point === 'mkdir'
+      ? 'mkdir() { command mkdir "$@" || return; [ "$1" = "$YW_HEAVY_EXEC_LOCK" ] && builtin kill -9 $$; return 0; }'
+      : 'printf() { case "${2:-}" in \'{"v":3,\'*) builtin kill -9 $$;; esac; builtin printf "$@"; }');
+    const crash = f.cliEnv({ BASH_ENV: hook }, 'run', 'CRASH', 'w', 'S', '--', 'true');
+    assert.equal((await crash.done).signal, 'SIGKILL', JSON.stringify(crash.result) + crash.err);
+    assert.ok(existsSync(f.x));
+    assert.equal(existsSync(join(f.x, 'owner.txt')), point === 'printf');
+    assert.equal(read(join(f.x, 'owner.txt')), '');
+    f.env.YW_HEAVY_OWNERLESS_AGE = '3600';
+    assert.equal(f.sync('reclaim').status, 0); assert.ok(existsSync(f.x), '최근 lock은 보존');
+    f.env.YW_HEAVY_OWNERLESS_AGE = '0';
+    writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+    assert.equal(f.sync('reclaim').status, 0); assert.ok(existsSync(f.x), 'no-reclaim이면 보존');
+    rmSync(f.env.YW_HEAVY_NO_RECLAIM);
+    writeFileSync(f.q, read(f.q) + 'OLD worker=w supervisor=old\n');
+    assert.equal(f.sync('reclaim').status, 0); assert.ok(existsSync(f.x), '구형식 줄이 있으면 보존');
+    writeFileSync(f.q, ''); // 종료가 확인된 격리 fixture 항목만 제거한다.
+    const failRmdir = f.hookWith('rmdir() { [ "$1" != "$YW_HEAVY_EXEC_LOCK" ] || return 1; command rmdir "$@"; }');
+    const failed = f.cliEnv({ BASH_ENV: failRmdir }, 'reclaim');
+    assert.equal(await f.finish(failed), 1, '시도한 회수가 실패하면 성공이라고 하지 않는다');
+    assert.ok(existsSync(f.x));
+    assert.equal(f.sync('reclaim').status, 0); assert.equal(existsSync(f.x), false);
+    assert.match(f.log(), /reason=ownerless-stale/);
+    assert.equal(await f.finish(f.cli('run', 'NEXT', 'w', 'T', '--', 'true')), 0);
+    assert.equal(f.sync('pause').status, 0);
+    assert.equal(f.sync('mode', 'compat').status, 0);
+  }
+});
+
+test('R2-ring: 큐·순환 목록 mv 사이 SIGKILL 후 재시도는 원래 세대·FIFO로 진행', async t => {
+  for (const point of ['queue', 'rotation']) {
+    const f = fixture(t); enable(f);
+    writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+    const h = await holding(f);
+    const first = f.cli('run', 'FIRST', 'w', 'B', '--', 'true');
+    await f.wait(() => read(f.q + '.rotation').includes('B\n'));
+    const hook = f.hookWith(`mv() {
+      command mv "$@" || return
+      case "$3" in
+        "$YW_HEAVY_QUEUE"${point === 'rotation' ? '.rotation' : ''})
+          ${point === 'rotation' ? 'grep -q "^S$" "$3" || return 0' : ':'}
+          command cp "$YW_HEAVY_QUEUE.rotation" "$YW_HEAVY_QUEUE.crash-ring"
+          builtin kill -9 $$ ;;
+      esac
+      return 0
+    }`);
+    const crash = f.cliEnv({ BASH_ENV: hook }, 'run', 'RETRY', 'w', 'S', '--', 'true');
+    assert.equal((await crash.done).signal, 'SIGKILL', JSON.stringify(crash.result) + crash.err);
+    const original = read(f.q).split('\n').find(l => l.startsWith('RETRY '));
+    assert.ok(original);
+    if (point === 'queue') assert.ok(!read(f.q + '.crash-ring').includes('S\n'));
+    const retry = f.cli('run', 'RETRY', 'w', 'S', '--', 'true');
+    await f.wait(() => new RegExp(`^RETRY .* pid=${retry.pid} `, 'm').test(read(f.q)), 'retry took over');
+    const current = read(f.q).split('\n').find(l => l.startsWith('RETRY '));
+    assert.deepEqual(current.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort(), original.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort());
+    await f.wait(() => read(f.q + '.rotation').trim() === 'H\nB\nS', 'missing supervisor repaired at tail');
+    h.stdin.end('done\n');
+    for (const p of [h, first, retry]) assert.equal(await f.finish(p, 5000), 0, p.err);
+    assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'FIRST', 'RETRY']);
+  }
+});
+
+test('R2-ring-drop: 취소의 큐 삭제 직후 SIGKILL된 감독자는 재등록 시 끝에 붙는다', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const hook = f.hookWith(`mv() {
+    command mv "$@" || return
+    if [ "$3" = "$YW_HEAVY_QUEUE" ] && ! grep -q '^CANCEL ' "$3"; then
+      command cp "$YW_HEAVY_QUEUE.rotation" "$YW_HEAVY_QUEUE.crash-ring"
+      builtin kill -9 $$
+    fi
+    return 0
+  }`);
+  const cancelled = f.cliEnv({ BASH_ENV: hook }, 'run', 'CANCEL', 'w', 'S', '--', 'true');
+  await f.wait(() => read(f.q + '.rotation').includes('S\n'));
+  const b = f.cli('run', 'B', 'w', 'B', '--', 'true');
+  await f.wait(() => read(f.q + '.rotation').includes('B\n'));
+  cancelled.kill('SIGTERM'); assert.equal((await cancelled.done).signal, 'SIGKILL');
+  assert.doesNotMatch(read(f.q), /^CANCEL /m);
+  assert.equal(read(f.q + '.crash-ring').trim(), 'H\nS\nB', '큐 삭제 직후의 순환 목록에 남아 있다');
+  const retry = f.cli('run', 'REJOIN', 'w', 'S', '--', 'true');
+  await f.wait(() => read(f.q + '.rotation').trim() === 'H\nB\nS', 'stale supervisor removed before rejoin');
+  h.stdin.end('done\n');
+  for (const p of [h, b, retry]) assert.equal(await f.finish(p, 5000), 0);
+});
+
+test('R3-umask: v3 run은 호출자 umask와 명령의 생성 권한을 호환 모드처럼 보존', async t => {
+  const f = fixture(t);
+  for (const mask of ['0022', '0002', '0077']) {
+    f.env.BASH_ENV = f.hookWith(`umask ${mask}`);
+    for (const mode of ['compat', 'round-robin']) {
+      if (mode === 'round-robin') enable(f);
+      const file = join(f.dir, `${mask}-${mode}-file`), dir = join(f.dir, `${mask}-${mode}-dir`);
+      const p = f.cli('run', 'MASK', 'w', 'S', '--', '/bin/sh', '-c', 'umask; : > "$1"; mkdir "$2"', '_', file, dir);
+      assert.equal(await f.finish(p), 0, p.err);
+      assert.equal(parseInt(p.out.trim(), 8), parseInt(mask, 8));
+      assert.equal(lstatSync(file).mode & 0o777, 0o666 & ~parseInt(mask, 8));
+      assert.equal(lstatSync(dir).mode & 0o777, 0o777 & ~parseInt(mask, 8));
+    }
+    assert.equal(f.sync('pause').status, 0); assert.equal(f.sync('mode', 'compat').status, 0); assert.equal(f.sync('resume').status, 0);
+  }
+  assert.equal(lstatSync(f.env.YW_HEAVY_EVENTS).mode & 0o777, 0o600);
+});
+
+test('R4-handoff: 30초 sleep 치환 없이 해제 뒤 다음 요청이 짧게 인계', async t => {
+  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const sleeps = observeFastPolling(f);
+  const h = await holding(f);
+  const next = f.cli('run', 'NEXT', 'w', 'S', '--', 'true');
+  await f.wait(() => read(sleeps).trim(), 'waiter entered real sleep');
+  assert.doesNotMatch(read(sleeps), /^30$/m, '해제를 기다리는 중에도 30초 poll을 쓰지 않는다');
+  h.stdin.end('done\n');
+  assert.equal(await f.finish(h), 0);
+  assert.equal(await f.finish(next), 0);
+  assert.doesNotMatch(read(sleeps), /^30$/m, '실제 대기 호출도 fast poll이어야 한다');
+});
+
+test('R5-no-reclaim: 취소 큐 삭제 직후 SIGKILL된 감독자는 다른 대기자 복구 없이 재등록해도 끝에 붙는다', async t => {
+  const f = fixture(t); enable(f);
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  const h = await holding(f);
+  const owner = f.ownerText();
+  const killAfterDrop = f.hookWith(`mv() {
+    command mv "$@" || return
+    if [ "$3" = "$YW_HEAVY_QUEUE" ] && ! grep -q '^CANCEL ' "$3"; then builtin kill -9 $$; fi
+    return 0
+  }`);
+  const cancelled = f.cliEnv({ BASH_ENV: killAfterDrop }, 'run', 'CANCEL', 'w', 'S', '--', 'true');
+  await f.wait(() => read(f.q + '.rotation').includes('S\n'), 'S registered');
+  // B가 편집 잠금 밖에서 대기하게 해 재등록 전에 다른 대기자가 ring을 복구할 가능성을 없앤다.
+  const blockB = f.hookWith(`sleep() {
+    : > "$YW_HEAVY_QUEUE.b-sleep"
+    while [ ! -e "$YW_HEAVY_QUEUE.allow-b" ]; do /bin/sleep .01; done
+    /bin/sleep "$@"
+  }`);
+  const b = f.cliEnv({ BASH_ENV: blockB }, 'run', 'B', 'w', 'B', '--', 'true');
+  await f.wait(() => existsSync(f.q + '.b-sleep'), 'B asleep outside flock');
+  const bLine = read(f.q).split('\n').find(l => l.startsWith('B '));
+  cancelled.kill('SIGTERM'); assert.equal((await cancelled.done).signal, 'SIGKILL');
+  assert.doesNotMatch(read(f.q), /^CANCEL /m);
+  assert.equal(read(f.q + '.rotation').trim(), 'H\nS\nB', '정리 전 S의 옛 위치가 남는다');
+  const rejoin = f.cli('run', 'REJOIN', 'w', 'S', '--', 'true');
+  await f.wait(() => read(f.q).includes('REJOIN '), 'REJOIN registered');
+  assert.equal(f.ownerText(), owner, 'no-reclaim 중 실행 owner는 보존');
+  assert.equal(read(f.q).split('\n').find(l => l.startsWith('B ')), bLine, 'B의 기존 줄도 보존');
+  assert.ok(existsSync(f.env.YW_HEAVY_NO_RECLAIM));
+  writeFileSync(f.q + '.allow-b', ''); h.stdin.end('done\n');
+  for (const p of [h, b, rejoin]) assert.equal(await f.finish(p, 5000), 0, p.err);
+  assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'B', 'REJOIN']);
+  assert.equal(events(f).filter(e => e.event === 'reclaim').length, 0);
 });

@@ -2,7 +2,70 @@
 
 전체 타입 검사·테스트·빌드, dev 서버처럼 메모리를 많이 쓰는 명령은 같은 기기에서 하나씩 실행한다. 감독 세션과 worktree가 달라도 같은 대기열을 쓴다. 원본은 `scripts/yw-heavy.sh`이고, 모든 기기에서 `heavy` 단계가 `~/.local/bin/yw-heavy`로 설치한다. 자동 갱신이 원본 변경을 전파한다.
 
-## 사용법
+## 모드와 전환 원칙
+
+설치·자동 갱신의 기본은 **compat**다. 기존 FIFO, 감독자당 2줄, v2 출력·파일 형식을 유지한다. 재진입·라운드로빈·작업 이벤트는 감독자가 기기에서 **round-robin**을 명시적으로 켠 뒤에만 동작한다. `capabilities`의 기능 목록은 설치된 구현의 지원 목록이고, 소비자는 `mode`도 반드시 확인한다.
+
+새 모드는 실행 슬롯 **1개**를 유지하면서 감독자별 FIFO를 순환한다. 새 감독자는 순환 끝에 들어간다. 실행 중 감독자는 차례를 끝낼 때 남은 작업이 있으면 끝으로 간다. 같은 ID·감독자의 재시도는 줄 위치·세대·등록 시각을 보존하고 이전 대기자는 코드 3으로 끝난다. 대기자 없는 감독자는 목록에서 빠지고, 다시 제출하면 끝에 붙는다.
+
+큐와 실행 owner를 기준으로 감독자 순환 목록을 편집 잠금 아래에서 복구한다. 큐·순환 파일 갱신 사이에 프로세스가 종료돼도 기존 감독자 순서를 보존하고, 누락된 감독자는 큐 등록 순서대로 끝에 추가하며, 더 이상 실행·대기하지 않는 감독자는 제거한다. 이 동기화는 신규 등록 전에도 수행하며, no-reclaim은 실행 lock·대기 줄 회수만 막고 순환 목록 복구는 막지 않는다.
+
+## v3 기계 프로토콜 (round-robin)
+
+```sh
+yw-heavy capabilities          # version도 같은 JSON. 읽기 전용
+yw-heavy acquire REQUEST worker supervisor --json --holder PID
+yw-heavy release --generation GENERATION --token TOKEN --lease LEASE
+```
+
+`capabilities` stdout은 JSON 한 줄이다:
+
+```json
+{"protocol":3,"mode":"compat","paused":false,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl"]}
+```
+
+소비자는 `protocol >= 3`, 필요한 capability, `mode == "round-robin"`을 확인한다. compat의 `acquire --json`은 코드 4로 거절한다. 아직 활성화되지 않았을 때 소비자의 기존 경로·fallback 정책은 소비자가 정한다. 이 저장소는 01-software의 helper를 바꾸지 않는다.
+
+활성 모드의 `acquire`는 `--json` 유무에 관계없이 아래 JSON **한 줄만** stdout에 쓴다. 진단은 stderr다. 필드 `requestId`는 사람이 준 ID, `generation`은 등록 때 만든 192비트 무작위 세대, `token`은 획득 때 만든 별도의 192비트 무작위 값이다. `lease`는 획득 응답마다 다르다.
+
+```json
+{"protocol":3,"requestId":"REQUEST","generation":"<hex>","token":"<hex>","lease":"r-<hex>","borrowed":false}
+```
+
+- `--holder`는 호출자의 살아 있는 조상 프로세스여야 한다(자기 자신 포함). PID와 시작 시각을 검증하지 못하면 코드 6이다. 생략하면 직접 부모를 holder로 쓴다. 여러 도구 호출 사이에 차례를 유지하려면 `run` 안에 명령들을 묶는다. compat의 holder 없는 수동 차례는 v3에서 제공하지 않는다.
+- 현재 세대의 `YW_HEAVY_GENERATION`·`YW_HEAVY_TOKEN`을 함께 상속했거나, 검증된 조상 프로세스가 현재 holder면 새 줄 없이 빌린다. 응답은 같은 세대·token, 새로운 `b-…` lease, `borrowed:true`다. `run`은 자식에게 두 환경 변수를 전달한다. 소비자가 `acquire`를 직접 쓰면 반환받은 두 값을 자식 환경에 전달한다. 상속한 값이 만료·불일치하거나 holder의 시작 시각을 검증하지 못하면 코드 6으로 거절한다.
+- 재진입은 **직렬 중첩 작업**용이다. 같은 token으로 병렬 heavy 작업을 시작하지 않는다. 같은 OS 사용자 안의 악의적 우회를 막는 보안 경계는 아니다.
+- 해제는 응답의 `generation`, `token`, `lease` 세 값을 그대로 보낸다. stdout은 비어 있고 성공 코드는 0이다. 빌린 lease·중복 해제·오래된 세대 해제는 no-op이다. 현재 세대의 잘못된 token·root lease는 코드 6이다. `release REQUEST`는 v3 실행·대기 항목을 해제하지 않는다. 활성 모드에서 ID 기반 해제 코드를 계속 쓰면 안 된다.
+- `run`은 호출자의 umask를 그대로 명령에 전달한다. 내부 상태 파일의 600·실행 lock 디렉터리의 700 권한은 생성 구간에만 적용한다. 빌린 차례를 해제해도 바깥 차례를 유지한다. TERM·INT·HUP는 자식이 끝날 때까지 차례를 유지하고 신호 코드를 돌려준다. SIGKILL 후 고아 자식 감지는 기존과 같이 제공하지 않는다.
+- pending 한도는 실행 중 항목을 제외해 감독자별 128개(`YW_HEAVY_MAX_PENDING_SUPERVISOR`), 전체 1024개(`YW_HEAVY_MAX_PENDING`)다. 초과하면 등록하지 않고 사유와 현재 수를 stderr에 쓰며 즉시 코드 5로 끝난다. 소비자는 무한 즉시 재시도를 하지 말고 backoff·제출 제한을 적용한다. 운영 한도를 바꿀 때 같은 기기의 호출자 환경을 일치시킨다.
+- 인계는 `YW_HEAVY_FAST_POLL`(기본 0.2초) 내부 재확인으로 진행하며 기존 `YW_HEAVY_POLL`(30초)을 기다리지 않는다. 선점·가중치·동시 슬롯 확대는 제공하지 않는다.
+
+추가 종료 코드: **4** 제출 중지·비활성 프로토콜·전환 거절·잘못 들어온 구버전 줄, **5** pending 한도 초과, **6** lease·재진입·조상 검증 실패. 0~3과 `run`의 명령 종료 코드 전달은 아래 호환 규칙과 같다.
+
+### 작업 이벤트
+
+활성 모드는 `$YW_HEAVY_QUEUE.events`(기본 `/tmp/yw-heavy-queue.events`, `YW_HEAVY_EVENTS`로 변경)에 JSONL을 추가한다. 새 파일과 owner는 권한 600, 실행 lock 디렉터리는 700이다. 기존 `.log`는 편집 잠금 등 진단 기록으로 유지한다.
+
+```json
+{"event":"end","at":1790000000,"requestId":"REQUEST","generation":"<hex>","supervisor":"S","waitSeconds":2,"heldSeconds":8,"exitCode":"0","signal":"unknown"}
+```
+
+이벤트는 `enqueue`, `start`, `end`, `cancel`, `reclaim`이다. 초 단위 대기·보유 시간은 음수가 되지 않으며, 아직 시작하지 않은 항목의 보유 시간은 0이다. 종료 코드는 문자열이며 `run`의 명령 종료 코드, 신호는 `TERM`·`INT`·`HUP`를 기록한다. 수동 해제·죽은 프로세스처럼 알 수 없으면 `unknown`이다. 대기 중 신호 취소는 `cancel`, 확정 사망·PID 재사용 회수는 `reclaim`이다. 중첩 차례는 별도 작업이 아니므로 추가 이벤트를 남기지 않는다. token·lease·환경·명령 인자는 기록하지 않는다. 기록 실패는 진단하고 실행을 계속한다. 파일 순환·집계는 이번 범위가 아니다.
+
+### 활성화와 롤백
+
+순서는 **호환 설치 → 호출자 갱신 → 기기별 활성화**다. 자동 갱신은 설치까지만 한다. 아래 명령은 운영 감독자가 전환할 때만 실행한다.
+
+1. 모든 감독 세션·소비자와 신규 제출 중지를 조율한다. `yw-heavy pause`로 새 구현의 신규 등록을 막는다. 이미 등록된 대기자는 계속 진행하고 기존 차례의 중첩 획득은 허용한다. 구버전 프로세스는 pause를 모르므로 제출 자체를 별도로 멈춰야 한다.
+2. `status`와 소유 세션을 대조해 실행·대기자를 drain한다. 끝난 v3 holder·대기자만 남아 있으면 `yw-heavy reclaim`으로 확정 사망 항목만 회수한다(pause 중에도 가능). 생성 중 종료돼 owner가 없거나 0바이트인 lock은 구형식 줄이 없고 기본 60초 유예가 지난 뒤 회수한다. 실제 삭제 시도가 실패하면 코드 1을 반환한다. 조회 실패 등으로 생존을 판단할 수 없거나 no-reclaim 표지가 있으면 보존한다. 이전 2줄 상한 밖에서 polling하던 v2 프로세스, 구형식 shell·Python 구현도 끝났는지 확인한다. 아직 줄을 쓰지 않은 구버전 프로세스는 상태 파일만으로 검출할 수 없다. `pgrep -fl 'yw-heavy|cc-yw-heavy|heavy.sh|R1-heavy'`는 후보 조사용이며 소유자와 확인한다. 살아 있거나 판단 불가한 항목을 지우지 않는다.
+3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다. v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
+4. `capabilities`·`status`에서 모드를 확인하고 `yw-heavy resume`으로 새 제출을 연다. 두 번의 인계와 이벤트 기록을 확인한다.
+
+모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다. 테스트는 큐·실행 lock·편집 lock·기록을 모두 임시 경로로 격리한다.
+
+롤백은 먼저 새 구현의 compat로 한다. 신규 제출 조율 → `pause` → v3 세대·대기자 drain → `mode compat` → `capabilities` 확인 → `resume`. 바이너리까지 구버전으로 내릴 때는 compat 전환 후 다시 제출을 중지하고, 실행 lock·대기열이 비어 있고 v3 실행 프로세스가 남지 않았으며 구버전이 읽을 상태 형식인지 확인한 뒤 원자적으로 교체한다. 활성 상태에서 파일만 되돌리거나 실행 lock을 지우지 않는다.
+
+## 호환 모드 사용법
 
 ```sh
 yw-heavy run <ID> <worker> <supervisor> -- <명령…>          # 권장
@@ -81,7 +144,7 @@ yw-heavy status                                              # 읽기 전용
 
 `touch /tmp/yw-heavy-queue.no-reclaim`이면 실행 lock과 대기 줄을 자동 회수하지 않는다(편집 표지 정리는 계속). 비상시와 롤백에 쓴다. 다시 켜려면 지운다.
 
-## 구버전과 전환
+## 호환 모드의 구버전과 전환
 
 같은 대기열을 쓰는 구현이 셋 있다. 모두 첫 필드(ID)로 줄을 읽으므로 섞여 돌아도 대기열을 읽을 수 있다.
 
@@ -122,16 +185,6 @@ yw-heavy status                                              # 읽기 전용
 
 즉시 롤백하는 경우: `status`·`acquire`·`release`가 종료 코드 1이나 bash 오류를 냄, 정상 release가 아닌데 줄이 사라지거나 순서가 바뀜, 편집 lock이 2분 넘게 남음, 살아 있는 pid(시작 시각 일치)를 회수한 기록, 실행 lock owner와 실제 실행 중인 작업이 다름.
 
-### 롤백
+### 구버전 바이너리로 롤백
 
-1. `touch /tmp/yw-heavy-queue.no-reclaim` — 이미 떠 있는 새 버전 대기자의 회수를 멈춘다.
-2. `cp -p /tmp/cc-yw-heavy.sh.pre-switch-<시각> /tmp/cc-yw-heavy.sh.rb.$$ && mv -f /tmp/cc-yw-heavy.sh.rb.$$ /tmp/cc-yw-heavy.sh`
-3. 구버전이 지나갈 수 없는 새 버전 편집 표지를 flock 아래에서만 지운다. `-k`가 없으면 lockf가 flock 파일을 지우므로 반드시 붙인다.
-
-   ```sh
-   /usr/bin/lockf -k -t 30 /tmp/yw-heavy-queue.flock /bin/sh -c 'e=/tmp/yw-heavy-queue.edit.lock; { [ -L "$e" ] || { [ -f "$e" ] && [ ! -d "$e" ]; }; } && rm -f "$e"; true'
-   ```
-
-4. 확인: `head -3 /tmp/cc-yw-heavy.sh`(구버전 원문), 대기열이 그대로인지(v2 줄도 구버전이 첫 필드로 읽는다), 편집 lock 상태.
-5. `yw-supervisor` 스킬이 `yw-heavy`를 쓰라고 바뀌어 있으면(전환 뒤 후속 PR) 그 변경도 되돌린다. 스킬은 저장소 링크라 병합 즉시 모든 감독 세션에 적용된다.
-6. no-reclaim 파일은 새 버전 프로세스가 모두 끝날 때까지(`pgrep -fl yw-heavy`가 빌 때까지) 두었다가 지운다. 그 전에 지우면 남아 있는 새 버전 대기자가 다시 회수를 시작한다. 지우기 직전에 3의 표지 정리를 한 번 더 실행한다. 3 이후에 끝난 새 버전 프로세스가 표지를 남겼으면 구버전이 지나가지 못한다. 이슈에 기록한다.
+위 "활성화와 롤백"의 drain 절차를 따른다. 호환 모드라도 신규 제출을 멈추고, 실행·대기자·구버전 프로세스가 모두 끝난 뒤 상태 형식을 확인하고 원자적으로 교체한다. no-reclaim 표지만 만들고 실행 중 바이너리나 편집 표지를 바꾸는 방식은 쓰지 않는다.
