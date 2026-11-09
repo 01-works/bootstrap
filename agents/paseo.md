@@ -45,10 +45,10 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
-| Supervisor | Claude Opus 5.5 | high | auto |
-| Supervisor (Astra) | GPT-6 Astra | high | auto-review |
-| Builder | GPT-6.1 Sol | high | auto-review |
-| Frontend Builder | Claude Opus 5.5 | high | auto |
+| Supervisor | Claude Opus 5.5 | high | bypassPermissions |
+| Supervisor (Astra) | GPT-6 Astra | high | full-access |
+| Builder | GPT-6.1 Sol | high | full-access |
+| Frontend Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Reviewer | GPT-6.1 Sol | xhigh | auto-review + plan |
 | Architect | Claude Opus 5.5 | xhigh | plan |
 | Architect (Astra) | GPT-6 Astra | xhigh | auto-review + plan |
@@ -59,6 +59,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Astra 프로필과 notes는 선택 지침이며 자동 장애 전환 기능이 아니다. Supervisor를 인계할 때 모든 작업의 상태·의존성·workspace·agent ID·결정·검증·남은 조치를 전달한다. 단순히 작업이 어렵다는 이유로 대체하지 않는다.
+- 구현·총괄 프로필은 권한 확인 없이 실행한다(Claude `bypassPermissions`, Codex `full-access`). 리뷰·설계 프로필은 직접 수정하지 않는 역할이라 plan 계열 모드를 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 
 ## 총괄 운영 스킬
