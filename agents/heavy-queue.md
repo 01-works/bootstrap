@@ -74,6 +74,8 @@ yw-heavy release <ID>
 yw-heavy status                                              # 읽기 전용
 ```
 
+- `<supervisor>`(v3 `acquire`의 `supervisor`)는 감독 세션의 **전체 Paseo agent ID**다. 같은 세션의 모든 작업자 제출과 같은 ID 재시도에서 그대로 유지한다.
+- 전체 ID는 **새 작업부터** 쓴다. 이미 실행·대기 중인 작업과 그 재시도는 등록할 때의 값을 유지한 채 자연히 끝내고, 큐 파일에서 값을 직접 고치지 않는다. v3는 같은 요청의 supervisor 변경을 거절한다(`scripts/yw-heavy.sh`의 재시도 검사). 이행 기간에는 같은 감독의 이전 값과 새 값을 합쳐 compat 2줄 한도를 지킨다.
 - **`run`이 기본이다.** 명령이 실행되는 동안만 차례를 잡고, 명령이 끝나거나 실패하거나 신호를 받으면 푼다. 종료 코드는 명령의 것이다. 신호(TERM·INT·HUP)를 받아도 명령이 끝날 때까지 차례를 유지한 뒤 143·130·129로 끝난다.
 - **셸 스크립트에서 여러 명령을 묶을 때**: `yw-heavy acquire ID w s --holder $$`와 `trap 'yw-heavy release ID' EXIT`. 서브셸 안에서도 `$$`는 스크립트의 PID다. Python은 `--holder str(os.getpid())`.
 - holder는 "작업 전체 수명을 대표하는 프로세스"다. holder가 끝난 것이 확정되면 다른 대기자가 차례를 회수한다. 그래서 holder는 **acquire부터 release까지 같은 스크립트·같은 도구 호출 안에서 끝까지 살아 있는 프로세스**여야 한다. 에이전트의 Bash 호출 하나가 끝나면 그 셸(`$$`)도 끝나므로, 다음 호출까지 차례를 이어 가는 holder로 쓰면 그 사이에 회수된다.
