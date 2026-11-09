@@ -40,7 +40,9 @@ function tree(dir) {
 const procStart = pid => spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' }, encoding: 'utf8' })
   .stdout.trim().split(/\s+/).join('_');
 
-function fixture(t, { waitTimeout = 3500 } = {}) {
+// 조건 충족 즉시 끝나는 대기의 기본 상한은 성능 판정이 아닌 정체 감지용이다.
+// 실제 즉시 응답·빠른 인계 검사는 호출부의 짧은 상한을 명시적으로 유지한다.
+function fixture(t, { waitTimeout = 60000 } = {}) {
   const before = snapshot(strictLivePaths);
   const dir = mkdtempSync(join(tmpdir(), 'yw-heavy-test-'));
   const q = join(dir, 'q'), x = join(dir, 'x'), e = join(dir, 'e');
@@ -272,17 +274,17 @@ test('D3-stress: 구버전 3개·새 버전 여럿 동시 실행과 holder kill 
   workers.push(f.cli('run', 'R2', 'w', 'sr2', '--', '/bin/bash', '-c', crit('R2')));
   workers.push(f.start(['-c', `${S} acquire H1 w sh1 --holder $$ >/dev/null && ${crit('H1')}; ${S} release H1 >/dev/null`]));
   // 구버전 줄이 모두 들어간 뒤에 온 대기자는 구버전 줄이 다 빠진 뒤(관문 열림)에 차례를 받는다.
-  await f.wait(() => [1, 2, 3].every(i => read(f.q).includes(`L${i} `) || workers[i - 1].result), 'legacy enqueued', 5000);
+  await f.wait(() => [1, 2, 3].every(i => read(f.q).includes(`L${i} `) || workers[i - 1].result), 'legacy enqueued');
   const victim = f.start(['-c', `${S} acquire H2 w sh2 --holder $$ >/dev/null && { mkdir ${quote(inside)} 2>/dev/null || echo H2 >> ${quote(fails)}; echo H2 > ${quote(inside)}/who; exec /bin/sleep 30; }`]);
   // H3·R3가 H2 뒤에 서야 H2가 죽었을 때 기다리던 쪽이 회수한다.
-  await f.wait(() => read(f.q).includes('H2 '), 'victim enqueued', 5000);
+  await f.wait(() => read(f.q).includes('H2 '), 'victim enqueued');
   workers.push(f.start(['-c', `${S} acquire H3 w sh3 --holder $$ >/dev/null && ${crit('H3')}; ${S} release H3 >/dev/null`]));
   workers.push(f.cli('run', 'R3', 'w', 'sr3', '--', '/bin/bash', '-c', crit('R3')));
-  await f.wait(() => read(join(inside, 'who')).trim() === 'H2', 'victim inside', 15000);
+  await f.wait(() => read(join(inside, 'who')).trim() === 'H2', 'victim inside');
   assert.doesNotMatch(read(f.q), /^L\d /m, '구버전 줄이 모두 빠진 뒤');
   rmSync(inside, { recursive: true, force: true });
   victim.kill('SIGKILL');
-  for (const w of workers) assert.equal(await f.finish(w, 15000), 0, `${w.out} ${w.err}`);
+  for (const w of workers) assert.equal(await f.finish(w), 0, `${w.out} ${w.err}`);
   assert.equal(read(fails), '', '보유 구간이 겹치지 않는다');
   assert.equal(read(f.q).trim(), '', '살아 남은 작업이 모두 끝나면 대기열이 빈다');
   assert.equal(existsSync(f.x), false);
@@ -757,7 +759,7 @@ rc=$?
 test -d ${quote(f.x)} || exit 98
 exit "$rc"`;
   const p = f.cli('run', 'OUTER', 'w', 'S', '--', '/bin/bash', '-c', code);
-  assert.equal(await f.finish(p, 5000), 7, p.err);
+  assert.equal(await f.finish(p), 7, p.err);
   assert.equal(existsSync(f.x), false);
   const log = events(f);
   assert.deepEqual(log.map(e => e.event), ['enqueue', 'start', 'end']);
@@ -767,7 +769,7 @@ exit "$rc"`;
 
 async function holding(f, id = 'H', sup = 'H', extra = {}) {
   const p = f.cliEnv(extra, 'run', id, 'w', sup, '--', '/bin/sh', '-c', 'echo ready; read line');
-  await f.wait(() => p.out.includes('ready'), 'holder ready', Math.max(5000, f.waitTimeout));
+  await f.wait(() => p.out.includes('ready'), 'holder ready');
   return p;
 }
 
@@ -814,7 +816,7 @@ test('v3 PID 재사용은 token 거절·회수, ps 실패는 token 거절·owner
 });
 
 test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉시 등록, 30초 poll 없이 인계', async t => {
-  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const f = fixture(t); enable(f);
   const sleeps = observeFastPolling(f);
   const h = await holding(f, 'A0', 'A');
   const order = join(f.dir, 'order');
@@ -841,9 +843,8 @@ test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉
 });
 
 test('v3 감독자·전체 pending 한도는 사유와 함께 즉시 거절하고 재시도는 허용', async t => {
-  // CI 경합 중 재시도 인계가 3.5초를 넘을 수 있다. 60초는 성능 판정이 아닌 정체 감지용이다.
   // holder를 끝까지 보유하므로 거절은 슬롯 반환 없이 완료되어야 한다.
-  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const f = fixture(t); enable(f);
   f.env.YW_HEAVY_MAX_PENDING_SUPERVISOR = '2'; f.env.YW_HEAVY_MAX_PENDING = '3';
   await holding(f);
   const a = f.cli('run', 'A', 'w', 'A', '--', 'true'); await f.wait(() => read(f.q).includes('A '));
@@ -918,7 +919,7 @@ test('v3 취소로 빈 감독자는 다시 제출할 때 순환 끝에 붙고 st
   await f.wait(() => read(f.q + '.rotation').trim().split('\n').join(',') === 'H,C,B', 'B rejoins rotation tail');
   assert.deepEqual(read(f.q + '.rotation').trim().split('\n'), ['H', 'C', 'B']);
   h.stdin.end('done\n');
-  for (const p of [h, c, b2]) assert.equal(await f.finish(p, 5000), 0);
+  for (const p of [h, c, b2]) assert.equal(await f.finish(p), 0);
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'C', 'B2']);
 });
 
@@ -983,7 +984,7 @@ test('R2-ring: 큐·순환 목록 mv 사이 SIGKILL 후 재시도는 원래 세�
     assert.deepEqual(current.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort(), original.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort());
     await f.wait(() => read(f.q + '.rotation').trim() === 'H\nB\nS', 'missing supervisor repaired at tail');
     h.stdin.end('done\n');
-    for (const p of [h, first, retry]) assert.equal(await f.finish(p, 5000), 0, p.err);
+    for (const p of [h, first, retry]) assert.equal(await f.finish(p), 0, p.err);
     assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'FIRST', 'RETRY']);
   }
 });
@@ -1009,7 +1010,7 @@ test('R2-ring-drop: 취소의 큐 삭제 직후 SIGKILL된 감독자는 재등�
   const retry = f.cli('run', 'REJOIN', 'w', 'S', '--', 'true');
   await f.wait(() => read(f.q + '.rotation').trim() === 'H\nB\nS', 'stale supervisor removed before rejoin');
   h.stdin.end('done\n');
-  for (const p of [h, b, retry]) assert.equal(await f.finish(p, 5000), 0);
+  for (const p of [h, b, retry]) assert.equal(await f.finish(p), 0);
 });
 
 test('R3-umask: v3 run은 호출자 umask와 명령의 생성 권한을 호환 모드처럼 보존', async t => {
@@ -1031,7 +1032,7 @@ test('R3-umask: v3 run은 호출자 umask와 명령의 생성 권한을 호환 �
 });
 
 test('R4-handoff: 30초 sleep 치환 없이 해제 뒤 다음 요청이 짧게 인계', async t => {
-  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const f = fixture(t); enable(f);
   const sleeps = observeFastPolling(f);
   const h = await holding(f);
   const next = f.cli('run', 'NEXT', 'w', 'S', '--', 'true');
@@ -1073,7 +1074,7 @@ test('R5-no-reclaim: 취소 큐 삭제 직후 SIGKILL된 감독자는 다른 대
   assert.equal(read(f.q).split('\n').find(l => l.startsWith('B ')), bLine, 'B의 기존 줄도 보존');
   assert.ok(existsSync(f.env.YW_HEAVY_NO_RECLAIM));
   writeFileSync(f.q + '.allow-b', ''); h.stdin.end('done\n');
-  for (const p of [h, b, rejoin]) assert.equal(await f.finish(p, 5000), 0, p.err);
+  for (const p of [h, b, rejoin]) assert.equal(await f.finish(p), 0, p.err);
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'B', 'REJOIN']);
   assert.equal(events(f).filter(e => e.event === 'reclaim').length, 0);
 });
