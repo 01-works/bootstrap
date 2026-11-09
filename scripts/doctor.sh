@@ -64,7 +64,11 @@ for src_root in "$BOOTSTRAP_ROOT"/home/*; do
     case "$rel" in
       *.seed)
         dst="$HOME/${rel%.seed}"
-        if [[ -e "$dst" ]]; then pass "$(pretty "$dst")"; else miss "$(pretty "$dst") 없음"; fi
+        if [[ -f "$dst" && ! -L "$dst" ]]; then
+          pass "$(pretty "$dst") (로컬 파일)"
+        else
+          miss "$(pretty "$dst") 로컬 파일 없음 또는 링크 전환 필요 → ./bootstrap.sh --only dotfiles"
+        fi
         ;;
       *)
         dst="$HOME/$rel"

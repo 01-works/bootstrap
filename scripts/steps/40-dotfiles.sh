@@ -4,6 +4,7 @@
 #   - 이미 있는 파일은 ~/.local/state/bootstrap/backup/<시각>-<번호>/ 으로 옮긴 뒤 링크한다.
 #   - 저장소 안의 심볼릭 링크(같은 내용을 두 도구가 쓰는 파일)도 연결 대상이다.
 #   - 이름이 .seed로 끝나는 파일은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일용.
+#     기존 링크는 내용을 백업한 뒤 같은 내용의 로컬 일반 파일로 바꾼다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
 
@@ -36,6 +37,26 @@ link_file() {
 
 seed_file() {
   local src="$1" dst="$2"
+  if [[ -L "$dst" ]]; then
+    local content="$dst" bak="$backup_dir/${dst#"$HOME"/}"
+    if [[ ! -f "$dst" ]]; then
+      # settings.json → settings.json.seed를 받은 직후에는 예전 저장소 링크가 끊겨 있다.
+      # 이 전환의 seed는 예전 파일과 내용이 같고, update는 실제 값 변경이 있으면 받지 않는다.
+      if [[ "$src" == "$BOOTSTRAP_ROOT/home/claude/.claude/settings.json.seed" && "$(readlink "$dst")" == "${src%.seed}" ]]; then
+        content="$src"
+      else
+        die "$(pretty "$dst") 링크 대상을 읽을 수 없어 그대로 둡니다"
+      fi
+    fi
+    ensure_parent "$bak"
+    run cp -pL "$content" "$bak"
+    info "기존 링크 내용 백업 → $(pretty "$bak")"
+    # 백업과 별도로 복사해 둔 일반 파일로 링크를 교체한다. 복사 실패 시 링크는 유지된다.
+    run cp -p "$bak" "$bak.local"
+    run mv -f "$bak.local" "$dst"
+    ok "$(pretty "$dst") 로컬 일반 파일로 전환"
+    return
+  fi
   if [[ -e "$dst" ]]; then
     ok "$(pretty "$dst") (이미 있어서 그대로 둠)"
     return

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, utimesSync, lstatSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +38,7 @@ function fixture(t) {
 
   const write = (dir, files) => {
     for (const [path, content] of Object.entries(files)) {
+      if (content === null) { rmSync(join(dir, path)); continue; }
       mkdirSync(dirname(join(dir, path)), { recursive: true });
       writeFileSync(join(dir, path), content, { mode: 0o755 });
     }
@@ -325,6 +326,41 @@ test('키 순서만 바뀐 JSON은 되돌리고 받으며, 값이 바뀐 JSON은
   writeFileSync(settings, '{\n  "theme": "dark",\n  "list": [2, 1],\n  "a": true\n}\n');
   assert.equal(f.update('--auto').status, 0);
   assert.equal(f.status().result, 'held', '배열 순서는 값으로 본다');
+});
+
+test('settings seed 전환을 자동 적용하고 로컬 설정 변경 뒤에도 clean 상태로 새 커밋을 받는다', t => {
+  const f = fixture(t);
+  const path = 'home/claude/.claude/settings.json';
+  const original = readFileSync(join(repo, `${path}.seed`), 'utf8');
+  f.push({ [path]: original, 'scripts/steps/40-dotfiles.sh': readFileSync(join(repo, 'scripts/steps/40-dotfiles.sh'), 'utf8') });
+  let result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  const local = join(f.root, 'home/.claude/settings.json');
+  assert.ok(lstatSync(local).isSymbolicLink(), '전환 전에는 기존 저장소 파일로 연결');
+
+  f.push({ [path]: null, [`${path}.seed`]: original });
+  result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.equal(f.head(), f.remoteHead());
+  assert.ok(lstatSync(local).isFile(), '이름 변경으로 끊긴 링크도 일반 파일로 전환');
+  assert.equal(readFileSync(local, 'utf8'), original);
+  const backup = join(f.root, 'state/bootstrap/backup');
+  const copies = readdirSync(backup, { recursive: true }).filter(p => p.endsWith('/.claude/settings.json'));
+  assert.equal(copies.length, 1);
+  assert.ok(lstatSync(join(backup, copies[0])).isFile());
+  assert.equal(readFileSync(join(backup, copies[0]), 'utf8'), original);
+
+  const changed = JSON.stringify({ ...JSON.parse(original), theme: 'light', enabledPlugins: { 'sentry@sentry': true } });
+  writeFileSync(local, changed);
+  assert.equal(f.git(f.work, 'status', '--porcelain'), '', '도구가 값을 고쳐도 저장소는 clean');
+  f.push({ [`${path}.seed`]: JSON.stringify({ ...JSON.parse(original), theme: 'system' }) });
+  result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.equal(f.head(), f.remoteHead(), '로컬 설정 때문에 새 커밋을 보류하지 않는다');
+  assert.equal(f.status().result, 'ok');
+  assert.equal(readFileSync(local, 'utf8'), changed, '후속 seed 변경도 로컬 값은 보존');
+  assert.equal(readdirSync(backup, { recursive: true }).filter(p => p.endsWith('/.claude/settings.json')).length, 1, '마이그레이션은 한 번만');
+  assert.equal(f.git(f.work, 'status', '--porcelain'), '');
 });
 
 test('갈라진 기록이나 main이 아닌 브랜치는 받지 않는다', t => {
