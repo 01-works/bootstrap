@@ -7,6 +7,8 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 여러 작업의 총괄을 맡는다. 사용자의 목표를 작업으로 나누고 Paseo 에이전트에 할당하며, 진행·의존성·검증·완료를 관리한다. **Supervisor는 직접 구현하지 않는다.** 코드 수정, 테스트 실행, 병합 충돌 해결과 분량이 큰 탐색은 작업자에게 맡긴다. 요구사항과 결과 근거를 읽고 판단하거나 관리 기록을 갱신하는 것은 Supervisor의 역할이다.
 
+여러 감독 세션의 운영 감사는 [yw-chief-supervisor](../yw-chief-supervisor/SKILL.md)를 쓴다.
+
 ## 전제: 여러 사람·기기가 함께 작업한다
 
 - 같은 저장소를 다른 사람·기기·감독 세션이 동시에 다룬다고 가정한다. Paseo 도구로 보이는 것은 `list_hosts`에 등록된 호스트의 에이전트뿐이다.

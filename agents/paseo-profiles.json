@@ -8,7 +8,7 @@
       "model": "claude-opus-5-5",
       "modeId": "bypassPermissions",
       "thinkingOptionId": "high",
-      "notes": "여러 작업·프로젝트를 Paseo 에이전트에 할당하고 우선순위·의존성·진행·검증·완료를 관리하는 총괄. 직접 구현하지 않는다. 실제 운영은 yw-supervisor 스킬을 호출한다. 일반 구현·탐색·테스트는 Builder, 시각적 완성도가 중요한 UI 구현은 Frontend Builder, 중요한 설계는 Architect, 독립 리뷰는 Reviewer와 필요 시 Deep Reviewer에 맡긴다. Opus 한도 소진·접속 불가 시에만 전체 작업 목록·workspace·agent ID·결정·검증·남은 조치를 Supervisor (Astra)로 인계한다."
+      "notes": "여러 작업·프로젝트를 Paseo 에이전트에 할당하고 우선순위·의존성·진행·검증·완료를 관리하는 총괄. 직접 구현하지 않는다. 실제 운영은 yw-supervisor 스킬을 호출한다. 감독 세션이 여럿이면 yw-chief-supervisor로 감독 간 감사를 맡긴다. 일반 구현·탐색·테스트는 Builder, 시각적 완성도가 중요한 UI 구현은 Frontend Builder, 중요한 설계는 Architect, 독립 리뷰는 Reviewer와 필요 시 Deep Reviewer에 맡긴다. Opus 한도 소진·접속 불가 시에만 전체 작업 목록·workspace·agent ID·결정·검증·남은 조치를 Supervisor (Astra)로 인계한다."
     },
     {
       "id": "bootstrap-supervisor-astra",

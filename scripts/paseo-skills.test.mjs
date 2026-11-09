@@ -19,6 +19,7 @@ test('설치 확인: Paseo 표시가 있는 paseo* 폴더만 센다', () => {
     assert.deepEqual(installedSkills(home), []);
     skill(home, '.claude/skills', 'paseo-help', false);
     skill(home, '.claude/skills', 'yw-supervisor');
+    skill(home, '.agents/skills', 'yw-chief-supervisor');
     assert.deepEqual(installedSkills(home), []);
     skill(home, '.agents/skills', 'paseo');
     skill(home, '.claude/skills', 'paseo');
@@ -62,6 +63,9 @@ test('--check: 설정 없음 2, 스킬 없음 1, 있거나 일부러 뺐으면 0
     mkdirSync(paseoHome);
     writeFileSync(join(paseoHome, 'config.json'), '{}');
     assert.equal(run().status, 1);
+    skill(home, '.agents/skills', 'yw-chief-supervisor');
+    skill(home, '.claude/skills', 'yw-supervisor');
+    assert.equal(run().status, 1, '사용자 스킬만 있으면 Paseo 기본 스킬은 여전히 없음');
     writeFileSync(join(paseoHome, 'config.json'), JSON.stringify({ skills: { selection: { mode: 'custom', skills: [] } } }));
     assert.equal(run().status, 0);
     writeFileSync(join(paseoHome, 'config.json'), '{}');

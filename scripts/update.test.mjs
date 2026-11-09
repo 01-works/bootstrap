@@ -151,6 +151,23 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   assert.deepEqual(f.calls(), ['dotfiles 1'], '비ASCII 경로도 따옴표 없이 경로 규칙과 비교');
 });
 
+test('새 사용자 스킬 원본이 오면 paseo 단계로 연결하고 내용 갱신도 반영한다', t => {
+  const f = fixture(t);
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  const skillPath = 'agents/skills/yw-chief-supervisor/SKILL.md';
+  f.push({ [skillPath]: 'chief skill v1\n' });
+  let result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.calls(), ['paseo 1']);
+  assert.equal(readFileSync(join(f.work, skillPath), 'utf8'), 'chief skill v1\n');
+  f.push({ [skillPath]: 'chief skill v2\n' });
+  result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.calls(), ['paseo 1']);
+  assert.equal(readFileSync(join(f.work, skillPath), 'utf8'), 'chief skill v2\n');
+});
+
 test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 실행하면 다시 실행한다', t => {
   const f = fixture(t);
   mkdirSync(join(f.root, 'config/bootstrap'), { recursive: true });
