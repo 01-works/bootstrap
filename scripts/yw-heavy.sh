@@ -706,8 +706,8 @@ event() {
     if [ "$started" -gt 0 ]; then wait=$((started - queued)); held=$((now - started)); else wait=$((now - queued)); fi ;;
   esac
   [ "$wait" -ge 0 ] || wait=0; [ "$held" -ge 0 ] || held=0
-  { printf '{"event":"%s","at":%s,"requestId":"%s","generation":"%s","supervisor":"%s","waitSeconds":%s,"heldSeconds":%s,"exitCode":"%s","signal":"%s"}\n' \
-      "$kind" "$now" "$(json_esc "$id")" "$gen" "$(json_esc "$sup")" "$wait" "$held" "$code" "$signal" >>"$EVENTS"; } 2>/dev/null || say "작업 이벤트를 기록하지 못했습니다"
+  (umask 077; printf '{"event":"%s","at":%s,"requestId":"%s","generation":"%s","supervisor":"%s","waitSeconds":%s,"heldSeconds":%s,"exitCode":"%s","signal":"%s"}\n' \
+      "$kind" "$now" "$(json_esc "$id")" "$gen" "$(json_esc "$sup")" "$wait" "$held" "$code" "$signal" >>"$EVENTS") 2>/dev/null || say "작업 이벤트를 기록하지 못했습니다"
 }
 line_event() { event "$1" "$(line_id "$2")" "$(lf "$2" generation)" "$(lf "$2" supervisor)" "$(lf "$2" queued)" 0 unknown "${3:-unknown}"; }
 owner_event() { event "$1" "$(json_str "$2" task)" "$(json_str "$2" generation)" "$(json_str "$2" supervisor)" "$(json_num "$2" queued)" "$(json_num "$2" started)" "${3:-unknown}" "${4:-unknown}"; }
@@ -719,27 +719,33 @@ ring_write() {
   { if [ -n "$1" ]; then printf '%s\n' "$1"; fi; } >"$tmp"
   chmod 600 "$tmp" && mv -f "$tmp" "$RING"
 }
-ring_prune() {
-  local active s kept=''
+# 큐·owner가 원장이다. 두 파일의 mv 사이 종료돼도 기존 순환 순서는 보존하고,
+# 누락된 감독자는 큐 등록 순서대로 끝에 붙이며 더 이상 참여하지 않는 감독자는 뺀다.
+ring_sync() {
+  local active cur next
   active="$(json_str "$(owner_read)" supervisor)"
-  while IFS= read -r s; do
-    [ -n "$s" ] || continue
-    if [ "$s" = "$active" ] || q_lines | awk -v s="supervisor=$s" '{for(i=2;i<=NF;i++) if($i==s) found=1} END{exit !found}'; then
-      kept="${kept:+$kept
-}$s"
-    fi
-  done <<EOF_RING
-$(ring_read)
-EOF_RING
-  ring_write "$kept"
-}
-ring_add() {
-  local cur
-  ring_prune || return 1
   cur="$(ring_read)"
-  printf '%s\n' "$cur" | awk -v s="$1" '$0 == s { found=1 } END { exit !found }' && return 0
-  ring_write "${cur:+$cur
-}$1"
+  # macOS awk는 -v의 실제 줄바꿈을 거절하므로 순환 목록도 표지와 함께 stdin으로 전달한다.
+  next="$( { printf '%s\n' "$cur" | sed 's/^/R /'; q_lines | sed 's/^/Q /'; } | awk -v active="$active" '
+    $1=="R" { old[++n]=$2; next }
+    {
+      sup=""; version=""
+      for (i=3;i<=NF;i++) {
+        if ($i ~ /^supervisor=/) sup=substr($i,12)
+        if ($i ~ /^v=/) version=substr($i,3)
+      }
+      if (version==3 && sup!="" && !pending[sup]++) order[++count]=sup
+    }
+    END {
+      for (i=1;i<=n;i++) {
+        sup=old[i]
+        if (sup!="" && (sup==active || pending[sup]) && !seen[sup]++) print sup
+      }
+      if (active!="" && !seen[active]++) print active
+      for (i=1;i<=count;i++) if (!seen[order[i]]++) print order[i]
+    }')" || return 1
+  [ "$cur" != "$next" ] || return 0
+  ring_write "$next"
 }
 ring_rotate() {
   local cur
@@ -761,7 +767,7 @@ $(ring_read)
 EOF_RING
 }
 rr_reclaim() {
-  local protect="${1:-}" owner holder start state l id changed=0
+  local protect="${1:-}" owner holder start state l id age
   [ ! -e "$NR" ] || return 0
   owner="$(owner_read)"
   if [ "$(json_num "$owner" v)" = 3 ]; then
@@ -769,15 +775,21 @@ rr_reclaim() {
     state="$(proc_state "$holder" "$start")"
     case "$state" in dead:*)
       [ "$(ls -A "$XL" | wc -l | tr -d ' ')" = 1 ] || return 0
-      rm -f "$XL/owner.txt"
-      if rmdir "$XL" 2>/dev/null; then
-        owner_event reclaim "$owner"
-        ring_rotate "$(json_str "$owner" supervisor)" || return 1
-      fi ;;
+      rm -f "$XL/owner.txt" || return 1
+      if ! rmdir "$XL" 2>/dev/null; then say "사망한 holder의 실행 lock을 회수하지 못했습니다: $XL"; return 1; fi
+      owner_event reclaim "$owner"
+      ring_rotate "$(json_str "$owner" supervisor)" || return 1
+      ;;
     esac
   elif [ -z "$owner" ] && [ -d "$XL" ]; then
-    # v3도 확정할 수 없는 owner는 기존의 유예 시간 뒤 빈 디렉터리만 회수한다.
-    if [ "$(ownerless_age)" -ge "$OWNERLESS_AGE" ]; then rmdir "$XL" 2>/dev/null || true; fi
+    # owner 파일을 열고 쓰기 전에 끝나면 0바이트 파일도 남는다. v2와 같은 유예·관문을 적용한다.
+    age="$(ownerless_age)" || return 1
+    if [ "$age" -ge "$OWNERLESS_AGE" ] && gate_open; then
+      if ! { rm -f "$XL/owner.txt" && rmdir "$XL"; } 2>/dev/null; then
+        say "owner 없는 실행 lock을 회수하지 못했습니다: $XL"; return 1
+      fi
+      note "reclaim kind=exec task=- pid=- start=- reason=ownerless-stale age=${age}s"
+    fi
   fi
   while IFS= read -r l; do
     [ -n "$l" ] || continue
@@ -788,14 +800,13 @@ rr_reclaim() {
     case "$state" in dead:*)
       q_drop "$id" || return 1
       line_event reclaim "$l"
-      changed=1
-      # 순환 위치는 유지한다. 빈 감독자는 rr_head가 건너뛴다.
+      # 남은 줄과 실행 owner를 기준으로 순환 목록을 복구한다.
       ;;
     esac
   done <<EOF_QUEUE
 $(q_lines)
 EOF_QUEUE
-  [ "$changed" = 0 ] || ring_prune
+  ring_sync
 }
 rr_cancel() {
   local l
@@ -803,12 +814,11 @@ rr_cancel() {
   if [ "$(lf "$l" pid)" = "$$" ]; then
     q_drop "$ID" || return 1
     line_event cancel "$l" "${SIG:-unknown}"
-    ring_prune
+    ring_sync
   fi
 }
 rr_acquire() {
   local registered=0 l owner rc count supcount now json head
-  umask 077
   case "$MAX_SUP:$MAX_ALL" in *[!0-9:]* | :* | *: | 0:* | *:0) say "pending 한도는 양의 정수여야 합니다"; return 2 ;; esac
   # 장기 holder는 호출자의 조상이어야 하며 시작 시각을 검증할 수 있어야 한다.
   [ -n "$HOLDER" ] || { HOLDER="$PPID"; HOLDER_START="$(proc_start "$PPID")" || HOLDER_START=-; }
@@ -838,7 +848,7 @@ rr_acquire() {
         GEN="$(random_id)" || { unlock_queue; return 1; }
         now="$(date +%s)"
         l="$ID worker=$WORKER supervisor=$SUP v=3 pid=$$ start=$MYSTART generation=$GEN queued=$now"
-        q_append "$l" && ring_add "$SUP" || { unlock_queue; return 1; }
+        q_append "$l" || { unlock_queue; return 1; }
         line_event enqueue "$l"
       fi
       registered=1
@@ -856,12 +866,13 @@ rr_acquire() {
     if q_lines | awk '{ok=0; for(i=2;i<=NF;i++) if($i=="v=3") ok=1; if(!ok) bad=1} END{exit !bad}'; then
       rr_cancel; unlock_queue; say "활성 모드에 구버전 줄이 있어 획득을 거절합니다"; return 4
     fi
+    ring_sync || { unlock_queue; return 1; }
     head="$(rr_head)"
-    if [ "$head" = "$ID" ] && mkdir "$XL" 2>/dev/null; then
+    if [ "$head" = "$ID" ] && (umask 077; mkdir "$XL") 2>/dev/null; then
       GEN="$(lf "$l" generation)" TOKEN="$(random_id)" LEASE="r-$(random_id)" now="$(date +%s)"
       if [ -z "$TOKEN" ] || [ "$LEASE" = r- ]; then rmdir "$XL"; unlock_queue; return 1; fi
       json="{\"v\":3,\"pid\":$HOLDER,\"holder\":$HOLDER,\"holderStart\":\"$HOLDER_START\",\"task\":\"$(json_esc "$ID")\",\"supervisor\":\"$(json_esc "$SUP")\",\"generation\":\"$GEN\",\"token\":\"$TOKEN\",\"lease\":\"$LEASE\",\"queued\":$(lf "$l" queued),\"started\":$now}"
-      if ! { printf '%s\n' "$json" >"$XL/owner.txt" && q_drop "$ID"; }; then
+      if ! { (umask 077; : >"$XL/owner.txt") && printf '%s\n' "$json" >"$XL/owner.txt" && q_drop "$ID"; }; then
         rm -f "$XL/owner.txt"; rmdir "$XL"; unlock_queue; return 1
       fi
       owner_event start "$json"
