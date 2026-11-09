@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
-const relative = 'home/claude/.claude/settings.json.seed';
+const relative = 'home/claude/.claude/settings.json';
 const defaults = readFileSync(join(repo, relative), 'utf8');
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'bootstrap-dotfiles-'));
@@ -22,6 +22,19 @@ function fixture(t) {
   return {
     root, work, home, seed, local, backup,
     run: (...args) => spawnSync('/bin/bash', [join(repo, 'scripts/steps/40-dotfiles.sh')], { env: { ...env, DRY_RUN: args.includes('--dry-run') ? '1' : '0' }, encoding: 'utf8' }),
+    injectAfterCopy(body, copyNumber = 1) {
+      const hook = join(root, 'bash-env');
+      writeFileSync(hook, `cp() {
+  command cp "$@" || return
+  _test_copy_count=$(( \${_test_copy_count:-0} + 1 ))
+  if [[ "$_test_copy_count" == ${copyNumber} && ! -e "$HOME/injected" ]]; then
+    touch "$HOME/injected"
+    ${body}
+  fi
+}
+`);
+      env.BASH_ENV = hook;
+    },
     backups: () => existsSync(backup) ? readdirSync(backup, { recursive: true }).filter(p => p.endsWith('/.claude/settings.json')).map(p => join(backup, p)) : [],
     // doctor의 설정 파일 검사만 실행해 외부 도구·시스템 검사는 격리한다.
     doctor: () => {
@@ -80,17 +93,36 @@ test('읽을 수 있는 기존 링크의 현재 내용을 일반 파일로 백�
   assert.equal(readFileSync(f.local, 'utf8'), 'local edit');
 });
 
-test('이름 변경으로 끊긴 기존 저장소 링크는 복구하되 모르는 깨진 링크는 보존하고 실패한다', t => {
+test('모르는 깨진 링크는 기본값으로 덮어쓰지 않고 보존한다', t => {
   const f = fixture(t);
-  symlinkSync(f.seed.slice(0, -'.seed'.length), f.local);
-  const result = f.run();
-  assert.equal(result.status, 0, result.stderr);
-  assert.ok(lstatSync(f.local).isFile());
-  assert.equal(readFileSync(f.local, 'utf8'), defaults);
-  assert.equal(readFileSync(f.backups()[0], 'utf8'), defaults);
-  rmSync(f.local);
   const missing = join(f.root, 'missing.json');
   symlinkSync(missing, f.local);
   assert.equal(f.run().status, 1);
   assert.equal(readlinkSync(f.local), missing);
+  assert.deepEqual(f.backups(), []);
 });
+
+for (const [name, injection, copyNumber = 1] of [
+  ['로컬 경로에 원자적으로 저장', 'command mv -f "$HOME/.claude/latest.json" "$HOME/.claude/settings.json"'],
+  ['로컬 경로에 원자적으로 저장(백업 직후)', 'command mv -f "$HOME/.claude/latest.json" "$HOME/.claude/settings.json"', 2],
+  ['링크 대상에 원자적으로 저장', 'command mv -f "$HOME/.claude/latest.json" "$BOOTSTRAP_ROOT/home/claude/.claude/settings.json"'],
+  ['같은 내용의 다른 대상으로 링크 변경', 'command ln -sf "$HOME/.claude/latest.json" "$HOME/.claude/settings.json"'],
+]) {
+  test(`복사 ${copyNumber}회 직후 ${name}: 최신 값을 보존하고 전환을 보류한다`, t => {
+    const f = fixture(t);
+    const latest = name.startsWith('같은 내용') ? defaults : '{"theme":"light","model":"latest"}\n';
+    writeFileSync(join(f.home, '.claude/latest.json'), latest);
+    symlinkSync(f.seed, f.local);
+    f.injectAfterCopy(injection, copyNumber);
+    const result = f.run();
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.match(result.stderr, /보류/);
+    assert.equal(readFileSync(f.local, 'utf8'), latest);
+    assert.equal(lstatSync(f.local).isSymbolicLink(), !name.startsWith('로컬'));
+    assert.equal(readFileSync(f.backups()[0], 'utf8'), defaults, '복사 시점 내용도 백업에 남긴다');
+    assert.deepEqual(readdirSync(dirname(f.local)).filter(p => p.includes('.bootstrap.')), [], '임시 파일 정리');
+    assert.equal(f.run().status, 0, '다음 실행은 현재 최신 값으로 마이그레이션하거나 기존 일반 파일 보존');
+    assert.ok(lstatSync(f.local).isFile());
+    assert.equal(readFileSync(f.local, 'utf8'), latest);
+  });
+}

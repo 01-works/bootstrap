@@ -38,7 +38,6 @@ function fixture(t) {
 
   const write = (dir, files) => {
     for (const [path, content] of Object.entries(files)) {
-      if (content === null) { rmSync(join(dir, path)); continue; }
       mkdirSync(dirname(join(dir, path)), { recursive: true });
       writeFileSync(join(dir, path), content, { mode: 0o755 });
     }
@@ -328,21 +327,37 @@ test('키 순서만 바뀐 JSON은 되돌리고 받으며, 값이 바뀐 JSON은
   assert.equal(f.status().result, 'held', '배열 순서는 값으로 본다');
 });
 
-test('settings seed 전환을 자동 적용하고 로컬 설정 변경 뒤에도 clean 상태로 새 커밋을 받는다', t => {
+// 전환 전 설치는 settings.json을 저장소에 연결한다. update는 이전과 같은 fast-forward 경로를 쓴다.
+function linkedSettings(t) {
   const f = fixture(t);
   const path = 'home/claude/.claude/settings.json';
-  const original = readFileSync(join(repo, `${path}.seed`), 'utf8');
-  f.push({ [path]: original, 'scripts/steps/40-dotfiles.sh': readFileSync(join(repo, 'scripts/steps/40-dotfiles.sh'), 'utf8') });
-  let result = f.update('--auto');
+  const original = readFileSync(join(repo, path), 'utf8');
+  const dotfiles = readFileSync(join(repo, 'scripts/steps/40-dotfiles.sh'), 'utf8');
+  f.push({ [path]: original, 'scripts/steps/40-dotfiles.sh': `mkdir -p "$HOME/.claude"
+ln -sf "$BOOTSTRAP_ROOT/${path}" "$HOME/.claude/settings.json"
+` });
+  const result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
   const local = join(f.root, 'home/.claude/settings.json');
-  assert.ok(lstatSync(local).isSymbolicLink(), '전환 전에는 기존 저장소 파일로 연결');
+  assert.ok(lstatSync(local).isSymbolicLink());
+  f.calls();
+  return { f, path, original, dotfiles, local };
+}
 
-  f.push({ [path]: null, [`${path}.seed`]: original });
+test('링크 상태의 값 변경은 보류하고 전환 후 로컬 변경은 clean 상태로 새 커밋을 받는다', t => {
+  const { f, path, original, dotfiles, local } = linkedSettings(t);
+  const changed = JSON.stringify({ ...JSON.parse(original), theme: 'light', enabledPlugins: { 'sentry@sentry': true } });
+  writeFileSync(local, changed);
+  f.push({ 'scripts/steps/40-dotfiles.sh': dotfiles });
+  let result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.equal(f.status().result, 'held', '아직 링크인 동안 실제 값 변경은 보존하며 보류');
+  assert.equal(readFileSync(local, 'utf8'), changed);
+  f.git(f.work, 'checkout', '--', path); // 테스트에서 보존 확인을 마친 로컬 변경 정리
   result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
   assert.equal(f.head(), f.remoteHead());
-  assert.ok(lstatSync(local).isFile(), '이름 변경으로 끊긴 링크도 일반 파일로 전환');
+  assert.ok(lstatSync(local).isFile());
   assert.equal(readFileSync(local, 'utf8'), original);
   const backup = join(f.root, 'state/bootstrap/backup');
   const copies = readdirSync(backup, { recursive: true }).filter(p => p.endsWith('/.claude/settings.json'));
@@ -350,17 +365,53 @@ test('settings seed 전환을 자동 적용하고 로컬 설정 변경 뒤에도
   assert.ok(lstatSync(join(backup, copies[0])).isFile());
   assert.equal(readFileSync(join(backup, copies[0]), 'utf8'), original);
 
-  const changed = JSON.stringify({ ...JSON.parse(original), theme: 'light', enabledPlugins: { 'sentry@sentry': true } });
   writeFileSync(local, changed);
   assert.equal(f.git(f.work, 'status', '--porcelain'), '', '도구가 값을 고쳐도 저장소는 clean');
-  f.push({ [`${path}.seed`]: JSON.stringify({ ...JSON.parse(original), theme: 'system' }) });
+  f.push({ [path]: JSON.stringify({ ...JSON.parse(original), theme: 'system' }) });
   result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
   assert.equal(f.head(), f.remoteHead(), '로컬 설정 때문에 새 커밋을 보류하지 않는다');
   assert.equal(f.status().result, 'ok');
-  assert.equal(readFileSync(local, 'utf8'), changed, '후속 seed 변경도 로컬 값은 보존');
-  assert.equal(readdirSync(backup, { recursive: true }).filter(p => p.endsWith('/.claude/settings.json')).length, 1, '마이그레이션은 한 번만');
+  assert.equal(readFileSync(local, 'utf8'), changed, '후속 초기값 변경도 로컬 값은 보존');
+  assert.equal(readdirSync(backup, { recursive: true }).filter(p => p.endsWith('/.claude/settings.json')).length, 1);
   assert.equal(f.git(f.work, 'status', '--porcelain'), '');
+});
+
+test('fast-forward 후 앞 단계 실패와 자동 재시도 생략 중에도 기존 설정 링크를 읽을 수 있다', t => {
+  const { f, original, dotfiles, local } = linkedSettings(t);
+  f.push({ 'scripts/steps/40-dotfiles.sh': dotfiles, 'Brewfile': 'brew "gh"\n' });
+  f.exitWith('homebrew', 1);
+  const result = f.update('--auto');
+  assert.equal(result.status, 1, output(result));
+  assert.equal(f.head(), f.remoteHead(), 'fast-forward를 이미 마친 상태');
+  assert.ok(lstatSync(local).isSymbolicLink(), '앞 단계 실패로 전환은 미실행');
+  assert.equal(readFileSync(local, 'utf8'), original, '기존 링크는 계속 유효');
+  f.calls();
+  assert.equal(f.update('--auto').status, 0, '같은 커밋의 자동 재시도는 한 시간 생략');
+  assert.deepEqual(f.calls(), []);
+  assert.equal(readFileSync(local, 'utf8'), original);
+  f.exitWith('homebrew', null);
+  assert.equal(f.update().status, 0);
+  assert.ok(lstatSync(local).isFile());
+  assert.equal(readFileSync(local, 'utf8'), original);
+});
+
+test('전환과 후속 초기값 변경 여러 커밋을 함께 받아도 기존 링크 대상의 현재 내용을 백업한다', t => {
+  const { f, path, original, dotfiles, local } = linkedSettings(t);
+  f.push({ 'scripts/steps/40-dotfiles.sh': dotfiles });
+  const current = JSON.stringify({ ...JSON.parse(original), theme: 'system' });
+  f.push({ [path]: current });
+  const result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.equal(f.head(), f.remoteHead());
+  assert.ok(lstatSync(local).isFile());
+  // 전환 전까지는 같은 경로의 저장소 값 변경이 기존 링크를 통해 반영된다.
+  assert.equal(readFileSync(local, 'utf8'), current);
+  const backup = join(f.root, 'state/bootstrap/backup');
+  const copies = readdirSync(backup, { recursive: true }).filter(p => p.endsWith('/.claude/settings.json'));
+  assert.equal(copies.length, 1);
+  assert.equal(readFileSync(join(backup, copies[0]), 'utf8'), current);
+  assert.ok(!existsSync(join(f.work, `${path}.seed`)), '별도 seed 또는 끊긴 링크 복구에 의존하지 않음');
 });
 
 test('갈라진 기록이나 main이 아닌 브랜치는 받지 않는다', t => {

@@ -140,8 +140,8 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 ## 설정 파일
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
-- `.seed`로 끝나는 파일은 대상이 없을 때만 복사하고 기존 일반 파일은 그대로 둔다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`, Claude Code `settings.json`)용. 이후 변경은 기기 로컬에만 남으며 기존 기기 사이의 자동 설정 동기화는 하지 않는다.
-- 기존 Claude Code `settings.json` 링크는 이 변경을 받는 자동 갱신의 dotfiles 단계 또는 `./bootstrap.sh --only dotfiles`에서 한 번 일반 파일로 전환한다. 현재 내용을 아래 백업 경로에 일반 파일로 보존한 뒤 같은 내용으로 교체한다. 이름 변경으로 끊긴 기존 저장소 링크는 값이 동일한 seed를 쓴다. 백업을 로컬 파일에 복사하면 내용을 복구할 수 있다 ([상세·링크 방식 롤백](agents/claude-code.md#설정)).
+- `.seed`로 끝나는 파일은 대상이 없을 때만 복사하고 기존 일반 파일은 그대로 둔다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용. Claude Code는 예외 경로 `home/claude/.claude/settings.json`을 같은 방식으로 처리한다. 저장소의 `settings.json`은 새 기기 초기값이며 링크하지 않는다. 전환 이후 변경은 기기 로컬에만 남으며 기기 사이 자동 설정 동기화는 끝난다.
+- 기존 Claude Code `settings.json` 링크는 이 변경을 받는 자동 갱신의 dotfiles 단계 또는 `./bootstrap.sh --only dotfiles`에서 한 번 일반 파일로 전환한다. 같은 디렉터리의 임시 파일에 현재 내용을 복사하고 아래 백업 경로에 일반 파일로 보존한 뒤, 링크 대상과 내용을 다시 확인해 교체한다. 저장 경합이 있으면 최신 값을 유지하고 수동 작업 대기로 남긴다. 파일 이름은 유지하므로 전환이 지연돼도 링크가 끊어지지 않는다. 전환 전까지 같은 저장소 파일의 값 변경은 기존 링크를 통해 반영된다. 백업을 로컬 파일에 복사하면 내용을 복구할 수 있다 ([상세·링크 방식 롤백](agents/claude-code.md#설정)).
 - 같은 내용을 두 도구가 쓰는 파일은 저장소 안에서 링크한다. Codex `AGENTS.md`는 Claude Code `CLAUDE.md`를 가리킨다.
 - Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 설정이 없으면 같은 단계가 앱 없이 첫 설정부터 한다([새 기기에서](agents/paseo.md#새-기기에서)). 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.
 - 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude(`~/.claude/skills`)·Codex(`~/.agents/skills`) 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다. 같은 이름의 다른 스킬이 있으면 덮어쓰지 않고 멈춘다.
