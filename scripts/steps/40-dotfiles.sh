@@ -71,8 +71,26 @@ seed_file() {
     return
   fi
   ensure_parent "$dst"
-  run cp "$src" "$dst"
-  ok "$(pretty "$dst") 기본값 복사"
+  if [[ "$DRY_RUN" == 1 ]]; then
+    info "[dry-run] $(pretty "$dst") 임시 파일에 기본값 복사 후 대상이 없을 때만 생성"
+    return
+  fi
+  seed_tmp="$(mktemp "$dst.bootstrap.XXXXXX")"
+  run cp "$src" "$seed_tmp"
+  # link(2)로 생성해 확인 이후 다른 프로세스가 만든 경로도 덮어쓰지 않는다.
+  # link는 ln과 달리 대상이 디렉터리여도 그 안에 파일을 만들지 않는다.
+  if run link "$seed_tmp" "$dst" 2>/dev/null; then
+    ok "$(pretty "$dst") 기본값 복사"
+  elif [[ -e "$dst" || -L "$dst" ]]; then
+    ok "$(pretty "$dst") (다른 프로세스가 생성해서 그대로 둠)"
+  else
+    fail "$(pretty "$dst") 기본값 생성 실패"
+    run rm -f "$seed_tmp"
+    seed_tmp=''
+    return 1
+  fi
+  run rm -f "$seed_tmp"
+  seed_tmp=''
 }
 
 for src_root in "$BOOTSTRAP_ROOT"/home/*; do

@@ -22,6 +22,15 @@ function fixture(t) {
   return {
     root, work, home, seed, local, backup,
     run: (...args) => spawnSync('/bin/bash', [join(repo, 'scripts/steps/40-dotfiles.sh')], { env: { ...env, DRY_RUN: args.includes('--dry-run') ? '1' : '0' }, encoding: 'utf8' }),
+    injectBeforeCopy(body) {
+      const hook = join(root, 'bash-env');
+      writeFileSync(hook, `cp() {
+  ${body}
+  command cp "$@"
+}
+`);
+      env.BASH_ENV = hook;
+    },
     injectAfterCopy(body, copyNumber = 1) {
       const hook = join(root, 'bash-env');
       writeFileSync(hook, `cp() {
@@ -64,6 +73,51 @@ test('기존 일반 파일은 seed와 달라도 그대로 두고 반복 실행�
   assert.equal(readFileSync(f.local, 'utf8'), current);
   assert.deepEqual(f.backups(), []);
   assert.equal(f.doctor().status, 0);
+});
+
+test('초기 복사 직전에 다른 프로세스가 만든 설정 파일은 덮어쓰지 않는다', t => {
+  const f = fixture(t);
+  const current = '{"theme":"light","model":"latest"}\n';
+  f.injectBeforeCopy(`printf '%s\\n' '{"theme":"light","model":"latest"}' > "$HOME/.claude/settings.json"`);
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.ok(lstatSync(f.local).isFile());
+  assert.equal(readFileSync(f.local, 'utf8'), current);
+  assert.equal(readFileSync(f.seed, 'utf8'), defaults);
+  assert.deepEqual(readdirSync(dirname(f.local)), ['settings.json'], '임시 파일 정리');
+  assert.deepEqual(f.backups(), []);
+});
+
+test('초기 복사 직전에 생긴 링크와 링크 대상도 그대로 보존한다', t => {
+  const f = fixture(t);
+  const target = join(dirname(f.local), 'current.json');
+  writeFileSync(target, 'latest');
+  f.injectBeforeCopy('command ln -s "$HOME/.claude/current.json" "$HOME/.claude/settings.json"');
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(readlinkSync(f.local), target);
+  assert.equal(readFileSync(target, 'utf8'), 'latest');
+  assert.deepEqual(readdirSync(dirname(f.local)), ['current.json', 'settings.json']);
+});
+
+test('초기 복사 직전에 생긴 디렉터리 안에도 기본값이나 임시 파일을 만들지 않는다', t => {
+  const f = fixture(t);
+  f.injectBeforeCopy('mkdir "$HOME/.claude/settings.json"');
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.ok(lstatSync(f.local).isDirectory());
+  assert.deepEqual(readdirSync(f.local), []);
+  assert.deepEqual(readdirSync(dirname(f.local)), ['settings.json']);
+});
+
+test('대상 생성이 다른 이유로 실패해도 임시 파일을 정리하고 실패를 알린다', t => {
+  const f = fixture(t);
+  f.injectBeforeCopy('link() { return 1; }');
+  const result = f.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /기본값 생성 실패/);
+  assert.ok(!existsSync(f.local));
+  assert.deepEqual(readdirSync(dirname(f.local)), []);
 });
 
 test('읽을 수 있는 기존 링크의 현재 내용을 일반 파일로 백업하고 그대로 전환한다', t => {
