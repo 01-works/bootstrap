@@ -61,10 +61,20 @@ step "설정 파일"
 for src_root in "$BOOTSTRAP_ROOT"/home/*; do
   while IFS= read -r src; do
     rel="${src#"$src_root"/}"
-    case "$rel" in
+    case "${src#"$BOOTSTRAP_ROOT/home/"}" in
       *.seed)
         dst="$HOME/${rel%.seed}"
         if [[ -e "$dst" ]]; then pass "$(pretty "$dst")"; else miss "$(pretty "$dst") 없음"; fi
+        ;;
+      claude/.claude/settings.json)
+        dst="$HOME/$rel"
+        if [[ -f "$dst" && ! -L "$dst" ]]; then
+          pass "$(pretty "$dst") (로컬 파일)"
+        elif [[ -L "$dst" ]]; then
+          wait_for_user "$(pretty "$dst") 기존 링크 전환 필요: Claude Code를 모두 종료하고 새로 실행하지 않는 동안 ./bootstrap.sh --only dotfiles --migrate-claude-settings 를 한 번 실행하세요. 전환 전에는 갱신 보류가 다시 생길 수 있습니다"
+        else
+          miss "$(pretty "$dst") 로컬 파일 없음 → ./bootstrap.sh --only dotfiles"
+        fi
         ;;
       *)
         dst="$HOME/$rel"

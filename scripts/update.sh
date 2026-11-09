@@ -105,7 +105,7 @@ hold() {
 }
 
 # 키 순서·들여쓰기만 HEAD와 다른 JSON 파일 (한 줄에 하나). Node가 없으면 고르지 않는다.
-# ~/.claude/settings.json은 저장소 파일 링크라, Claude Code가 설정을 다시 쓰며 키 순서만 바꿔도 커밋 안 된 변경이 된다.
+# seed 전환 전의 Claude Code 설정처럼, 도구가 링크된 JSON을 다시 쓰며 생긴 포맷 변경도 처리한다.
 reordered_json() {
   has node || return 0
   local path

@@ -63,6 +63,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 
 ```sh
 ./bootstrap.sh --only dotfiles     # 한 단계만
+./bootstrap.sh --only dotfiles --migrate-claude-settings  # Claude Code를 모두 종료한 뒤 기존 설정 링크 전환
 ./bootstrap.sh update              # 저장소를 받아 바뀐 부분만 적용 (수동 작업 대기 처리)
 ./bootstrap.sh paseo-upgrade       # (데스크톱) Paseo를 정식 최신 버전으로. 실행 중 에이전트가 있으면 --force
 ./bootstrap.sh doctor              # 세팅 상태 검증
@@ -79,7 +80,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 
 아무 기기에서나 고쳐서 push하면 다른 기기가 따라온다. `autoupdate` 단계가 등록한 LaunchAgent(`local.bootstrap.update`)가 로그인할 때와 10분마다 `./bootstrap.sh update --auto`를 실행한다. 잠들어 있던 기기는 깨어난 뒤 따라온다. 공개 저장소라 받을 때 로그인이 필요 없다.
 
-- 받기: fetch 후 fast-forward만 한다. 커밋 안 된 변경이 있거나 이 기기의 커밋과 갈라졌으면 받지 않고 "보류"로 알린다. push·merge는 하지 않는다. 고치는 중인 기기(커밋 안 된 변경만 있고 새 커밋 없음)는 건드리지 않는다. 단, 키 순서·들여쓰기만 바뀐 JSON(Claude Code가 링크된 `settings.json`을 다시 쓰며 생기는 경우)은 새 커밋을 받을 때 되돌린다.
+- 받기: fetch 후 fast-forward만 한다. 커밋 안 된 변경이 있거나 이 기기의 커밋과 갈라졌으면 받지 않고 "보류"로 알린다. push·merge는 하지 않는다. 고치는 중인 기기(커밋 안 된 변경만 있고 새 커밋 없음)는 건드리지 않는다. 단, 키 순서·들여쓰기만 바뀐 JSON은 새 커밋을 받을 때 되돌린다. 실제 값 변경은 보존한다.
 - 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일을 쓰는 단계만 실행한다. 예: `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 전체 대응은 `scripts/update.sh`의 `steps_for_paths`. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
 - 사람이 필요한 일: 자동 갱신은 관리자 비밀번호(전원 설정·자동 로그인·Homebrew 설치), 설치 창(Xcode 명령줄 도구), GitHub 로그인, 배경화면 제어 허용 창을 띄우지 않고 "수동 작업 대기"로 남긴다. 터미널에서 `./bootstrap.sh update`를 실행하면 대기 단계까지 다시 실행한다. 관리자 비밀번호가 필요한 cask는 자동 갱신에서 실패로 표시된다.
 - 실패: 적용 기록은 앞으로 옮기고, 실패한 단계만 `status`의 `failed`에 남겨 다음 실행 때 다시 실행한다. 자동 갱신은 같은 커밋이면 한 시간 뒤, 새 커밋이 오면 바로 다시 시도한다. 전체 설치(`./bootstrap.sh`)의 실패·대기도 같은 상태에 남아 `./bootstrap.sh update`가 이어서 실행한다. 전체 설치는 실패가 있으면 적용 기록을 옮기지 않는다.
@@ -154,7 +155,8 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 ## 설정 파일
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
-- `.seed`로 끝나는 파일은 대상이 없을 때만 복사한다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용.
+- `.seed`로 끝나는 파일은 대상이 없을 때만 복사하고 기존 일반 파일은 그대로 둔다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용. Claude Code는 예외 경로 `home/claude/.claude/settings.json`을 같은 방식으로 처리한다. 저장소의 `settings.json`은 새 기기 초기값이며 링크하지 않는다. 전환 이후 변경은 기기 로컬에만 남으며 기기 사이 자동 설정 동기화는 끝난다.
+- 기존 Claude Code `settings.json` 링크는 자동 갱신·일반 설치·기본 `--only dotfiles`에서 교체하지 않고 수동 작업 대기(pending)로 남긴다. 다른 단계와 갱신은 계속한다. 기존 기기는 Claude Code를 모두 종료하고 새로 실행하지 않는 동안 `./bootstrap.sh --only dotfiles --migrate-claude-settings`를 한 번 실행해야 한다. 명령은 `claude` 프로세스가 있거나 프로세스 조회에 실패하면 거부한다. 같은 디렉터리의 임시 파일에 현재 내용을 복사하고 아래 백업 경로에 보존한 뒤 링크와 내용을 재확인해 교체하며, 전환 후 내용도 검증한다. 전환 후 `./bootstrap.sh update`로 남은 pending을 정리한다. 전환 전에는 링크를 통한 설정 저장 때문에 갱신 보류가 다시 생길 수 있고, 같은 저장소 파일의 원격 값 변경도 기존 링크에 반영된다. 백업을 로컬 파일에 복사하면 내용을 복구할 수 있다 ([상세·실행 조건·롤백](agents/claude-code.md#설정)).
 - 같은 내용을 두 도구가 쓰는 파일은 저장소 안에서 링크한다. Codex `AGENTS.md`는 Claude Code `CLAUDE.md`를 가리킨다.
 - Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 설정이 없으면 같은 단계가 앱 없이 첫 설정부터 한다([새 기기에서](agents/paseo.md#새-기기에서)). 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.
 - 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude(`~/.claude/skills`)·Codex(`~/.agents/skills`) 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다. 같은 이름의 다른 스킬이 있으면 덮어쓰지 않고 멈춘다.
