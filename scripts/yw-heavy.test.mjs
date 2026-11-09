@@ -40,7 +40,9 @@ function tree(dir) {
 const procStart = pid => spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' }, encoding: 'utf8' })
   .stdout.trim().split(/\s+/).join('_');
 
-function fixture(t, { waitTimeout = 3500 } = {}) {
+// 조건 충족 즉시 끝나는 대기의 기본 상한은 성능 판정이 아닌 정체 감지용이다.
+// 실제 즉시 응답·빠른 인계 검사는 호출부의 짧은 상한을 명시적으로 유지한다.
+function fixture(t, { waitTimeout = 60000 } = {}) {
   const before = snapshot(strictLivePaths);
   const dir = mkdtempSync(join(tmpdir(), 'yw-heavy-test-'));
   const q = join(dir, 'q'), x = join(dir, 'x'), e = join(dir, 'e');
@@ -51,7 +53,7 @@ function fixture(t, { waitTimeout = 3500 } = {}) {
   // 기본 대역에 셸 함수를 더한 BASH_ENV (특정 구간에서 자기 자신을 kill -9하는 shim 등).
   let hooks = 0;
   const hookWith = extra => { const path = join(dir, `bash-env-${++hooks}`); writeFileSync(path, baseHook + extra + '\n'); return path; };
-  const env = { ...process.env, HOME: join(dir, 'home'), BASH_ENV: hook, YW_HEAVY_QUEUE: q, YW_HEAVY_EXEC_LOCK: x, YW_HEAVY_EDIT_LOCK: e,
+  const env = { ...process.env, HOME: join(dir, 'home'), XDG_CONFIG_HOME: join(dir, 'config'), YW_HEAVY_VERIFIER_OVERRIDE_REASON: '', BASH_ENV: hook, YW_HEAVY_QUEUE: q, YW_HEAVY_EXEC_LOCK: x, YW_HEAVY_EDIT_LOCK: e,
     YW_HEAVY_FLOCK: join(dir, 'flock'), YW_HEAVY_LOG: join(dir, 'log'), YW_HEAVY_NO_RECLAIM: join(dir, 'no-reclaim'), YW_HEAVY_EVENTS: join(dir, 'events'), YW_HEAVY_FAST_POLL: '.05', YW_HEAVY_POLL: '.05', YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '' };
   mkdirSync(env.HOME);
   const children = [];
@@ -93,6 +95,101 @@ function fixture(t, { waitTimeout = 3500 } = {}) {
     return path;
   };
   return { dir, q, x, e, env, start, cli, cliEnv, live, sync, wait, waitTimeout, finish, owner, ownerText, line, legacy, hookWith, log: () => read(env.YW_HEAVY_LOG) };
+}
+
+// ---- verifier 역할: 실제 역할·대기열을 바꾸지 않는 양 모드 회귀 검사 ----
+for (const mode of ['compat', 'round-robin']) {
+  test(`verifier 역할 (${mode}): 역할 off는 기존 acquire·run 그대로`, async t => {
+    const f = fixture(t, { waitTimeout: 60000 });
+    if (mode === 'round-robin') enable(f);
+    f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON = 'off에서는 사용하지 않는 사유';
+    const p = f.start(['-c', `${quote(script)} acquire ORDINARY w S --holder $$ && read -r _`]);
+    await f.wait(() => p.out.trim(), 'ordinary acquired');
+    assert.equal(JSON.parse(f.ownerText()).verifierOverrideReason, undefined);
+    releaseOwner(f);
+    p.stdin.end('done\n'); assert.equal(await f.finish(p), 0, p.err);
+    const run = f.cli('run', 'NEXT', 'w', 'S', '--', '/bin/sh', '-c', 'exit 17');
+    assert.equal(await f.finish(run), 17, run.err);
+    assert.equal(existsSync(f.x), false);
+    assert.doesNotMatch(f.log(), /verifier-override/);
+  });
+
+  test(`verifier 역할 (${mode}): 일반 요청·빈 사유 거절, 상태·큐 변경 없음`, t => {
+    const f = fixture(t);
+    if (mode === 'round-robin') enable(f);
+    enableVerifierRole(f);
+    const before = tree(f.dir);
+    for (const reason of [undefined, '', '  ', '\n\t\r\x1b']) {
+      if (reason === undefined) delete f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON;
+      else f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON = reason;
+      for (const args of [
+        ['acquire', 'VERIFIER-01-software', 'nightly-local', 'ordinary'],
+        ['run', 'ORDINARY', 'w', 'verifier-loop-other', '--', '/bin/sh', '-c', `touch ${quote(join(f.dir, 'ran'))}`],
+      ]) {
+        const result = f.sync(...args);
+        assert.equal(result.status, 4, result.stderr);
+        assert.equal(result.stdout, '');
+        assert.match(result.stderr, /YW_HEAVY_VERIFIER_OVERRIDE_REASON/);
+        assert.deepEqual(tree(f.dir), before, '거절은 큐·owner·기록과 명령을 건드리지 않는다');
+      }
+    }
+    for (const cmd of ['status', 'capabilities']) assert.equal(f.sync(cmd).status, 0);
+    assert.deepEqual(tree(f.dir), before);
+  });
+
+  test(`verifier 역할 (${mode}): 실제 verifier-loop acquire 호출과 run 허용`, async t => {
+    const f = fixture(t, { waitTimeout: 60000 });
+    if (mode === 'round-robin') enable(f);
+    enableVerifierRole(f);
+    // verifier-loop.mjs acquireFifo: FIFO_ID, STATUS_CONTEXT, supervisor, --holder loop PID.
+    const p = f.start(['-c', `${quote(script)} acquire VERIFIER-01-software nightly-local verifier-loop --holder $$ && read -r _`]);
+    await f.wait(() => p.out.trim(), 'verifier acquired');
+    const owner = JSON.parse(f.ownerText());
+    assert.equal(owner.task, 'VERIFIER-01-software');
+    assert.equal(owner.supervisor, 'verifier-loop');
+    assert.equal(owner.holder, p.pid);
+    assert.equal(owner.verifierOverrideReason, undefined);
+    releaseOwner(f); // 역할이 켜진 상태에서도 기존 해제 프로토콜 그대로다.
+    p.stdin.end('done\n'); assert.equal(await f.finish(p), 0, p.err);
+    const run = f.cli('run', 'VERIFIER-RUN', 'nightly-local', 'verifier-loop', '--', 'true');
+    assert.equal(await f.finish(run), 0, run.err);
+    assert.equal(existsSync(f.x), false);
+  });
+
+  test(`verifier 역할 (${mode}): 명시한 override 사유를 acquire·run owner와 로그에 기록`, async t => {
+    const f = fixture(t, { waitTimeout: 60000 });
+    if (mode === 'round-robin') enable(f);
+    enableVerifierRole(f);
+    const reason = '승인된 "점검" \\ 임시\n작업\t';
+    const recorded = '승인된 "점검" \\ 임시작업';
+    f.env.YW_HEAVY_VERIFIER_OVERRIDE_REASON = reason;
+    for (const cmd of ['acquire', 'run']) {
+      const p = cmd === 'acquire'
+        ? f.start(['-c', `${quote(script)} acquire EXCEPTION w S --holder $$ && read -r _`])
+        : f.cli('run', 'EXCEPTION', 'w', 'S', '--', '/bin/sh', '-c', 'read -r _');
+      await f.wait(() => p.out.trim() || p.err.includes('ACQUIRED EXCEPTION'), `${cmd} acquired`);
+      const owner = JSON.parse(f.ownerText());
+      assert.equal(owner.verifierOverrideReason, recorded);
+      assert.ok(f.log().includes(`verifier-override task=EXCEPTION worker=w supervisor=S reason=${recorded}`));
+      if (cmd === 'acquire') releaseOwner(f);
+      p.stdin.end('done\n'); assert.equal(await f.finish(p), 0, p.err);
+      assert.equal(existsSync(f.x), false);
+    }
+  });
+}
+
+function enableVerifierRole(f) {
+  const dir = join(f.env.XDG_CONFIG_HOME, 'bootstrap/roles');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'verifier'), '', { mode: 0o600 });
+}
+function releaseOwner(f) {
+  const owner = JSON.parse(f.ownerText());
+  const args = owner.v === 3
+    ? ['release', '--generation', owner.generation, '--token', owner.token, '--lease', owner.lease]
+    : ['release', owner.task];
+  const result = f.sync(...args);
+  assert.equal(result.status, 0, result.stderr);
 }
 
 // ---- 반려 결함 재현 (구 CLI만 쓰는 *-legacy는 반려 구현에서 실패해야 한다) ----
@@ -177,17 +274,17 @@ test('D3-stress: 구버전 3개·새 버전 여럿 동시 실행과 holder kill 
   workers.push(f.cli('run', 'R2', 'w', 'sr2', '--', '/bin/bash', '-c', crit('R2')));
   workers.push(f.start(['-c', `${S} acquire H1 w sh1 --holder $$ >/dev/null && ${crit('H1')}; ${S} release H1 >/dev/null`]));
   // 구버전 줄이 모두 들어간 뒤에 온 대기자는 구버전 줄이 다 빠진 뒤(관문 열림)에 차례를 받는다.
-  await f.wait(() => [1, 2, 3].every(i => read(f.q).includes(`L${i} `) || workers[i - 1].result), 'legacy enqueued', 5000);
+  await f.wait(() => [1, 2, 3].every(i => read(f.q).includes(`L${i} `) || workers[i - 1].result), 'legacy enqueued');
   const victim = f.start(['-c', `${S} acquire H2 w sh2 --holder $$ >/dev/null && { mkdir ${quote(inside)} 2>/dev/null || echo H2 >> ${quote(fails)}; echo H2 > ${quote(inside)}/who; exec /bin/sleep 30; }`]);
   // H3·R3가 H2 뒤에 서야 H2가 죽었을 때 기다리던 쪽이 회수한다.
-  await f.wait(() => read(f.q).includes('H2 '), 'victim enqueued', 5000);
+  await f.wait(() => read(f.q).includes('H2 '), 'victim enqueued');
   workers.push(f.start(['-c', `${S} acquire H3 w sh3 --holder $$ >/dev/null && ${crit('H3')}; ${S} release H3 >/dev/null`]));
   workers.push(f.cli('run', 'R3', 'w', 'sr3', '--', '/bin/bash', '-c', crit('R3')));
-  await f.wait(() => read(join(inside, 'who')).trim() === 'H2', 'victim inside', 15000);
+  await f.wait(() => read(join(inside, 'who')).trim() === 'H2', 'victim inside');
   assert.doesNotMatch(read(f.q), /^L\d /m, '구버전 줄이 모두 빠진 뒤');
   rmSync(inside, { recursive: true, force: true });
   victim.kill('SIGKILL');
-  for (const w of workers) assert.equal(await f.finish(w, 15000), 0, `${w.out} ${w.err}`);
+  for (const w of workers) assert.equal(await f.finish(w), 0, `${w.out} ${w.err}`);
   assert.equal(read(fails), '', '보유 구간이 겹치지 않는다');
   assert.equal(read(f.q).trim(), '', '살아 남은 작업이 모두 끝나면 대기열이 빈다');
   assert.equal(existsSync(f.x), false);
@@ -662,7 +759,7 @@ rc=$?
 test -d ${quote(f.x)} || exit 98
 exit "$rc"`;
   const p = f.cli('run', 'OUTER', 'w', 'S', '--', '/bin/bash', '-c', code);
-  assert.equal(await f.finish(p, 5000), 7, p.err);
+  assert.equal(await f.finish(p), 7, p.err);
   assert.equal(existsSync(f.x), false);
   const log = events(f);
   assert.deepEqual(log.map(e => e.event), ['enqueue', 'start', 'end']);
@@ -672,7 +769,7 @@ exit "$rc"`;
 
 async function holding(f, id = 'H', sup = 'H', extra = {}) {
   const p = f.cliEnv(extra, 'run', id, 'w', sup, '--', '/bin/sh', '-c', 'echo ready; read line');
-  await f.wait(() => p.out.includes('ready'), 'holder ready', Math.max(5000, f.waitTimeout));
+  await f.wait(() => p.out.includes('ready'), 'holder ready');
   return p;
 }
 
@@ -719,7 +816,7 @@ test('v3 PID 재사용은 token 거절·회수, ps 실패는 token 거절·owner
 });
 
 test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉시 등록, 30초 poll 없이 인계', async t => {
-  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const f = fixture(t); enable(f);
   const sleeps = observeFastPolling(f);
   const h = await holding(f, 'A0', 'A');
   const order = join(f.dir, 'order');
@@ -746,6 +843,7 @@ test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉
 });
 
 test('v3 감독자·전체 pending 한도는 사유와 함께 즉시 거절하고 재시도는 허용', async t => {
+  // holder를 끝까지 보유하므로 거절은 슬롯 반환 없이 완료되어야 한다.
   const f = fixture(t); enable(f);
   f.env.YW_HEAVY_MAX_PENDING_SUPERVISOR = '2'; f.env.YW_HEAVY_MAX_PENDING = '3';
   await holding(f);
@@ -758,7 +856,7 @@ test('v3 감독자·전체 pending 한도는 사유와 함께 즉시 거절하�
   assert.equal(await f.finish(full), 5); assert.match(full.err, /total=3\/3/);
   const retry = f.cli('run', 'A', 'w', 'A', '--', 'true');
   assert.equal(await f.finish(a), 3); assert.equal(retry.result, undefined);
-  assert.equal(read(f.q).trim().split('\n').length, 3);
+  assert.deepEqual(read(f.q).trim().split('\n').map(l => l.split(' ')[0]).sort(), ['A', 'B', 'D'], '거절된 요청은 등록하지 않고 재시도는 기존 줄을 이어받는다');
 });
 
 test('v3 종료·실패·취소·회수 기록 구분, TERM은 자식 종료까지 보유, 비밀 인자·환경·token은 기록하지 않음', async t => {
@@ -821,7 +919,7 @@ test('v3 취소로 빈 감독자는 다시 제출할 때 순환 끝에 붙고 st
   await f.wait(() => read(f.q + '.rotation').trim().split('\n').join(',') === 'H,C,B', 'B rejoins rotation tail');
   assert.deepEqual(read(f.q + '.rotation').trim().split('\n'), ['H', 'C', 'B']);
   h.stdin.end('done\n');
-  for (const p of [h, c, b2]) assert.equal(await f.finish(p, 5000), 0);
+  for (const p of [h, c, b2]) assert.equal(await f.finish(p), 0);
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'C', 'B2']);
 });
 
@@ -886,7 +984,7 @@ test('R2-ring: 큐·순환 목록 mv 사이 SIGKILL 후 재시도는 원래 세�
     assert.deepEqual(current.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort(), original.split(' ').filter(v => !/^(pid|start)=/.test(v)).sort());
     await f.wait(() => read(f.q + '.rotation').trim() === 'H\nB\nS', 'missing supervisor repaired at tail');
     h.stdin.end('done\n');
-    for (const p of [h, first, retry]) assert.equal(await f.finish(p, 5000), 0, p.err);
+    for (const p of [h, first, retry]) assert.equal(await f.finish(p), 0, p.err);
     assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'FIRST', 'RETRY']);
   }
 });
@@ -912,7 +1010,7 @@ test('R2-ring-drop: 취소의 큐 삭제 직후 SIGKILL된 감독자는 재등�
   const retry = f.cli('run', 'REJOIN', 'w', 'S', '--', 'true');
   await f.wait(() => read(f.q + '.rotation').trim() === 'H\nB\nS', 'stale supervisor removed before rejoin');
   h.stdin.end('done\n');
-  for (const p of [h, b, retry]) assert.equal(await f.finish(p, 5000), 0);
+  for (const p of [h, b, retry]) assert.equal(await f.finish(p), 0);
 });
 
 test('R3-umask: v3 run은 호출자 umask와 명령의 생성 권한을 호환 모드처럼 보존', async t => {
@@ -934,7 +1032,7 @@ test('R3-umask: v3 run은 호출자 umask와 명령의 생성 권한을 호환 �
 });
 
 test('R4-handoff: 30초 sleep 치환 없이 해제 뒤 다음 요청이 짧게 인계', async t => {
-  const f = fixture(t, { waitTimeout: 60000 }); enable(f);
+  const f = fixture(t); enable(f);
   const sleeps = observeFastPolling(f);
   const h = await holding(f);
   const next = f.cli('run', 'NEXT', 'w', 'S', '--', 'true');
@@ -976,7 +1074,7 @@ test('R5-no-reclaim: 취소 큐 삭제 직후 SIGKILL된 감독자는 다른 대
   assert.equal(read(f.q).split('\n').find(l => l.startsWith('B ')), bLine, 'B의 기존 줄도 보존');
   assert.ok(existsSync(f.env.YW_HEAVY_NO_RECLAIM));
   writeFileSync(f.q + '.allow-b', ''); h.stdin.end('done\n');
-  for (const p of [h, b, rejoin]) assert.equal(await f.finish(p, 5000), 0, p.err);
+  for (const p of [h, b, rejoin]) assert.equal(await f.finish(p), 0, p.err);
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'B', 'REJOIN']);
   assert.equal(events(f).filter(e => e.event === 'reclaim').length, 0);
 });

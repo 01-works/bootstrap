@@ -91,11 +91,25 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 
 ## 기기 역할
 
-모든 기기에 같은 것을 설치한 뒤, 일부 기기에만 필요한 설정을 역할로 켠다. 켜고 끄는 것은 사람이 하고, 켠 뒤에는 `roles` 단계가 저장된 값으로 다시 맞춘다(역할 코드가 바뀌면 자동 갱신이 전한다). 상태는 `~/.config/bootstrap/roles/<역할>`(권한 600)에 남는다. 역할은 특정 프로젝트를 알지 않는다.
+bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다. 별도 `worker` 역할은 없다. `role add verifier`를 켠 기기만 검증 기기다.
+
+일부 기기에만 필요한 설정을 역할로 켠다. 켜고 끄는 것은 사람이 하고, 켠 뒤에는 `roles` 단계가 저장된 값으로 다시 맞춘다(역할 코드가 바뀌면 자동 갱신이 전한다). 상태는 `~/.config/bootstrap/roles/<역할>`(권한 600)에 남는다(`XDG_CONFIG_HOME` 지정 시 해당 경로 사용). 역할은 특정 프로젝트를 알지 않는다.
+
+### 작업 기기를 Paseo host로 등록 (처음 한 번)
+
+감독 기기에서 작업 기기에 lane을 보내려면 다음 순서로 등록한다.
+
+1. 작업 기기에서 `paseo daemon start`로 데몬을 켠다. 릴레이 연결은 `paseo daemon pair`로 연결 링크를 받는다.
+2. 감독 기기에서 `paseo host add '<연결>'`을 실행한다. `<연결>`에는 작업 기기의 연결 링크나 접근 가능한 데몬 endpoint를 넣는다. 선택적으로 `--label <이름>`을 붙인다.
+3. pairing 승인은 사람이 한다. 등록 후 감독 기기에서 `paseo host ls`로 확인한다.
+
+기기 이름·주소·키·연결 링크는 이 공개 저장소에 기록하지 않는다. 데몬 설치·시작과 host 등록은 별개다([Paseo](agents/paseo.md#새-기기에서)).
 
 ### verifier
 
 무거운 검증을 맡는 기기. 다른 기기가 결과 로그만 읽어 간다.
+
+이 역할이 켜져 있으면 `yw-heavy acquire|run`은 감독자 식별자가 `verifier-loop`인 요청만 허용한다. 다른 요청은 사유가 있는 `YW_HEAVY_VERIFIER_OVERRIDE_REASON` 없이는 코드 4로 거절한다. 예외 사유는 실행 owner와 진단 로그에 남는다([공용 heavy 대기열](agents/heavy-queue.md#verifier-역할-기기)).
 
 ```sh
 ./bootstrap.sh role add verifier --ssh-key <공개키 파일>   # 처음 한 번. 로그를 읽을 기기의 공개키

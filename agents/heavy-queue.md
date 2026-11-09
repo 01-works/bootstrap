@@ -2,6 +2,14 @@
 
 전체 타입 검사·테스트·빌드, dev 서버처럼 메모리를 많이 쓰는 명령은 같은 기기에서 하나씩 실행한다. 감독 세션과 worktree가 달라도 같은 대기열을 쓴다. 원본은 `scripts/yw-heavy.sh`이고, 모든 기기에서 `heavy` 단계가 `~/.local/bin/yw-heavy`로 설치한다. 자동 갱신이 원본 변경을 전파한다.
 
+## verifier 역할 기기
+
+`${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier` 파일이 있으면 compat·round-robin 모두 `acquire`·`run`의 supervisor가 정확히 `verifier-loop`일 때만 허용한다. 기존 verifier 호출은 `acquire VERIFIER-01-software nightly-local verifier-loop --holder <루프 PID>`이며, 호출을 바꿀 필요가 없다. 역할이 꺼져 있으면 기존 동작 그대로다. 조회·해제·제어 명령에는 이 제한을 적용하지 않는다.
+
+다른 요청은 대기열에 넣기 전에 코드 **4**로 거절한다. 예외 실행은 `YW_HEAVY_VERIFIER_OVERRIDE_REASON='<사유>' yw-heavy run ...`처럼 명시한다. 제어 문자를 제거한 뒤 비어 있거나 공백뿐인 사유는 거절한다. 사유는 실행 lock의 `owner.txt`에 `verifierOverrideReason`으로, 제출 시 진단 로그(`$YW_HEAVY_LOG`)에도 남긴다. 비밀값을 쓰지 않는다.
+
+supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS 사용자의 식별자 사칭이나 구버전 도구의 직접 lock 사용을 막는 보안 경계가 아니다.
+
 ## 모드와 전환 원칙
 
 설치·자동 갱신의 기본은 **compat**다. 기존 FIFO, 감독자당 2줄, v2 출력·파일 형식을 유지한다. 재진입·라운드로빈·작업 이벤트는 감독자가 기기에서 **round-robin**을 명시적으로 켠 뒤에만 동작한다. `capabilities`의 기능 목록은 설치된 구현의 지원 목록이고, 소비자는 `mode`도 반드시 확인한다.
@@ -74,6 +82,8 @@ yw-heavy release <ID>
 yw-heavy status                                              # 읽기 전용
 ```
 
+- `<supervisor>`(v3 `acquire`의 `supervisor`)는 감독 세션의 **전체 Paseo agent ID**다. 같은 세션의 모든 작업자 제출과 같은 ID 재시도에서 그대로 유지한다.
+- 전체 ID는 **새 작업부터** 쓴다. 이미 실행·대기 중인 작업과 그 재시도는 등록할 때의 값을 유지한 채 자연히 끝내고, 큐 파일에서 값을 직접 고치지 않는다. v3는 같은 요청의 supervisor 변경을 거절한다(`scripts/yw-heavy.sh`의 재시도 검사). 이행 기간에는 같은 감독의 이전 값과 새 값을 합쳐 compat 2줄 한도를 지킨다.
 - **`run`이 기본이다.** 명령이 실행되는 동안만 차례를 잡고, 명령이 끝나거나 실패하거나 신호를 받으면 푼다. 종료 코드는 명령의 것이다. 신호(TERM·INT·HUP)를 받아도 명령이 끝날 때까지 차례를 유지한 뒤 143·130·129로 끝난다.
 - **셸 스크립트에서 여러 명령을 묶을 때**: `yw-heavy acquire ID w s --holder $$`와 `trap 'yw-heavy release ID' EXIT`. 서브셸 안에서도 `$$`는 스크립트의 PID다. Python은 `--holder str(os.getpid())`.
 - holder는 "작업 전체 수명을 대표하는 프로세스"다. holder가 끝난 것이 확정되면 다른 대기자가 차례를 회수한다. 그래서 holder는 **acquire부터 release까지 같은 스크립트·같은 도구 호출 안에서 끝까지 살아 있는 프로세스**여야 한다. 에이전트의 Bash 호출 하나가 끝나면 그 셸(`$$`)도 끝나므로, 다음 호출까지 차례를 이어 가는 holder로 쓰면 그 사이에 회수된다.

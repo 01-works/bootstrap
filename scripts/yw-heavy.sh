@@ -29,8 +29,10 @@ usage() {
   yw-heavy acquire <ID> <worker> <supervisor> --json [--holder PID]
                                                         v3 JSON lease (활성 모드 전용)
   yw-heavy release --generation G --token T --lease L    v3 세대별 해제 (빌린 lease는 no-op)
+verifier 역할 기기: acquire·run은 supervisor=verifier-loop만 허용한다.
+  예외: YW_HEAVY_VERIFIER_OVERRIDE_REASON='<사유>' (owner와 진단 로그에 기록)
 종료 코드: 0 성공, 1 내부 오류, 2 사용법 오류·holder가 처음부터 끝나 있음,
-           4 제출 중지·모드 비활성·전환 거절, 5 pending 한도 초과, 6 lease·생존 검증 실패,
+           4 verifier 역할 거절·제출 중지·모드 비활성·전환 거절, 5 pending 한도 초과, 6 lease·생존 검증 실패,
            3 대기 줄 제거·이어받힘·holder 종료·같은 ID가 이미 차례를 가짐·같은 ID의 구버전 줄
 EOF
 }
@@ -50,6 +52,7 @@ init() {
   FAST_POLL="${YW_HEAVY_FAST_POLL:-.2}"
   MAX_SUP="${YW_HEAVY_MAX_PENDING_SUPERVISOR:-128}" MAX_ALL="${YW_HEAVY_MAX_PENDING:-1024}"
   GEN='' TOKEN='' LEASE='' BORROWED=false JSON=0 EXIT_CODE=unknown
+  OVERRIDE_REASON=''
   IN_GEN="${YW_HEAVY_GENERATION:-}" IN_TOKEN="${YW_HEAVY_TOKEN:-}"
   EDIT_WARN="${YW_HEAVY_EDIT_WARN:-120}"
   OWNERLESS_AGE="${YW_HEAVY_OWNERLESS_AGE:-60}"
@@ -57,6 +60,22 @@ init() {
   case "$POLL" in 0* | .*) EDIT_POLL="$POLL" ;; *) EDIT_POLL=1 ;; esac
   LOCKF=/usr/bin/lockf
   ID='' WORKER='' SUP='' HOLDER='' HOLDER_START=- MYSTART=- MYMARK='' LOCKED=0 SIG='' HELD=0
+}
+
+# role.sh와 같은 상태 경로·파일 판정. 프로젝트별 ID 대신 기존 verifier 루프의 감독자 식별자를 쓴다.
+verifier_guard() {
+  [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" ] || return 0
+  [ "$SUP" != verifier-loop ] || return 0
+  # 기록은 한 줄로 유지한다. 제어 문자를 제거한 뒤에도 공백뿐이면 사유가 아니다.
+  OVERRIDE_REASON="$(printf '%s' "${YW_HEAVY_VERIFIER_OVERRIDE_REASON:-}" | LC_ALL=C tr -d '\000-\037\177')"
+  case "$OVERRIDE_REASON" in
+    *[![:space:]]*) note "verifier-override task=$ID worker=$WORKER supervisor=$SUP reason=$OVERRIDE_REASON" ;;
+    *) say "verifier 역할 기기는 supervisor=verifier-loop만 허용합니다. 예외에는 YW_HEAVY_VERIFIER_OVERRIDE_REASON에 사유가 필요합니다"; return 4 ;;
+  esac
+}
+
+override_owner_field() {
+  [ -z "$OVERRIDE_REASON" ] || printf ',"verifierOverrideReason":"%s"' "$(json_esc "$OVERRIDE_REASON")"
 }
 
 # ---- 생존 판정 ---------------------------------------------------------------
@@ -351,7 +370,7 @@ write_owner() {
     json="$json,\"holder\":$HOLDER"
     [ "$HOLDER_START" = - ] || json="$json,\"holderStart\":\"$HOLDER_START\""
   fi
-  printf '%s}\n' "$json" >"$XL/owner.txt"
+  printf '%s%s}\n' "$json" "$(override_owner_field)" >"$XL/owner.txt"
 }
 
 holder_dead() {
@@ -875,7 +894,7 @@ rr_acquire() {
     if [ "$head" = "$ID" ] && (umask 077; mkdir "$XL") 2>/dev/null; then
       GEN="$(lf "$l" generation)" TOKEN="$(random_id)" LEASE="r-$(random_id)" now="$(date +%s)"
       if [ -z "$TOKEN" ] || [ "$LEASE" = r- ]; then rmdir "$XL"; unlock_queue; return 1; fi
-      json="{\"v\":3,\"pid\":$HOLDER,\"holder\":$HOLDER,\"holderStart\":\"$HOLDER_START\",\"task\":\"$(json_esc "$ID")\",\"supervisor\":\"$(json_esc "$SUP")\",\"generation\":\"$GEN\",\"token\":\"$TOKEN\",\"lease\":\"$LEASE\",\"queued\":$(lf "$l" queued),\"started\":$now}"
+      json="{\"v\":3,\"pid\":$HOLDER,\"holder\":$HOLDER,\"holderStart\":\"$HOLDER_START\",\"task\":\"$(json_esc "$ID")\",\"supervisor\":\"$(json_esc "$SUP")\",\"generation\":\"$GEN\",\"token\":\"$TOKEN\",\"lease\":\"$LEASE\",\"queued\":$(lf "$l" queued),\"started\":$now$(override_owner_field)}"
       if ! { (umask 077; : >"$XL/owner.txt") && printf '%s\n' "$json" >"$XL/owner.txt" && q_drop "$ID"; }; then
         rm -f "$XL/owner.txt"; rmdir "$XL"; unlock_queue; return 1
       fi
@@ -940,6 +959,7 @@ main() {
   need_task "$1" "$2" "$3" || return
   ID="$1" WORKER="$2" SUP="$3"
   shift 3
+  case "$cmd" in acquire | run) verifier_guard || return $? ;; esac
   MYSTART="$(proc_start $$)" || MYSTART=-
   case "$cmd" in
     enqueue)
