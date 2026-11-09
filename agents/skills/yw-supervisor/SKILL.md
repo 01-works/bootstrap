@@ -32,7 +32,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 독립 구현은 별도 worktree/workspace에서 병렬로 진행하고, 같은 checkout에 수정 작업자 둘을 두지 않는다. 선행 결과가 필요한 후속 작업은 그 결과가 통합된 뒤 시작한다. 병렬도는 독립 작업 수와 한도·예산에 맞추고, 대기 작업을 미리 에이전트로 만들지 않는다.
 - **새 workspace:** `create_workspace`에 소유 프로젝트의 `projectId`(같은 프로젝트 workspace의 `list_workspaces` 결과, CLI는 `paseo project ls`)를 넘긴다. 빠뜨리면 경로마다 새 프로젝트가 생겨 정리 뒤에도 남는다. 브랜치 작업은 `isolation: "worktree"`, PR 리뷰는 `mode: "checkout-pr"`로 만들고 직접 만든 worktree를 등록하지 않는다. 읽기 전용 리뷰어 여럿은 한 workspace를 함께 쓴다. 끝난 workspace는 `archive_workspace`로 정리한다.
 - 다른 에이전트·세션의 항목 정리: 소유 세션이 끝난 것이 확인된 대기 줄·잠금은 정리한 뒤 소유 감독 세션에 알린다. 프로세스·worktree와 살아 있거나 판단할 수 없는 항목은 소유 세션의 동의, 연락이 안 되면 사용자 승인 뒤에만 종료·정리한다(worktree에는 커밋 안 된 작업이 남을 수 있다). 넓은 패턴의 프로세스 종료는 금지한다.
-- 메모리를 많이 쓰는 명령(전체 타입 검사·린트·테스트·빌드, dev 서버, 앱 설정 전체 로딩)은 기기마다 하나씩 실행하도록 그 기기의 `yw-heavy` 차례를 쓰게 한다(`agents/heavy-queue.md`). 메모리 여유가 확인된 경우에만 병렬을 늘리고, 검증이 끝난 dev 서버는 종료하게 한다. 감독 세션 사이에 쓸 새 잠금·대기열은 임의로 만들지 않고 제안한다.
+- 메모리를 많이 쓰는 명령(전체 타입 검사·린트·테스트·빌드, dev 서버, 앱 설정 전체 로딩)은 기기마다 하나씩 실행하도록 그 기기의 `yw-heavy` 차례를 쓰게 한다(`agents/heavy-queue.md`). 저장소가 자체 기기 잠금으로 감싸는 명령(예: pre-push가 도는 push)은 작업자 지침의 대기열 대상에서 명시적으로 뺀다. 메모리 여유가 확인된 경우에만 병렬을 늘리고, 검증이 끝난 dev 서버는 종료하게 한다. 감독 세션 사이에 쓸 새 잠금·대기열은 임의로 만들지 않고 제안한다.
 - 브라우저 작업은 `agents/browser.md`(공유 연결, 작업자별 own target, 조작 차례), 기기 GUI 작업은 `agents/computer-use.md`를 따른다. Paseo 작업자에게 GUI 작업을 기본으로 배정하지 않는다.
 - 작업자는 Paseo 에이전트로 만든다. 제공자 내장 서브에이전트는 판단 직전의 짧은 읽기 전용 조사에만 Supervisor보다 가벼운 모델로 쓴다. `workspaceId`를 명시해 다른 프로젝트 작업을 현재 workspace에 만들지 않는다.
 - Frontend Builder에는 사용자/사용 목적, 기존 디자인 시스템·참고 화면, 레이아웃·폰트·색상 제약, 화면 크기와 상호작용 상태를 전달하고, 실제 브라우저의 렌더링·반응형·키보드 조작 확인 결과를 받는다. 실행하지 못한 검증은 미검증으로 보고하게 한다.
