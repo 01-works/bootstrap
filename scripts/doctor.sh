@@ -62,8 +62,12 @@ for src_root in "$BOOTSTRAP_ROOT"/home/*; do
   while IFS= read -r src; do
     rel="${src#"$src_root"/}"
     case "${src#"$BOOTSTRAP_ROOT/home/"}" in
-      *.seed | claude/.claude/settings.json)
+      *.seed)
         dst="$HOME/${rel%.seed}"
+        if [[ -e "$dst" ]]; then pass "$(pretty "$dst")"; else miss "$(pretty "$dst") 없음"; fi
+        ;;
+      claude/.claude/settings.json)
+        dst="$HOME/$rel"
         if [[ -f "$dst" && ! -L "$dst" ]]; then
           pass "$(pretty "$dst") (로컬 파일)"
         elif [[ -L "$dst" ]]; then

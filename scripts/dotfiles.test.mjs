@@ -135,6 +135,54 @@ test('수동 전환은 프로세스 목록 조회 실패 시에도 거부한다'
   assert.deepEqual(f.backups(), []);
 });
 
+for (const code of [1, 2]) {
+  test(`프로세스 조회가 성공해도 awk 판별 오류(${code})면 수동 전환을 거부한다`, t => {
+    const f = fixture(t);
+    symlinkSync(f.seed, f.local);
+    f.processes('claude');
+    f.shellHook(`awk() { printf '%s\\n' absent; return ${code}; }\n`);
+    const result = f.migrate();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /판별.*거부/);
+    assert.equal(readlinkSync(f.local), f.seed);
+    assert.equal(readFileSync(f.local, 'utf8'), defaults);
+    assert.deepEqual(f.backups(), []);
+    assert.deepEqual(readdirSync(dirname(f.local)), ['settings.json']);
+  });
+}
+
+test('판별 명령이 성공해도 유효한 결과가 없으면 수동 전환을 거부한다', t => {
+  const f = fixture(t);
+  symlinkSync(f.seed, f.local);
+  f.shellHook('awk() { return 0; }\n');
+  const result = f.migrate();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /판별.*거부/);
+  assert.equal(readlinkSync(f.local), f.seed);
+  assert.deepEqual(f.backups(), []);
+});
+
+for (const invocation of ['run', 'doctor']) {
+  test(`${invocation}: 다른 seed의 기존 Codex 링크는 정상으로 두고 Claude 전환을 안내하지 않는다`, t => {
+    const f = fixture(t);
+    assert.equal(f.run().status, 0);
+    const source = join(f.work, 'home/codex/.codex/config.toml.seed');
+    const target = join(f.root, 'codex-local.toml');
+    const local = join(f.home, '.codex/config.toml');
+    mkdirSync(dirname(source), { recursive: true });
+    mkdirSync(dirname(local), { recursive: true });
+    writeFileSync(source, 'model = "default"\n');
+    writeFileSync(target, 'model = "local"\n');
+    symlinkSync(target, local);
+    const result = f[invocation]();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.doesNotMatch(result.stdout + result.stderr, /migrate-claude-settings|기존 링크 전환 필요/);
+    assert.equal(readlinkSync(local), target);
+    assert.equal(readFileSync(target, 'utf8'), 'model = "local"\n');
+    assert.ok(!existsSync(f.backup));
+  });
+}
+
 test('무인 실행에서는 명시적 전환 옵션도 거부한다', t => {
   const f = fixture(t);
   symlinkSync(f.seed, f.local);
