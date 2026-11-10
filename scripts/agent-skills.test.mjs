@@ -41,6 +41,15 @@ test('archive 안전 대조: supervisor 내부·chief·운영 문서가 같은 �
   }
 });
 
+test('archive 공통 절: 후손 재귀 조회·보류·강제 및 MCP 우회 금지 규칙을 유지한다', () => {
+  const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const safety = supervisor.split('\n## archive 전 공통 안전 대조\n')[1]?.split('\n## ')[0];
+  assert.ok(safety, '공통 안전 대조 절 필요');
+  assert.match(safety, /paseo\.parent-agent-id[^\n]*재귀로 끝까지 조회한다/);
+  assert.match(safety, /관계·상태 변화[^\n]*archive를 보류/);
+  assert.match(safety, /`--force`나 MCP로 우회하지 않는다/);
+});
+
 for (const name of ['yw-supervisor', 'yw-chief-supervisor']) {
   test(`${name} 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 보존`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'bootstrap-skills-test-'));
