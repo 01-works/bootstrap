@@ -9,6 +9,25 @@ import { mergeProfiles } from './paseo-profiles.mjs';
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-profiles.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-profiles.mjs', import.meta.url).pathname;
 
+test('chief 교차 모델 예외는 설계·심층 검토 4개 프로필에만 두고 인계 조건과 구분한다', () => {
+  const exceptions = manifest.profiles.filter(p => p.notes.includes('예외:'));
+  assert.deepEqual(exceptions.map(p => p.name), [
+    'Architect', 'Architect (Astra)', 'Deep Reviewer', 'Deep Reviewer (Astra)'
+  ]);
+  for (const profile of exceptions) {
+    assert.match(profile.notes, /Opus 한도 소진·접속 불가 시에만/);
+    assert.match(profile.notes, /예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독/);
+    assert.match(profile.notes, /교차 모델 합의\(감사·완료 판정·운영 정책 설계\)/);
+    assert.match(profile.notes, /Opus 가용 여부와 관계없이 Astra를 선택할 수 있다/);
+    assert.match(profile.notes, /yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다/);
+  }
+  const supervisor = manifest.profiles.find(p => p.name === 'Supervisor (Astra)');
+  assert.match(supervisor.notes, /^Opus 한도 소진·접속 불가 시에만/);
+  assert.doesNotMatch(supervisor.notes, /교차 모델|Opus 가용 여부와 관계없이/);
+  // 변경 전 가장 긴 notes(Supervisor)의 길이를 상한으로 유지한다.
+  assert.ok(manifest.profiles.every(p => p.notes.length <= 382));
+});
+
 test('기존 개인 설정 유지, 누락 추가, 반복 실행 시 중복 없음', () => {
   const existing = [{ id: 'user-id', name: 'Builder', provider: 'claude', model: 'custom' },
     { id: 'personal', name: 'Personal', provider: 'codex' }];
