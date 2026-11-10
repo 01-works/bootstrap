@@ -200,6 +200,27 @@ test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 
   assert.equal(f.status().banner, '');
 });
 
+test('heavy 사용 중 보류는 다음 자동 갱신에서 다시 확인하고 다른 수동 대기는 유지한다', t => {
+  const f = fixture(t);
+  f.exitWith('power', 2);
+  assert.equal(f.update('--auto').status, 2);
+  f.calls();
+  f.exitWith('heavy', 2);
+  f.push({ 'scripts/steps/66-heavy.sh': mockStep('heavy') });
+  assert.equal(f.update('--auto').status, 2);
+  assert.deepEqual(f.calls(), ['heavy 1']);
+  assert.equal(f.status().pending, 'power heavy');
+  assert.equal(f.update('--auto').status, 2, '같은 커밋의 다음 자동 갱신도 재시도');
+  assert.deepEqual(f.calls(), ['heavy 1'], '일반 수동 대기는 자동 실행하지 않는다');
+  f.exitWith('heavy', null);
+  assert.equal(f.update('--auto').status, 2, '사용 중 참여자가 끝나면 heavy를 적용');
+  assert.deepEqual(f.calls(), ['heavy 1']);
+  assert.equal(f.status().pending, 'power', '완료한 heavy만 pending에서 제거');
+  assert.equal(f.update('--auto').status, 0, '실행할 단계가 없으면 기존의 무작업 성공 코드를 유지');
+  assert.equal(f.status().pending, 'power');
+  assert.deepEqual(f.calls(), [], '완료한 heavy는 매번 다시 실행하지 않는다');
+});
+
 test('실패한 단계만 이어서 다시 시도하고, 같은 커밋은 한 시간 뒤에 자동으로 다시 시도한다', t => {
   const f = fixture(t);
   assert.equal(f.update('--auto').status, 0);

@@ -1,6 +1,6 @@
 # 공용 heavy 대기열 (yw-heavy)
 
-전체 타입 검사·테스트·빌드, dev 서버처럼 메모리를 많이 쓰는 명령은 같은 기기에서 하나씩 실행한다. 감독 세션과 worktree가 달라도 같은 대기열을 쓴다. 원본은 `scripts/yw-heavy.sh`이고, 모든 기기에서 `heavy` 단계가 `~/.local/bin/yw-heavy`로 설치한다. 자동 갱신이 원본 변경을 전파한다.
+전체 타입 검사·테스트·빌드, dev 서버처럼 메모리를 많이 쓰는 명령은 같은 기기에서 하나씩 실행한다. 감독 세션과 worktree가 달라도 같은 대기열을 쓴다. 원본은 `scripts/yw-heavy.sh`이고, 모든 기기에서 `heavy` 단계가 `~/.local/bin/yw-heavy`로 설치한다. 자동 갱신이 원본 변경을 전파하되 실행 중 참여자가 있으면 교체를 미룬다.
 
 ## verifier 역할 기기
 
@@ -59,6 +59,23 @@ yw-heavy release --generation GENERATION --token TOKEN --lease LEASE
 ```
 
 이벤트는 `enqueue`, `start`, `end`, `cancel`, `reclaim`이다. 초 단위 대기·보유 시간은 음수가 되지 않으며, 아직 시작하지 않은 항목의 보유 시간은 0이다. 종료 코드는 문자열이며 `run`의 명령 종료 코드, 신호는 `TERM`·`INT`·`HUP`를 기록한다. 수동 해제·죽은 프로세스처럼 알 수 없으면 `unknown`이다. 대기 중 신호 취소는 `cancel`, 확정 사망·PID 재사용 회수는 `reclaim`이다. 중첩 차례는 별도 작업이 아니므로 추가 이벤트를 남기지 않는다. token·lease·환경·명령 인자는 기록하지 않는다. 기록 실패는 진단하고 실행을 계속한다. 파일 순환·집계는 이번 범위가 아니다.
+
+### 설치본 갱신: spin 대기에서 backoff 대기로
+
+구버전의 `lockf -s -t 60 9` spin 대기자와 새 backoff 대기자를 같은 `.flock`에 섞지 않는다. 큐 형식이 같아도 잠금 경쟁에서는 새 대기자가 기아에 빠질 수 있다. `run`의 마지막 release도 이 잠금을 쓰므로 진행이 멈출 수 있다. 설치 파일을 원자적으로 교체해도 실행 중 프로세스의 함수는 바뀌지 않는다.
+
+운영 감독자가 **신규 제출 중지 → 구 대기자 drain → 설치 → resume** 순서로 전환한다.
+
+1. 모든 감독 세션과 helper의 신규 제출을 멈춘다. 현재 도구가 지원하면 `yw-heavy pause`를 쓴다. pause를 모르는 구버전과 아직 큐에 등록하지 않은 poller는 호출자 쪽에서도 제출을 보류해야 한다. 기존 실행과 등록된 대기는 계속 진행시킨다.
+2. `yw-heavy status`와 소유 세션의 프로세스 목록을 대조해 실행·대기자·구 helper가 모두 자연히 끝났는지 확인한다. `.flock`이나 살아 있는 프로세스를 지우거나 강제로 바꾸지 않는다. 새 버전으로 release만 먼저 실행하는 방식도 쓰지 않는다.
+3. 저장소의 `./bootstrap.sh --only heavy` 또는 `./bootstrap.sh update`로 설치한다. 설치 단계가 사용 중이라고 알리면 계속 보류한다. `.flock`·큐·mode·pause 상태는 설치 단계가 변경하지 않는다.
+4. 설치본과 원본이 같은지 `cmp`로 확인한 뒤 `yw-heavy resume`으로 제출을 열고, 차례 인계와 release를 확인한다.
+
+설치 guard는 전체 프로세스의 `ps -axww -o pid=,ucomm=,args=`를 읽는다. 셸·Python·도구 실행기에서 `yw-heavy[.sh] run|acquire|enqueue|release`와 구 helper `cc-yw-heavy[.sh]`, `heavy.sh`, `R1-heavy.py`의 이름 경계를 확인한다. 공백 경로도 이름의 끝과 인자로 구분하며 명령 인자는 진단에 출력하지 않는다. 발견하거나 조회에 실패하면 **코드 2**로 설치와 호환 링크 생성을 보류한다. updater는 이 heavy pending만 다음 자동 갱신에서도 재확인한다. 다른 단계의 수동 대기는 기존처럼 남긴다. 이미 설치본이 같은 내용이면 교체가 없으므로 보류하지 않는다.
+
+이름을 바꾼 사본·알 수 없는 실행기와 조회 직후 시작하는 새 제출은 놓칠 수 있다. 같은 이름의 무관한 helper나 셸 `-c` 문자열은 보수적으로 보류할 수 있으며 다른 격리 큐의 참여자도 보류 대상이다. 따라서 guard가 위의 제출 중지·drain 절차를 대신하지 않는다. 판정 경계와 실제 구 spin acquire의 설치 보류·drain 후 재시도는 `scripts/heavy-install.test.mjs`에서 확인한다.
+
+CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효과다. 실제 round-robin 대기에는 각 대기자의 `rr_reclaim` 전체 큐 생존 검사(O(N) 임계구역)가 남으며 #72에서 별도로 줄인다.
 
 ### 활성화와 롤백
 
@@ -164,13 +181,13 @@ yw-heavy status                                              # 읽기 전용
 | 감독 세션의 zsh `heavy.sh` | 구형식 | `"PID"` 키 | 없음(잠금 없이 다시 씀) | 보존. shim으로 바꾸거나 폐기 (소유 세션 동의) |
 | `/tmp/R1-heavy.py` | 구형식 | `{"pid": N, …}` (콜론 뒤 공백, `v` 없음) | 디렉터리 + `pid=N task=T` | 줄·실행 lock 보존, task는 읽음(같은 ID·release), 편집 lock은 pid ESRCH면 회수 |
 
-- 이전 도구 `/tmp/cc-yw-heavy.sh`(bash, git 밖)와 함께 돌아도 안전하다. 새 줄에는 `v=2`, 새 owner에는 `"v":2`가 붙고, 구버전은 첫 필드만 읽으므로 그대로 읽는다. 구버전 acquire가 다시 부르는 `enqueue`는 구형식 줄을 쓴다.
+- 이전 도구 `/tmp/cc-yw-heavy.sh`(bash, git 밖)의 파일 형식을 읽는다. 새 줄에는 `v=2`, 새 owner에는 `"v":2`가 붙고, 구버전은 첫 필드만 읽으므로 그대로 읽는다. 구버전 acquire가 다시 부르는 `enqueue`는 구형식 줄을 쓴다. 파일 형식 호환과 spin/backoff의 잠금 경쟁은 별개이므로 설치본 변경에는 위의 drain 절차가 필요하다.
 - `heavy` 단계는 `/tmp/cc-yw-heavy.sh`가 **없을 때만** `~/.local/bin/yw-heavy`로 가는 링크를 만든다. 일반 파일(구버전)이 있으면 그대로 둔다. 그래서 이 저장소의 병합과 자동 갱신은 실행 중인 구버전을 바꾸지 않는다. `/tmp`는 재시동 때 비워진다. 링크는 저절로 다시 생기지 않고, `heavy` 단계가 다시 돌 때(yw-heavy 변경, 전체 설치, `./bootstrap.sh --only heavy`)만 생긴다. `doctor`가 링크 없음을 알린다. 정식 경로는 `~/.local/bin/yw-heavy`다.
 - 구버전이 일반 파일로 있는 기기의 전환은 감독자가 아래 절차로 따로 한다.
 
 ### 전환 (구버전이 있는 기기)
 
-1. 조건: nightly가 실행 중이 아니고, 실행 lock이 nightly 것이 아니며, 편집 lock이 없다. 대기열이 비었으면 더 좋다.
+1. 위의 설치본 갱신 절차에 따라 신규 제출을 중지하고 실행·대기자·구 helper를 모두 drain한다. nightly 미실행·실행 lock 부재·빈 대기열·편집 lock 부재를 확인한다. 아래 프로세스 조회는 후보 조사용이므로 소유 세션과도 대조한다.
 
    ```sh
    cat /tmp/yw-heavy-check.lock/owner.txt 2>/dev/null
@@ -179,9 +196,9 @@ yw-heavy status                                              # 읽기 전용
    pgrep -fl 'cc-yw-heavy.sh|heavy.sh'     # 구버전 대기자 목록 기록
    ```
 
-2. 설치 확인: `cmp <저장소>/scripts/yw-heavy.sh ~/.local/bin/yw-heavy`, `./bootstrap.sh doctor`의 heavy 항목.
-3. 격리 시험: `d=$(mktemp -d); YW_HEAVY_QUEUE=$d/q YW_HEAVY_EXEC_LOCK=$d/x YW_HEAVY_EDIT_LOCK=$d/e ~/.local/bin/yw-heavy run SMOKE s s -- true; echo $?` → 0. `~/.local/bin/yw-heavy status`(실제 대기열, 읽기 전용) → 지금 줄이 구형식으로 나오고 관문이 닫혀 있다.
-4. 조건 재확인: 1번 조건(nightly 미실행, 실행 lock이 nightly 것이 아님, 편집 lock 없음)을 전환 직전에 다시 확인한다. 하나라도 어긋나면 멈춘다.
+2. 설치 단계를 실행한 뒤 확인한다: `cmp <저장소>/scripts/yw-heavy.sh ~/.local/bin/yw-heavy`, `./bootstrap.sh doctor`의 heavy 항목.
+3. 격리 시험: `d=$(mktemp -d); YW_HEAVY_QUEUE=$d/q YW_HEAVY_EXEC_LOCK=$d/x YW_HEAVY_EDIT_LOCK=$d/e ~/.local/bin/yw-heavy run SMOKE s s -- true; echo $?` → 0. `~/.local/bin/yw-heavy status`(실제 대기열, 읽기 전용)에서 빈 대기열·실행 lock 부재와 기존 mode·pause 상태 보존을 확인한다.
+4. 조건 재확인: 1번의 drain과 신규 제출 보류 조건을 전환 직전에 다시 확인한다. 하나라도 어긋나면 멈춘다.
 5. 백업 후 원자적 전환:
 
    ```sh
@@ -189,9 +206,9 @@ yw-heavy status                                              # 읽기 전용
    ln -s "$HOME/.local/bin/yw-heavy" /tmp/cc-yw-heavy.sh.switch.$$ && mv -f /tmp/cc-yw-heavy.sh.switch.$$ /tmp/cc-yw-heavy.sh
    ```
 
-6. 확인: `readlink /tmp/cc-yw-heavy.sh`, `bash /tmp/cc-yw-heavy.sh status`, 대기열이 스냅샷과 같은지, 편집 lock이 없는지, 기록한 구버전 대기자가 살아 있는지(`ps -p`).
+6. 확인: `readlink /tmp/cc-yw-heavy.sh`, `bash /tmp/cc-yw-heavy.sh status`, 대기열이 비어 있는지, 편집 lock이 없는지, 구버전 대기자가 새로 생기지 않았는지 확인한다.
 7. 구형식 줄마다 대기자가 살아 있는지 확인한다(`pgrep -fl` 결과의 ID와 대조). 대기자가 없는 고아 줄은 관문을 계속 닫아 두므로 `yw-heavy release <ID>`로 지운 뒤 소유 감독 세션에 알린다. 대기자가 살아 있거나 대조할 수 없으면 지우지 않는다.
-8. 관찰: 다음 두 번의 인계에서 release마다 다음 맨 앞 대기자가 차례를 얻는지, 회수 기록에 살아 있는 pid가 없는지 본다.
+8. `yw-heavy resume`과 호출자 쪽 제출 재개 후 관찰한다. 다음 두 번의 인계에서 release마다 다음 맨 앞 대기자가 차례를 얻는지, 회수 기록에 살아 있는 pid가 없는지 본다.
 
 즉시 롤백하는 경우: `status`·`acquire`·`release`가 종료 코드 1이나 bash 오류를 냄, 정상 release가 아닌데 줄이 사라지거나 순서가 바뀜, 편집 lock이 2분 넘게 남음, 살아 있는 pid(시작 시각 일치)를 회수한 기록, 실행 lock owner와 실제 실행 중인 작업이 다름.
 

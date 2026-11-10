@@ -234,6 +234,9 @@ test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경�
   const { root } = sandbox(t);
   const home = join(root, 'home'), compat = join(root, 'cc-yw-heavy.sh'), dst = join(home, '.local/bin/yw-heavy');
   copyFileSync(join(repo, 'scripts/yw-heavy.sh'), join(root, 'scripts/yw-heavy.sh'));
+  // 이 설치 시험은 격리 HOME의 참여자만 본다. 실제 기기의 실행 중 대기자는 조사하지 않는다.
+  writeFileSync(join(root, 'scripts/lib.sh'), readFileSync(join(root, 'scripts/lib.sh'), 'utf8') +
+    '\nps() { printf "%s\\n" "1 launchd /sbin/launchd"; }\n');
   const step = (env = {}) => spawnSync('/bin/bash', [join(repo, 'scripts/steps/66-heavy.sh')], {
     env: { ...process.env, BOOTSTRAP_ROOT: root, HOME: home, DRY_RUN: '0', XDG_STATE_HOME: join(root, 'state'), YW_HEAVY_COMPAT_PATH: compat, ...env },
     encoding: 'utf8'
