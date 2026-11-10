@@ -15,7 +15,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 - 에이전트에 Paseo 도구를 제공하는 설정(`daemon.mcp.injectIntoAgents`, 앱의 Enable Paseo tools)은 `paseo` 단계가 켠다. Supervisor가 작업자를 만들 때 필요하다.
 - 머지된 워크스페이스 자동 아카이브(`daemon.autoArchiveAfterMerge`)는 `paseo` 단계가 끈다. 이전에 켜진 기기도 다음 `paseo` 단계(자동 갱신 포함)에서 꺼진다. 병합 뒤 워크스페이스는 수동으로 아카이브한다. 에이전트·workspace 정리 전에는 [archive 전 공통 안전 대조](skills/yw-supervisor/SKILL.md#archive-전-공통-안전-대조)를 따른다.
 - 기본 스킬: Paseo가 `~/.claude/skills/paseo*`(Claude Code)와 `~/.agents/skills/paseo*`에 설치한다. 각 폴더의 `.paseo-managed-files.json`이 Paseo가 관리한다는 표시다. 저장소에 넣지 않는다. 데몬은 이미 설치된 스킬만 자동 갱신하고 처음 설치는 앱 설정(Orchestration skills)에서 해야 해서, `paseo` 단계가 하나도 없을 때만 데몬에 설치를 요청한다(`scripts/paseo-skills.mjs`). 앱의 내부 모듈을 쓰므로 Paseo 버전이 바뀌어 실패하면 앱 설정에서 설치한다. 앱에서 스킬을 하나도 고르지 않은 기기는 그대로 둔다. 앱의 제거(Uninstall)만 하면 다음 `paseo` 단계가 다시 설치하므로, 빼려면 선택을 비운다.
-- 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md)와 [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md)는 이 저장소에서 관리한다. `paseo` 단계가 각 스킬의 같은 원본 폴더를 `~/.agents/skills/<스킬 이름>`과 `~/.claude/skills/<스킬 이름>`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
+- 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md), [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md), [yw-paseo-cleanup](skills/yw-paseo-cleanup/SKILL.md)은 이 저장소에서 관리한다. `paseo` 단계가 각 스킬의 같은 원본 폴더를 `~/.agents/skills/<스킬 이름>`과 `~/.claude/skills/<스킬 이름>`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
 
 ## Claude API 키와 프로필
 
@@ -81,6 +81,17 @@ Paseo에서 Supervisor 프로필로 새 대화를 열고 다음처럼 요청한�
 Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 시각적 선택이 중요한 작업에 사용한다. API 연결·상태 관리·확정된 디자인의 단순 수정은 Builder가 기본이다. Opus를 쓸 수 없고 중요한 시각적 선택이 남았다면 Architect (Astra)가 방향·완료 기준을 정하고 Builder가 구현한다. 시각 작업과 기능 작업은 나누는 것이 유익할 때만 분리하고, 한 작업자로 충분한 작은 작업을 억지로 쪼개지 않는다. 같은 파일을 동시에 수정하지 않도록 독립 worktree 또는 순차 작업으로 배정한다. 디자인 방향이 없으면 작업자가 기존 제품에서 근거를 찾거나 중요한 선택을 질문하게 하고, 불필요한 재디자인은 피한다. Opus를 못 써서 일반 UI를 Builder에 넘기면 이유를 알리고, 같은 시각 품질을 보장한다고 말하지 않는다. UI 완료 근거에는 실제 브라우저에서 확인한 렌더링·반응형·키보드 조작·주요 흐름이 포함되어야 한다.
 
 이 배정은 사용자 선호를 반영한 초기 운영 기준이며, Opus가 모든 프론트엔드에서 Sol보다 우수하다는 비교 결과를 뜻하지 않는다. [Anthropic의 Opus 5.5 가이드](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5#frontend-design-defaults)도 구체적인 디자인 방향이 없으면 기본 스타일로 흐른다고 설명한다. 기존 디자인 시스템과 참고 화면을 함께 전달하고 결과로 배정을 조정한다.
+
+## 기기 정리 스킬
+
+이 기기에 쌓인 Paseo 세션·workspace·연결이 끊긴 worktree를 한 번에 정리할 때는 [yw-paseo-cleanup](skills/yw-paseo-cleanup/SKILL.md)을 쓴다.
+
+> yw-paseo-cleanup 스킬로 이 기기의 Paseo 세션과 workspace를 정리해줘. 실행 중이거나 기다리는 건 남기고, 정리 계획을 먼저 보여줘.
+
+- 스킬 폴더의 `scan.mjs`가 저장 레코드·git·gh·감독 기록을 읽기만 해서 분류 초안을 만든다. 실행 기록은 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-paseo-cleanup/<실행 ID>/`에 남는다.
+- status만으로 판단하지 않는다. closed는 끝남이 아니고, 질문·백그라운드·heartbeat를 기다리는 세션도 idle로 보인다. 완료 근거가 확인된 것만 정리 후보가 된다.
+- 배치 승인 후보와 항목별 결정을 나눈 계획을 먼저 보여 주고, 승인받은 범위만 실행한다. archive 안전 규칙은 [archive 전 공통 안전 대조](skills/yw-supervisor/SKILL.md#archive-전-공통-안전-대조)를 따른다.
+- 감독 lane은 그 감독이나 yw-chief-supervisor가 정리한다. 이 스킬은 lane 밖 잔재와, 명시적 완료 판정이 있고 지금 다른 감독·chief가 관리하지 않는 잔재만 다룬다.
 
 ## 설치와 갱신
 

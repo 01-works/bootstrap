@@ -50,7 +50,7 @@ test('archive 공통 절: 후손 재귀 조회·보류·강제 및 MCP 우회 �
   assert.match(safety, /`--force`나 MCP로 우회하지 않는다/);
 });
 
-for (const name of ['yw-supervisor', 'yw-chief-supervisor']) {
+for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {
   test(`${name} 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 보존`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'bootstrap-skills-test-'));
     const script = fileURLToPath(new URL('./agent-skills.mjs', import.meta.url));
