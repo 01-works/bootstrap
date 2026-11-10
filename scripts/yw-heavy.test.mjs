@@ -453,7 +453,44 @@ if { : >&9; } 2>/dev/null; then exit 92; fi
   }
 });
 
+for (const code of [129, 130, 143]) {
+  test(`queue lock: sleep의 신호 종료 ${code}는 FD를 닫고 신호 코드로 전달한다`, async t => {
+    const f = fixture(t);
+    const p = queueLockHarness(f, `
+LOCKF=try_lock
+try_lock() { return 75; }
+sleep() { return ${code}; }
+lock_queue
+rc=$?
+[ "$rc" = ${code} ] && [ "$LOCKED" = 0 ] && [ ! -e "$EL" ] || exit 91
+if { : >&9; } 2>/dev/null; then exit 92; fi
+`);
+    assert.equal(await f.finish(p), 0, p.err);
+    assert.doesNotMatch(p.err, /재시도 대기 실패/);
+  });
+}
+
 for (const mode of ['compat', 'round-robin']) {
+  for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130]]) {
+    test(`queue lock 그룹 ${signal} (${mode}): sleep 중단은 신호 종료로 전달한다`, async t => {
+      const f = fixture(t);
+      if (mode === 'round-robin') enable(f);
+      const holder = f.start(['-c', `exec 9>>${quote(f.env.YW_HEAVY_FLOCK)}; /usr/bin/lockf -s -t 0 9 || exit; echo held; read -r _`]);
+      await f.wait(() => holder.out.includes('held'), 'flock held');
+      // 자식 생성 전에 신호를 보내면 부모만 받는 시험이 된다. 대기 자식 안에서 준비를 알린다.
+      const hook = f.hookWith(`sleep() { /bin/sh -c 'echo retrying >&2; exec /bin/sleep "$@"' sleep "$@"; }`);
+      const p = f.cliEnv({ BASH_ENV: hook }, 'run', 'GROUP', 'w', 'S', '--', 'true');
+      await f.wait(() => p.err.includes('retrying'), 'contention sleep');
+      process.kill(-p.pid, signal);
+      assert.equal(await f.finish(p), code, p.err);
+      assert.doesNotMatch(p.err, /재시도 대기 실패/);
+      assert.equal(existsSync(f.e), false);
+      assert.equal(existsSync(f.x), false);
+      holder.stdin.end('release\n');
+      assert.equal(await f.finish(holder), 0);
+      assert.equal(f.sync('run', 'NEXT', 'w', 'S', '--', 'true').status, 0);
+    });
+  }
   for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) {
     test(`queue lock 경합 중 ${signal} (${mode}): 잠금 해제 후 취소·명령 미실행`, async t => {
       const f = fixture(t);

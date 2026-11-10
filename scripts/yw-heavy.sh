@@ -237,8 +237,14 @@ lock_queue() {
     # 100→200→400→500ms + 같은 범위 jitter, 최대 1초. bash 3.2 내장만 쓴다.
     wait_ms=$((backoff + RANDOM % (backoff + 1)))
     printf -v wait_seconds '%d.%03d' "$((wait_ms / 1000))" "$((wait_ms % 1000))"
-    if ! sleep "$wait_seconds" 9>&-; then
+    if sleep "$wait_seconds" 9>&-; then :; else
+      rc=$?
       exec 9>&-
+      # 그룹 신호는 전경 sleep도 끝낸다. 일반 sleep 오류로 바꾸지 않고 신호 코드를 전달한다.
+      if [ "$rc" -gt 128 ]; then
+        case "$rc" in 129) SIG=HUP ;; 130) SIG=INT ;; 143) SIG=TERM ;; esac
+        return "$rc"
+      fi
       say "대기열 잠금 재시도 대기 실패: $FL"
       return 1
     fi
@@ -398,7 +404,7 @@ holder_dead() {
 do_acquire() {
   local registered=0 l pid start head capped=0 last_note="$SECONDS"
   while :; do
-    lock_queue || return 1
+    lock_queue || return $?
     if holder_dead; then
       [ "$registered" = 0 ] || [ "$(lf "$(q_line "$ID")" pid)" != "$$" ] || q_drop "$ID"
       unlock_queue
@@ -492,7 +498,7 @@ do_acquire() {
 # 실행 lock을 지우지 못했으면 줄만 지웠다고 알리고 1을 돌려준다.
 release_id() {
   local rc=0
-  lock_queue || return 1
+  lock_queue || return $?
   if [ "$(json_num "$(owner_read)" v)" = 3 ] || [ "$(lf "$(q_line "$ID")" v)" = 3 ]; then
     unlock_queue; say "v3 차례는 세대·token·lease로 해제해야 합니다"; return 6
   fi
@@ -514,7 +520,7 @@ release_id() {
 # 구버전 acquire가 "$0" enqueue로 부를 때: 대기자는 부모인 구 acquire라 pid 없는 구형식 줄을 쓴다.
 do_enqueue_legacy() {
   while :; do
-    lock_queue || return 1
+    lock_queue || return $?
     if [ "$(mode_read)" != compat ] || [ -e "$PAUSED" ]; then
       unlock_queue; say "구버전 enqueue를 받지 않습니다"; return 4
     fi
@@ -673,7 +679,7 @@ control() {
   if [ "$cmd" = mode ] && [ $# = 1 ]; then mode_read; echo; return; fi
   case "$cmd:$#:$target" in reclaim:1: | pause:1: | resume:1: | mode:2:compat | mode:2:round-robin) ;;
     *) usage >&2; return 2 ;; esac
-  lock_queue || return 1
+  lock_queue || return $?
   case "$cmd" in
     reclaim)
       if [ "$(mode_read)" = round-robin ]; then rr_reclaim && ring_sync; else reclaim_dead; fi
@@ -861,7 +867,7 @@ rr_acquire() {
   [ -n "$HOLDER" ] || { HOLDER="$PPID"; HOLDER_START="$(proc_start "$PPID")" || HOLDER_START=-; }
   is_ancestor "$HOLDER" "$HOLDER_START" || { say "holder의 조상 관계·시작 시각을 검증하지 못했습니다"; return 6; }
   while :; do
-    lock_queue || return 1
+    lock_queue || return $?
     if [ "$(mode_read)" != round-robin ]; then unlock_queue; say "round-robin이 꺼져 있습니다"; return 4; fi
     if [ "$registered" = 0 ]; then
       owner="$(owner_read)"
@@ -924,7 +930,7 @@ rr_acquire() {
 }
 rr_release() {
   local owner rc=0
-  lock_queue || return 1
+  lock_queue || return $?
   owner="$(owner_read)"
   # 중복·오래된 세대 해제는 멱등 no-op이다. 사람이 붙인 ID로 해제하지 않는다.
   if [ "$(json_num "$owner" v)" != 3 ] || [ "$GEN" != "$(json_str "$owner" generation)" ]; then

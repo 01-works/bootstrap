@@ -263,6 +263,8 @@ main() {
   fi
   steps="$steps $prev_failed"
   [[ "$AUTO" == 1 ]] || steps="$steps $prev_pending"
+  # heavy의 사용 중 보류는 시간이 지나면 풀린다. 일반 수동 대기는 유지하고 heavy만 매번 확인한다.
+  if contains heavy $prev_pending; then steps="$steps heavy"; fi
   # shellcheck disable=SC2086
   steps="$(ordered $steps)"
 
