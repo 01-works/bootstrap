@@ -21,6 +21,35 @@ test('사용자 스킬: frontmatter 이름은 폴더와 같고 배포 위치에�
   }
 });
 
+test('archive 안전 대조: supervisor 내부·chief·운영 문서가 같은 공통 절차를 참조한다', () => {
+  const anchor = 'archive-전-공통-안전-대조';
+  const supervisorPath = fileURLToPath(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url));
+  const sources = [
+    ['../agents/skills/yw-supervisor/SKILL.md', ''],
+    ['../agents/skills/yw-chief-supervisor/SKILL.md', '../yw-supervisor/SKILL.md'],
+    ['../agents/paseo.md', 'skills/yw-supervisor/SKILL.md'],
+  ];
+  const supervisor = readFileSync(supervisorPath, 'utf8');
+  const headings = [...supervisor.matchAll(/^## (.+)$/gm)].map(([, heading]) => heading.toLowerCase().replaceAll(' ', '-'));
+  assert.equal(headings.filter(heading => heading === anchor).length, 1, '공통 절차의 anchor는 하나여야 한다');
+  for (const [source, target] of sources) {
+    const sourceUrl = new URL(source, import.meta.url);
+    const doc = readFileSync(sourceUrl, 'utf8');
+    const references = [...doc.matchAll(/\]\(([^)]+)\)/g)].map(([, href]) => href);
+    assert.ok(references.includes(`${target}#${anchor}`), `${source}: 공통 절차 참조 필요`);
+    assert.equal(fileURLToPath(new URL(target || sourceUrl.href, sourceUrl)), supervisorPath);
+  }
+});
+
+test('archive 공통 절: 후손 재귀 조회·보류·강제 및 MCP 우회 금지 규칙을 유지한다', () => {
+  const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const safety = supervisor.split('\n## archive 전 공통 안전 대조\n')[1]?.split('\n## ')[0];
+  assert.ok(safety, '공통 안전 대조 절 필요');
+  assert.match(safety, /paseo\.parent-agent-id[^\n]*재귀로 끝까지 조회한다/);
+  assert.match(safety, /관계·상태 변화[^\n]*archive를 보류/);
+  assert.match(safety, /`--force`나 MCP로 우회하지 않는다/);
+});
+
 for (const name of ['yw-supervisor', 'yw-chief-supervisor']) {
   test(`${name} 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 보존`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'bootstrap-skills-test-'));
