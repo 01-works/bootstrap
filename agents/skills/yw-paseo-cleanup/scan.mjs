@@ -5,21 +5,53 @@ import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { classify, protectionContext, scanSummary } from './classify.mjs';
+import { createHash } from 'node:crypto';
+import { classify, protectionContext, scanSummary, isOwnedWorkspace } from './classify.mjs';
 
 const labelKeys = new Set(['paseo.parent-agent-id', 'paseo.parent-server-id', 'zerosub.continued-from', 'handoff.from', 'handoff.profile', 'agent-list.continued-from', 'agent-list.original-title', 'supervisor', 'role', 'lane', 'issue', 'pr', 'task']);
 const agentFields = ['id', 'provider', 'cwd', 'workspaceId', 'createdAt', 'updatedAt', 'lastActivityAt', 'lastUserMessageAt', 'title', 'lastStatus', 'archivedAt', 'requiresAttention', 'attentionReason', 'internal'];
 export function redact(text, limit = 2000) {
   return String(text).replace(/Bearer\s+[^\s"'`]+/gi, '[REDACTED]')
+    .replace(/\bAKIA[A-Z0-9]{16}\b/g, '[REDACTED]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED]')
+    .replace(/\bxox[abprs]-[A-Za-z0-9-]+\b/g, '[REDACTED]')
+    .replace(/\b([A-Za-z_][A-Za-z0-9_]*_(?:TOKEN|SECRET)\s*=\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
     .replace(/\b(?:sk-[\w-]{12,}|gh[pousr]_[\w]{12,})\b/g, '[REDACTED]')
     .replace(/((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)[^\s,;"']+/gi, '$1[REDACTED]')
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, '[REDACTED]')
     .slice(0, limit);
 }
-const pick = (object, fields) => Object.fromEntries(fields.filter(k => object[k] === null || ['string', 'number', 'boolean'].includes(typeof object[k])).map(k => [k, typeof object[k] === 'string' ? redact(object[k]) : object[k]]));
+const pick = (object, fields) => Object.fromEntries(fields.filter(k => object[k] === null || ['string', 'number', 'boolean'].includes(typeof object[k])).map(k => [k, object[k]]));
+const nativeIdsBySnapshot = new WeakMap();
+const relationLabels = new Set(['paseo.parent-agent-id', 'paseo.parent-server-id', 'zerosub.continued-from', 'handoff.from', 'agent-list.continued-from']);
+const freeTextFields = new Set(['title', 'displayName', 'attentionReason', 'text', 'excerptReason', 'reason', 'reasons', 'warnings', 'timeBasis']);
+// This is an output boundary. Decisions always use the unmodified canonical inventory.
+export function serializeSnapshot(snapshot) {
+  const nativeIds = nativeIdsBySnapshot.get(snapshot) ?? new Set();
+  let structuralHashCount = 0;
+  const structural = value => {
+    if (redact(value, Infinity) === value) return value;
+    structuralHashCount++;
+    return `[STRUCT_SHA256:${createHash('sha256').update(value).digest('hex')}]`;
+  };
+  const visit = (value, key = '', parent = '') => {
+    if (Array.isArray(value)) return value.map(item => visit(item, key, parent));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) => [structural(name), visit(item, name, key)]));
+    if (typeof value !== 'string') return value;
+    const free = freeTextFields.has(key) || (parent === 'labels' && !relationLabels.has(key)) || (parent === 'definitions' && key === 'scripts');
+    if (free) {
+      const limit = key === 'text' ? 600 : parent === 'labels' ? 512 : key === 'scripts' ? 128 : 2000;
+      return redactSessionText(redact(value, Infinity), nativeIds).slice(0, limit);
+    }
+    return structural(value);
+  };
+  const output = visit(snapshot);
+  if (structuralHashCount && output?.meta) output.meta.outputRedaction = { structuralHashCount, classificationUsedOriginalCanonicalValues: true, reclassificationRequiresOriginalInventory: true };
+  return output;
+}
 export function sanitizeAgent(raw) {
   const a = pick(raw, agentFields);
-  a.labels = Object.fromEntries(Object.entries(raw.labels ?? {}).filter(([k, v]) => labelKeys.has(k) && !/(?:secret|token|key|password|auth|credential)/i.test(k) && typeof v === 'string').map(([k, v]) => [k, redact(v, 512)]));
+  a.labels = Object.fromEntries(Object.entries(raw.labels ?? {}).filter(([k, v]) => labelKeys.has(k) && !/(?:secret|token|key|password|auth|credential)/i.test(k) && typeof v === 'string'));
   a.droppedLabelCount = Object.keys(raw.labels ?? {}).length - Object.keys(a.labels).length;
   return a;
 }
@@ -28,8 +60,8 @@ export function redactSessionText(value, sessionIds) {
   return value.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, id => sessionIds.has(id) ? '[PROVIDER_SESSION]' : id);
 }
 export function parseOptions(argv) {
-  const options = { minAgeHours: 72, gh: false, excerpts: false };
-  const values = { '--out': 'out', '--paseo-home': 'paseoHome', '--live': 'live', '--pending': 'pending', '--terminals': 'terminals', '--self-agent': 'selfAgentId', '--self-cwd': 'selfCwd', '--min-age-hours': 'minAgeHours' };
+  const options = { minAgeHours: 72, maxInputAgeMinutes: 30, gh: false, excerpts: false };
+  const values = { '--out': 'out', '--paseo-home': 'paseoHome', '--live': 'live', '--pending': 'pending', '--terminals': 'terminals', '--self-agent': 'selfAgentId', '--self-cwd': 'selfCwd', '--min-age-hours': 'minAgeHours', '--max-input-age-minutes': 'maxInputAgeMinutes', '--excerpt-ids': 'excerptIds' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') options.help = true;
@@ -40,10 +72,37 @@ export function parseOptions(argv) {
   }
   options.minAgeHours = Number(options.minAgeHours);
   if (!Number.isFinite(options.minAgeHours) || options.minAgeHours < 0) throw new Error('min-age-hours must be nonnegative');
+  options.maxInputAgeMinutes = Number(options.maxInputAgeMinutes);
+  if (!Number.isFinite(options.maxInputAgeMinutes) || options.maxInputAgeMinutes < 0) throw new Error('max-input-age-minutes must be nonnegative');
+  if (options.excerptIds) options.excerpts = true;
+  if (options.excerpts && !options.excerptIds && !options.help) throw new Error('--excerpts requires --excerpt-ids');
   return options;
 }
 const jsonReadFailed = Symbol('json-read-failed');
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+export function validateObservation(kind, input, serverId, now, maxAgeMinutes = 30) {
+  const metadata = { serverId: typeof input?.serverId === 'string' ? input.serverId : null, observedAt: typeof input?.observedAt === 'string' ? input.observedAt : null, scope: typeof input?.scope === 'string' ? input.scope : null, state: 'unchecked', issues: [] };
+  if (!serverId || metadata.serverId !== serverId) metadata.issues.push('input_server_mismatch_or_missing');
+  const observed = Date.parse(metadata.observedAt), scan = Date.parse(now);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/.test(metadata.observedAt ?? '') || !Number.isFinite(observed)) metadata.issues.push('input_observed_at_missing_or_invalid');
+  else if (scan - observed > maxAgeMinutes * 60000) metadata.issues.push('input_stale');
+  else if (observed - scan > 60000) metadata.issues.push('input_from_future');
+  const scopes = kind === 'live' ? ['all', 'listed_agents'] : kind === 'pending' ? ['all'] : ['all', 'cwd'];
+  if (!scopes.includes(metadata.scope)) metadata.issues.push('input_scope_missing_or_invalid');
+  metadata.state = metadata.issues.length ? 'unchecked' : 'confirmed';
+  return metadata;
+}
+export function readPaseoVersion(paseoHome, infoPlist = '/Applications/Paseo.app/Contents/Info.plist') {
+  const sources = [{ path: infoPlist, kind: 'app_info_plist' }, { path: join(paseoHome, 'version.json'), kind: 'paseo_home_version' }, { path: join(paseoHome, 'package.json'), kind: 'paseo_home_package' }];
+  for (const source of sources) {
+    try {
+      const text = readFileSync(source.path, 'utf8');
+      const version = source.kind === 'app_info_plist' ? text.match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)?.[1] : JSON.parse(text)?.version;
+      if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) return { version, source: source.kind };
+    } catch { /* Try the next read-only source. */ }
+  }
+  return { version: null, source: null };
+}
 function canonical(path) { try { return realpathSync(path); } catch { return resolve(path); } }
 export function validRefName(ref) {
   if (typeof ref !== 'string' || !ref.startsWith('refs/') || ref.endsWith('.') || ref.includes('..') || ref.includes('@{')) return false;
@@ -83,7 +142,7 @@ export function parseStatus(text) {
     const entry = entries[i];
     if (/^[12u] /.test(entry)) { dirtyCount++; if (entry.startsWith('2 ')) i++; }
     else if (entry.startsWith('? ')) untrackedCount++;
-    else if (entry.startsWith('! ')) ignored.push(redact(entry.slice(2)));
+    else if (entry.startsWith('! ')) ignored.push(entry.slice(2));
   }
   return { dirtyCount, untrackedCount, ignoredCount: ignored.length, ignoredPaths: ignored.slice(0, 30) };
 }
@@ -129,7 +188,7 @@ export function inspectGit(path, options, gaps, prCache) {
   else g.mergedIntoDefault = null;
   {
     const branches = git(['branch', '-a', '--contains', 'HEAD', '--format=%(refname)']), tags = git(['tag', '--contains', 'HEAD']);
-    if (branches.ok && tags.ok) g.reachableRefs = [...branches.text.split('\n').filter(s => s.startsWith('refs/')), ...tags.text.split('\n').filter(Boolean).map(s => `refs/tags/${s}`)].filter(ref => ref !== (g.branch ? `refs/heads/${g.branch}` : null)).map(s => redact(s));
+    if (branches.ok && tags.ok) g.reachableRefs = [...branches.text.split('\n').filter(s => s.startsWith('refs/')), ...tags.text.split('\n').filter(Boolean).map(s => `refs/tags/${s}`)].filter(ref => ref !== (g.branch ? `refs/heads/${g.branch}` : null));
   }
   const commitTime = git(['log', '-1', '--format=%cI', 'HEAD']);
   g.headCommittedAt = commitTime.ok ? commitTime.text.trim() : null;
@@ -203,13 +262,16 @@ export async function extractTranscript(file, provider, rootKind = 'provider-hom
   for await (const line of lines) {
     if (!line.trim()) continue;
     let row; try { row = JSON.parse(line); } catch { malformed++; continue; }
+    if (row.type === 'turn_aborted' || row.payload?.type === 'turn_aborted') { if (user) pairUncertain = true; continue; }
     let role, content, time = row.timestamp ?? null;
     if (provider === 'claude' && ['user', 'assistant'].includes(row.type) && !row.isMeta) { role = row.message?.role; content = row.message?.content; }
     if (provider === 'codex' && row.type === 'response_item' && row.payload?.type === 'message') { role = row.payload.role; content = row.payload.content; }
     if (!['user', 'assistant'].includes(role)) continue;
     const text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter(b => ['text', 'input_text', 'output_text'].includes(b.type)).map(b => b.text ?? '').join('\n') : '';
-    if (!text.trim() || (role === 'user' && /^\s*<(?:environment_context|turn_aborted|permissions instructions|INSTRUCTIONS|paseo-system)/.test(text))) continue;
-    const value = { text: redact(text, 600), timestamp: typeof time === 'string' ? time : null, truncated: text.length > 600 };
+    const agentMessage = /^\s*<paseo-system\b[^>]*\bkind\s*=\s*["']agent-message["'][^>]*>/i.test(text);
+    if (role === 'user' && !agentMessage && /^\s*<(?:paseo-system|turn_aborted)\b/.test(text)) { if (user) pairUncertain = true; continue; }
+    if (!text.trim() || (role === 'user' && /^\s*<(?:environment_context|permissions instructions|INSTRUCTIONS)/.test(text))) continue;
+    const value = { text, timestamp: typeof time === 'string' ? time : null, truncated: text.length > 600 };
     if (role === 'user') { user = value; assistant = null; pairUncertain = false; }
     else if (user) {
       if (value.timestamp && user.timestamp && Date.parse(value.timestamp) < Date.parse(user.timestamp)) pairUncertain = true;
@@ -218,7 +280,9 @@ export async function extractTranscript(file, provider, rootKind = 'provider-hom
   }
   return { source: `${provider}:${rootKind}`, user, assistant, malformedLines: malformed, pairUncertain: pairUncertain || !user || !assistant || malformed > 0, reason: user || assistant ? null : 'unsupported or empty transcript' };
 }
-async function addExcerpts(snapshot, sessionIds, home, paseoHome) {
+export async function addExcerpts(snapshot, sessionIds, home, paseoHome, selectedIds) {
+  if (!(selectedIds instanceof Set)) { snapshot.meta.gaps.push({ source: 'excerpt', reason: 'excerpt_ids_required' }); return; }
+  if (!snapshot.agents.some(a => selectedIds.has(a.id))) return;
   const roots = [{ path: join(home, '.claude/projects'), provider: 'claude', kind: 'provider-home' }, { path: join(home, '.codex/sessions'), provider: 'codex', kind: 'provider-home' }];
   const zero = join(paseoHome, 'zerosub/homes');
   if (existsSync(zero)) for (const d of readdirSync(zero, { withFileTypes: true })) if (d.isDirectory()) {
@@ -235,7 +299,7 @@ async function addExcerpts(snapshot, sessionIds, home, paseoHome) {
   }
   for (const r of snapshot.classification.agents) {
     const a = snapshot.agents.find(a => a.id === r.id);
-    if (a.archivedAt || r.verdict !== 'review') continue;
+    if (!selectedIds.has(a.id)) continue;
     const files = [...new Map((index.get(`${a.provider}:${sessionIds.get(a.id)}`) ?? []).map(entry => [entry.file, entry])).values()];
     a.excerpt = null;
     if (files.length !== 1) { a.excerptReason = files.length ? 'ambiguous transcript paths' : 'transcript not found'; snapshot.meta.gaps.push({ source: 'excerpt', agentId: a.id, reason: a.excerptReason }); continue; }
@@ -247,18 +311,19 @@ export function normalizeTerminals(input, gaps = []) {
   if (input === undefined) return [];
   const invalid = cwd => ({ cwd, state: 'unchecked', invalid: true, terminalCount: null, terminalCwds: [] });
   if (isRecord(input) && input.scope === 'all') {
-    if (typeof input.collectedAt !== 'string' || !Number.isFinite(Date.parse(input.collectedAt)) || !Array.isArray(input.terminals) || input.terminals.some(t => !isRecord(t) || typeof t.cwd !== 'string' || !t.cwd.startsWith('/') || t.cwd.includes('\0'))) {
-      gaps.push({ domain: 'protection', source: 'terminals', reason: 'invalid all-scope terminal observation' });
+    const observedAt = input.observedAt ?? input.collectedAt;
+    if (typeof observedAt !== 'string' || !Number.isFinite(Date.parse(observedAt)) || !Array.isArray(input.terminals) || input.terminals.some(t => !isRecord(t) || typeof t.cwd !== 'string' || !t.cwd.startsWith('/') || t.cwd.includes('\0'))) {
+      gaps.push({ domain: 'terminals', source: 'terminals', reason: 'invalid all-scope terminal observation' });
       return [invalid(null)];
     }
-    return [{ scope: 'all', collectedAt: input.collectedAt, cwd: null, state: 'confirmed_none', terminalCount: input.terminals.length, terminalCwds: input.terminals.map(t => canonical(t.cwd)) }];
+    return [{ scope: 'all', observedAt, cwd: null, state: 'confirmed_none', terminalCount: input.terminals.length, terminalCwds: input.terminals.map(t => canonical(t.cwd)) }];
   }
-  if (isRecord(input) && input.scope !== undefined) {
-    gaps.push({ domain: 'protection', source: 'terminals', reason: 'unknown terminal scope' });
+  if (isRecord(input) && input.scope !== undefined && input.scope !== 'cwd') {
+    gaps.push({ domain: 'terminals', source: 'terminals', reason: 'unknown terminal scope' });
     return [invalid(null)];
   }
   if (!isRecord(input) || !Array.isArray(input.observations)) {
-    gaps.push({ domain: 'protection', source: 'terminals', reason: 'expected observations array' });
+    gaps.push({ domain: 'terminals', source: 'terminals', reason: 'expected observations array' });
     return [invalid(null)];
   }
   const observations = [];
@@ -266,7 +331,7 @@ export function normalizeTerminals(input, gaps = []) {
     const cwdValid = isRecord(item) && typeof item.cwd === 'string' && item.cwd.startsWith('/') && !item.cwd.includes('\0');
     if (!cwdValid || !Array.isArray(item.terminals) || item.terminals.some(t => !isRecord(t) || (t.cwd !== undefined && (typeof t.cwd !== 'string' || !t.cwd.startsWith('/') || t.cwd.includes('\0'))))) {
       const cwd = cwdValid ? canonical(item.cwd) : null;
-      const gap = { domain: 'protection', source: 'terminals', reason: 'invalid terminal observation' };
+      const gap = { domain: 'terminals', source: 'terminals', reason: 'invalid terminal observation' };
       if (cwd) gap.scope = { paths: [cwd] };
       gaps.push(gap); observations.push(invalid(cwd));
       continue;
@@ -287,7 +352,7 @@ export function observePath(path, git, observations, gaps) {
     const raw = JSON.parse(readFileSync(file, 'utf8'));
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('schema');
     if (raw.scripts !== undefined && (!raw.scripts || typeof raw.scripts !== 'object' || Array.isArray(raw.scripts))) throw new Error('schema');
-    definitions.scripts = Object.keys(raw.scripts ?? {}).map(name => redact(name, 128));
+    definitions.scripts = Object.keys(raw.scripts ?? {});
     const value = raw.worktree?.teardown;
     definitions.teardown = Array.isArray(value) ? value.length > 0 : Boolean(value);
     teardown = definitions.teardown ? 'present' : 'confirmed_none';
@@ -301,7 +366,9 @@ export function observePath(path, git, observations, gaps) {
 }
 const withinPath = (path, root) => path === root || path.startsWith(`${root.replace(/\/$/, '')}/`);
 export function planMarkdown(snapshot) {
-  const rows = [], counts = {}, summary = scanSummary(snapshot);
+  const summary = serializeSnapshot(scanSummary(snapshot));
+  snapshot = serializeSnapshot(snapshot);
+  const rows = [], counts = {};
   const cell = value => String(value ?? '').replaceAll('|', '\\|').replace(/[\r\n]/g, ' ');
   for (const verdict of ['batch_candidate', 'review', 'exclude']) {
     rows.push(`## ${verdict}`, '', '| 유형 | 전체 ID / 경로 | 제목 | workspace | 나이(h) | 근거 |', '|---|---|---|---|---:|---|');
@@ -309,32 +376,45 @@ export function planMarkdown(snapshot) {
       counts[kind] ??= {}; counts[kind][verdict] ??= 0;
       if (r.verdict !== verdict) continue; counts[kind][verdict]++;
       const entity = kind === 'agents' ? snapshot.agents.find(a => a.id === r.id) : kind === 'workspaces' ? snapshot.workspaces.find(w => w.workspaceId === r.id) : snapshot.orphans.find(o => o.path === r.id);
-      const reasons = [...r.reasons, `remainingChecks:${(r.remainingChecks ?? []).join(',')}`,  `holds:${r.hold.join(',')}`, ...(entity?.git?.ignoredCount ? [`ignored:${entity.git.ignoredCount} ${entity.git.ignoredPaths.join(', ')}`] : [])];
+      const reasons = [...r.reasons, ...(kind === 'orphans' ? ['관측한 시각 기준; 마지막 작업 시각의 증명 아님'] : []), `remainingChecks:${(r.remainingChecks ?? []).join(',')}`,  `holds:${r.hold.join(',')}`, ...(entity?.git?.ignoredCount ? [`ignored:${entity.git.ignoredCount} ${entity.git.ignoredPaths.join(', ')}`] : [])];
       rows.push(`| ${kind} | ${cell(r.id)} | ${cell((entity?.title ?? entity?.displayName ?? '').slice(0, 60))} | ${cell(entity?.workspaceId)} | ${r.ageHours?.toFixed(1) ?? '?'} | ${cell(reasons.join('; '))} |`);
     }
     rows.push('');
   }
-  return `# Paseo cleanup plan draft\n\nCollected: ${snapshot.meta.collectedAt}\n\nThis draft is not approval. Gaps: ${snapshot.meta.gaps.length}. Git refs are local observations.\n\nLive 관측: ${summary.live.observed}/${summary.live.activeTotal} 비보관 agent; 저장값 대체 ${summary.live.storedFallback}.\n\n터미널 관측(고유 cwd): ${summary.terminals.confirmed_none + summary.terminals.present}/${summary.terminals.total}; confirmed_none=${summary.terminals.confirmed_none}, present=${summary.terminals.present}, unchecked=${summary.terminals.unchecked}.\n\n전역 차단 gap(사유별 건수): ${JSON.stringify(summary.globalBlockers)}.\n\nCounts: ${JSON.stringify(counts)}\n\n${rows.join('\n')}\n`;
+  return `# Paseo cleanup plan draft\n\nCollected: ${snapshot.meta.collectedAt}\n\n입력별 관측 시각 및 출처: ${cell(JSON.stringify(snapshot.meta.inputObservations ?? {}))}\n\nThis draft is not approval. Gaps: ${snapshot.meta.gaps.length}. Git refs are local observations.\n\nLive 관측: ${summary.live.observed}/${summary.live.activeTotal} 비보관 agent; 저장값 대체 ${summary.live.storedFallback}.\n\n터미널 관측(고유 cwd): ${summary.terminals.confirmed_none + summary.terminals.present}/${summary.terminals.total}; confirmed_none=${summary.terminals.confirmed_none}, present=${summary.terminals.present}, unchecked=${summary.terminals.unchecked}.\n\n전역 차단 gap(사유별 건수): ${JSON.stringify(summary.globalBlockers)}.\n\nCounts: ${JSON.stringify(counts)}\n\n${rows.join('\n')}\n`;
 }
 export async function collect(options) {
   const home = homedir(), paseoHome = resolve(options.paseoHome ?? process.env.PASEO_HOME ?? join(home, '.paseo'));
   const stateHome = options.stateHome ?? process.env.XDG_STATE_HOME ?? join(home, '.local/state'), gaps = [], sessionIds = new Map();
   const collectedAt = new Date().toISOString();
-  const snapshot = { meta: { paseoHome, serverId: null, paseoVersion: null, collectedAt, options: pick(options, ['minAgeHours', 'gh', 'excerpts', 'selfAgentId', 'selfCwd', 'live', 'pending', 'terminals']), gaps, statusSource: options.live ? 'mixed' : 'store', liveCoverage: 0 }, agents: [], workspaces: [], projects: [], schedules: [], subscriptions: [], supervisors: [], orphans: [] };
-  const read = file => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { gaps.push({ source: file, reason: e.code ?? 'invalid-json' }); return jsonReadFailed; } };
+  const snapshot = { meta: { paseoHome, serverId: null, paseoVersion: null, collectedAt, options: pick({ maxInputAgeMinutes: 30, ...options }, ['minAgeHours', 'maxInputAgeMinutes', 'gh', 'excerpts', 'excerptIds', 'selfAgentId', 'selfCwd', 'live', 'pending', 'terminals']), gaps, warnings: [], inputObservations: {}, statusSource: options.live ? 'mixed' : 'store', liveCoverage: 0 }, agents: [], workspaces: [], projects: [], schedules: [], subscriptions: [], supervisors: [], orphans: [] };
+  const read = (file, domain) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { gaps.push({ source: file, ...(domain ? { domain } : {}), reason: e.code ?? 'invalid-json' }); return jsonReadFailed; } };
   const array = (file, required) => { const value = read(file); if (!Array.isArray(value)) { if (value !== jsonReadFailed) gaps.push({ source: file, reason: 'expected-array' }); return []; } return value.filter((v, i) => { const ok = isRecord(v) && required.every(k => typeof v[k] === 'string'); if (!ok) gaps.push({ source: file, reason: `invalid record:${i}` }); return ok; }); };
-  try { snapshot.meta.serverId = redact(readFileSync(join(paseoHome, 'server-id'), 'utf8').trim(), 128); } catch (e) { gaps.push({ source: 'server-id', reason: e.code }); }
+  try { snapshot.meta.serverId = readFileSync(join(paseoHome, 'server-id'), 'utf8').trim(); } catch (e) { gaps.push({ source: 'server-id', reason: e.code }); }
+  const version = readPaseoVersion(paseoHome, options.paseoInfoPlist);
+  snapshot.meta.paseoVersion = version.version; snapshot.meta.paseoVersionSource = version.source;
+  if (!version.version) gaps.push({ domain: 'protection', source: 'paseo-version', reason: 'paseo_version_unknown' });
+  const observationInput = kind => {
+    const input = options[kind] ? read(options[kind], kind === 'terminals' ? 'terminals' : undefined) : undefined;
+    const metadata = validateObservation(kind, input, snapshot.meta.serverId, collectedAt, options.maxInputAgeMinutes ?? 30);
+    snapshot.meta.inputObservations[kind] = metadata;
+    for (const reason of metadata.issues) gaps.push({ domain: kind === 'terminals' ? 'terminals' : 'protection', source: kind, reason });
+    return { input, trusted: metadata.state === 'confirmed' };
+  };
   const agentRoot = join(paseoHome, 'agents');
   if (!existsSync(agentRoot)) gaps.push({ source: agentRoot, reason: 'agent_store_missing' });
   let agentFiles = []; try { agentFiles = globSync('*/*.json', { cwd: agentRoot }); } catch (e) { gaps.push({ source: agentRoot, reason: e.code }); }
-  let live = options.live ? read(options.live) : {};
-  const liveMapUsable = Boolean(options.live) && isRecord(live);
+  const liveInput = observationInput('live');
+  let live = isRecord(liveInput.input) && ['serverId', 'observedAt', 'scope', 'agents'].some(k => Object.hasOwn(liveInput.input, k)) ? liveInput.input.agents : liveInput.input;
+  const liveMapUsable = liveInput.trusted && isRecord(live);
   if (!isRecord(live)) { gaps.push({ source: options.live, reason: 'expected agent status map' }); live = {}; }
+  if (!liveMapUsable) live = {};
   const pending = new Map();
+  const pendingInput = observationInput('pending');
   if (options.pending) {
-    const input = read(options.pending), list = Array.isArray(input) ? input : input?.permissions;
+    const input = pendingInput.input, list = Array.isArray(input) ? input : input?.permissions;
     if (!Array.isArray(list)) gaps.push({ source: options.pending, reason: 'expected array or permissions array' });
-    else for (const entry of list) { if (typeof entry?.agentId === 'string') pending.set(entry.agentId, (pending.get(entry.agentId) ?? 0) + 1); else gaps.push({ source: options.pending, reason: 'pending missing agentId' }); }
+    else if (pendingInput.trusted) for (const entry of list) { if (typeof entry?.agentId === 'string') pending.set(entry.agentId, (pending.get(entry.agentId) ?? 0) + 1); else gaps.push({ source: options.pending, reason: 'pending missing agentId' }); }
   } else gaps.push({ source: 'pending', reason: 'live pending observation not provided' });
   for (const relative of agentFiles) {
     const file = join(agentRoot, relative), raw = read(file);
@@ -353,7 +433,11 @@ export async function collect(options) {
   if (missingLive.length) gaps.push({ domain: 'protection', source: 'live', reason: 'live_missing', count: missingLive.length, ...(liveMapUsable ? { scope: { agentIds: missingLive } } : {}) });
   if (!options.live) gaps.push({ source: 'live', reason: 'stored statuses can lag; live observation not provided' });
   const wfile = join(paseoHome, 'projects/workspaces.json');
-  snapshot.workspaces = array(wfile, ['workspaceId', 'cwd']).map(w => ({ ...pick(w, ['workspaceId', 'projectId', 'cwd', 'kind', 'displayName', 'title', 'branch', 'worktreeRoot', 'createdAt', 'updatedAt', 'archivedAt', 'isPaseoOwnedWorktree']), cwd: canonical(w.cwd), ...(typeof w.worktreeRoot === 'string' ? { worktreeRoot: canonical(w.worktreeRoot) } : {}) }));
+  snapshot.workspaces = array(wfile, ['workspaceId', 'cwd']).map(w => {
+    const invalidOwnership = (w.isPaseoOwnedWorktree !== undefined && typeof w.isPaseoOwnedWorktree !== 'boolean') || ['worktreeRoot', 'mainRepoRoot'].some(k => w[k] != null && (typeof w[k] !== 'string' || (w[k] && !w[k].startsWith('/'))));
+    if (invalidOwnership) gaps.push({ domain: 'protection', source: wfile, reason: 'invalid workspace ownership schema', scope: { workspaceIds: [w.workspaceId], paths: [canonical(w.cwd)] } });
+    return { ...pick(w, ['workspaceId', 'projectId', 'cwd', 'kind', 'displayName', 'title', 'branch', 'worktreeRoot', 'mainRepoRoot', 'createdAt', 'updatedAt', 'archivedAt', 'isPaseoOwnedWorktree']), cwd: canonical(w.cwd), ...Object.fromEntries(['worktreeRoot', 'mainRepoRoot'].filter(k => typeof w[k] === 'string' && w[k]).map(k => [k, canonical(w[k])])) };
+  });
   snapshot.projects = array(join(paseoHome, 'projects/projects.json'), ['projectId', 'rootPath']).map(p => pick(p, ['projectId', 'rootPath', 'kind', 'displayName', 'archivedAt']));
   snapshot.subscriptions = array(join(paseoHome, 'finish-subscriptions.json'), ['callerAgentId', 'childAgentId']).map(s => pick(s, ['callerAgentId', 'childAgentId']));
   const scheduleRoot = join(paseoHome, 'schedules');
@@ -374,32 +458,37 @@ export async function collect(options) {
   snapshot.supervisors = context.supervisors;
   gaps.push(...context.generatedGaps);
   const paths = new Map(), prCache = new Map();
-  for (const w of snapshot.workspaces) if (!w.archivedAt) paths.set(w.cwd, null);
+  for (const w of snapshot.workspaces) if (!w.archivedAt) { paths.set(w.cwd, null); if (isOwnedWorkspace(w)) paths.set(w.worktreeRoot, null); }
   const treeRoot = join(paseoHome, 'worktrees');
   try { for (const group of readdirSync(treeRoot, { withFileTypes: true })) if (group.isDirectory()) for (const entry of readdirSync(join(treeRoot, group.name), { withFileTypes: true })) if (entry.isDirectory()) paths.set(canonical(join(treeRoot, group.name, entry.name)), null); }
   catch (e) { gaps.push({ source: treeRoot, reason: e.code }); }
   for (const path of paths.keys()) paths.set(path, inspectGit(path, options, gaps, prCache));
-  const terminalInput = options.terminals ? read(options.terminals) : undefined;
-  const observations = normalizeTerminals(terminalInput, gaps);
+  const terminalInput = observationInput('terminals');
+  const observations = terminalInput.trusted ? normalizeTerminals(terminalInput.input, gaps) : [{ cwd: null, state: 'unchecked', invalid: true, terminalCount: null, terminalCwds: [] }];
   snapshot.terminalObservations = observations;
   for (const w of snapshot.workspaces) if (!w.archivedAt) {
-    w.git = paths.get(w.cwd);
-    Object.assign(w, observePath(w.cwd, w.git, observations, gaps));
+    w.git = paths.get(isOwnedWorkspace(w) ? w.worktreeRoot : w.cwd);
+    Object.assign(w, observePath(isOwnedWorkspace(w) ? w.worktreeRoot : w.cwd, w.git, observations, gaps));
   }
-  const active = new Set(snapshot.workspaces.filter(w => !w.archivedAt).map(w => w.cwd));
+  const active = new Set(snapshot.workspaces.filter(w => !w.archivedAt).flatMap(w => [w.cwd, ...(isOwnedWorkspace(w) ? [w.worktreeRoot] : [])]));
   for (const [path, git] of paths) if (!active.has(path)) {
     let mtime = null; try { mtime = statSync(path).mtime.toISOString(); } catch (e) { gaps.push({ source: path, reason: e.code }); }
-    snapshot.orphans.push({ path, mtime, modifiedAt: git.modifiedAt ?? null, git, ...observePath(path, git, observations, gaps) });
+    snapshot.orphans.push({ path, mtime, observedTimesMax: git.modifiedAt ?? null, timeBasis: 'maximum of observed root, HEAD commit, git index and HEAD timestamps; not proof of last work', git, ...observePath(path, git, observations, gaps) });
   }
   snapshot.meta.statusSource = snapshot.meta.liveCoverage === 0 ? 'store' : snapshot.meta.liveCoverage === snapshot.agents.length ? 'live' : 'mixed';
   snapshot.classification = classify(snapshot, { ...options, now: collectedAt, selfCwd: options.selfCwd ? canonical(options.selfCwd) : undefined });
-  if (options.excerpts) await addExcerpts(snapshot, sessionIds, home, paseoHome);
-  const nativeIds = new Set(sessionIds.values());
-  for (const a of snapshot.agents) {
-    if (typeof a.title === 'string') a.title = redactSessionText(a.title, nativeIds);
-    if (a.labels['agent-list.original-title']) a.labels['agent-list.original-title'] = redactSessionText(a.labels['agent-list.original-title'], nativeIds);
-    for (const role of ['user', 'assistant']) if (a.excerpt?.[role]) a.excerpt[role].text = redactSessionText(a.excerpt[role].text, nativeIds);
+  if (options.excerpts || options.excerptIds) {
+    let selected = null;
+    if (options.excerptIds) {
+      selected = new Set();
+      const ids = read(options.excerptIds);
+      if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) gaps.push({ source: 'excerpt', reason: 'excerpt_ids_invalid' });
+      else for (const id of ids) { selected.add(id); if (!snapshot.agents.some(a => a.id === id)) gaps.push({ source: 'excerpt', agentId: id, reason: 'excerpt_agent_not_found' }); }
+    } else gaps.push({ source: 'excerpt', reason: 'excerpt_ids_required' });
+    snapshot.meta.excerptSelection = { mode: selected ? 'selected_ids' : 'blocked_missing_ids', count: selected?.size ?? 0 };
+    if (selected) await addExcerpts(snapshot, sessionIds, home, paseoHome, selected);
   }
+  nativeIdsBySnapshot.set(snapshot, new Set(sessionIds.values()));
   snapshot.classification = classify(snapshot, { ...options, now: collectedAt, selfCwd: options.selfCwd ? canonical(options.selfCwd) : undefined });
   return snapshot;
 }
@@ -409,18 +498,27 @@ export function writeOutputs(out, snapshot) {
   for (const name of ['scan.json', 'plan-draft.md']) if (existsSync(join(out, name))) throw new Error('Output already exists; use a fresh directory');
   mkdirSync(out, { recursive: true, mode: 0o700 });
   chmodSync(out, 0o700);
-  writeFileSync(join(out, 'scan.json'), `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+  writeFileSync(join(out, 'scan.json'), `${JSON.stringify(serializeSnapshot(snapshot), null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   writeFileSync(join(out, 'plan-draft.md'), planMarkdown(snapshot), { mode: 0o600, flag: 'wx' });
 }
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (options.help) {
-    console.log('Usage: node scan.mjs [--out DIR] [--paseo-home DIR] [--self-agent ID] [--self-cwd PATH] [--min-age-hours 72] [--gh] [--excerpts] [--live FILE] [--pending FILE] [--terminals FILE]\n--terminals: {"observations":[{"cwd":"/absolute/path","terminals":[]}]} (empty list confirms no terminals for this exact cwd; missing cwd is unchecked)\n--terminals (all cwd): {"scope":"all","collectedAt":"2026-01-01T00:00:00Z","terminals":[{"cwd":"/absolute/path"}]} (absent cwd is confirmed_none; listed cwd or descendant is present)\n--live: {"agent-id":{"status":"idle","pendingPermissions":[]}}\n--pending: [{"agentId":"full-id","kind":"question"}] or {"permissions":[...]}\nOnly pending counts are retained. No daemon calls. Outputs: scan.json, plan-draft.md. Existing output files are never overwritten.'); return;
+    console.log(`Usage: node scan.mjs [--out DIR] [--paseo-home DIR] [--self-agent ID] [--self-cwd PATH] [--min-age-hours 72] [--max-input-age-minutes 30] [--gh] [--excerpts] [--excerpt-ids FILE] [--live FILE] [--pending FILE] [--terminals FILE]
+Every observation requires serverId matching the local server-id, observedAt (ISO 8601 with Z or an explicit UTC offset), and scope. Inputs older than --max-input-age-minutes (default 30), over one minute in the future, or missing metadata are unchecked. Legacy payloads are accepted as unchecked; live/pending uncertainty blocks all batch candidates.
+--live: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"listed_agents","agents":{"full-agent-id":{"status":"idle","pendingPermissions":[]}}} (scope all is also accepted; missing agents remain scoped unknown)
+--pending: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"all","permissions":[{"agentId":"full-agent-id","kind":"question"}]}
+--terminals (all cwd): {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"all","terminals":[{"cwd":"/absolute/path"}]} (absent cwd confirmed_none; terminal cwd inside target path present)
+--terminals (per cwd): {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"cwd","observations":[{"cwd":"/absolute/path","terminals":[]}]} (unobserved cwd unchecked)
+--excerpt-ids: ["11111111-1111-4111-8111-111111111111"] (JSON full agent IDs; implies --excerpts and reads only those agents, including historical records; invalid list reads none)
+--excerpts requires --excerpt-ids; without a selection the CLI exits with an error and reads no transcript bodies.
+Classification uses original canonical paths/IDs. Output free text is redacted; secret-like structural values are replaced with [STRUCT_SHA256:...] only after classification.
+Only pending counts are retained. No daemon calls. Outputs: scan.json, plan-draft.md; meta.inputObservations separates input observedAt from scan collectedAt. Existing outputs are never overwritten.`); return;
   }
   const out = resolve(options.out ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local/state'), 'yw-paseo-cleanup', new Date().toISOString().replaceAll(':', '-')));
   const snapshot = await collect(options);
   writeOutputs(out, snapshot);
   const counts = Object.fromEntries(Object.entries(snapshot.classification).map(([kind, list]) => [kind, list.reduce((acc, r) => ({ ...acc, [r.verdict]: (acc[r.verdict] ?? 0) + 1 }), {})]));
-  console.log(JSON.stringify({ out, counts, gaps: snapshot.meta.gaps.length }));
+  console.log(JSON.stringify(serializeSnapshot({ out, counts, gaps: snapshot.meta.gaps.length })));
 }
 if (process.argv[1] && canonical(process.argv[1]) === canonical(fileURLToPath(import.meta.url))) main().catch(error => { console.error(redact(error.message)); process.exitCode = 1; });

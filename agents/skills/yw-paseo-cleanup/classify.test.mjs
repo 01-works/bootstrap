@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { classify } from './classify.mjs';
 const base = JSON.parse(readFileSync(new URL('./fixtures/base.json', import.meta.url)));
 const a = (id, extra = {}) => ({ ...structuredClone(base.fixtureAgent), id, ...extra });
-const w = (extra = {}) => ({ workspaceId: 'wks_fake', cwd: '/fake/worktrees/project/lane', kind: 'worktree', checks: structuredClone(base.fixtureChecks), git: structuredClone(base.fixtureGit), ...extra });
+const w = (extra = {}) => ({ workspaceId: 'wks_fake', cwd: '/fake/worktrees/project/lane', kind: 'worktree', isPaseoOwnedWorktree: true, worktreeRoot: extra.cwd ?? '/fake/worktrees/project/lane', mainRepoRoot: '/fake/main', createdAt: '2026-01-01', updatedAt: '2026-01-01', checks: structuredClone(base.fixtureChecks), git: structuredClone(base.fixtureGit), ...extra });
 const o = (extra = {}) => ({ path: '/fake/worktrees/project/orphan', mtime: '2026-01-01T00:00:00Z', modifiedAt: '2026-01-01T00:00:00Z', checks: structuredClone(base.fixtureChecks), git: structuredClone(base.fixtureGit), ...extra });
 const scan = (data = {}, options = {}) => classify({ ...structuredClone(base), ...data }, options);
 const record = (result, id) => result.agents.find(r => r.id === id);
@@ -63,7 +63,7 @@ test('workspace schedule, hub, local directory retention', () => {
   const scheduled = scan({ workspaces: [w()], schedules: [{ id: 'schedule', status: 'active', target: { type: 'new-agent' }, cwd: '/fake/worktrees/project/lane/sub' }] }); assert.ok(scheduled.workspaces[0].hold.includes('schedule_dependency'));
   const hub = scan({ workspaces: [w()], agents: Array.from({ length: 15 }, (_, i) => a(`member-${i}`)) }); assert.ok(hub.workspaces[0].hold.includes('hub'));
   const roots = scan({ workspaces: [w()], agents: [a('a'), a('b')] }); assert.ok(roots.workspaces[0].hold.includes('hub'));
-  const local = scan({ workspaces: [w({ kind: 'local_directory' })] }); assert.equal(local.workspaces[0].deleteDirectory, false);
+  const local = scan({ workspaces: [w({ kind: 'local_directory', isPaseoOwnedWorktree: false })] }); assert.equal(local.workspaces[0].deleteDirectory, false);
 });
 test('orphan abnormal directories list only; registered clean integrated candidate', () => {
   for (const kind of ['broken', 'non-git', 'nested']) { const r = scan({ orphans: [o({ git: { kind } })] }).orphans[0]; assert.equal(r.verdict, 'review'); assert.equal(r.listOnly, true); }
@@ -102,7 +102,7 @@ test('workspace overlapping paths, external agent and supervisor path references
   for (const data of cases) { const r = scan({ workspaces: [w()], ...data }); assert.equal(r.workspaces[0].verdict, data.supervisors ? 'review' : 'exclude'); }
 });
 test('local workspace does not require directory deletion Git checks', () => {
-  assert.equal(scan({ workspaces: [w({ kind: 'local_directory', git: null })] }).workspaces[0].verdict, 'batch_candidate');
+  assert.equal(scan({ workspaces: [w({ kind: 'local_directory', isPaseoOwnedWorktree: false, git: null })] }).workspaces[0].verdict, 'batch_candidate');
 });
 test('recent activity fallback marked separately from primary user-message age', () => {
   const r = scan({ agents: [a('restart', { lastUserMessageAt: '2026-01-01T00:00:00Z', lastActivityAt: '2026-01-10T00:00:00Z' })] });
@@ -139,7 +139,7 @@ test('P1 model-only checks remain explicit on batch candidates, including define
   const checks = { ...base.fixtureChecks, processes: 'unchecked', scripts: 'unchecked', teardown: 'present' };
   const definitions = { scripts: ['dev'], teardown: true };
   const r = scan({ workspaces: [w({ checks, definitions })], orphans: [o({ checks, definitions })] });
-  for (const record of [r.workspaces[0], r.orphans[0]]) { assert.equal(record.verdict, 'batch_candidate'); assert.deepEqual(record.remainingChecks, ['process_usage', 'script_runtime:defined', 'teardown_impact:defined']); }
+  for (const record of [r.workspaces[0], r.orphans[0]]) { assert.equal(record.verdict, 'batch_candidate'); assert.deepEqual(record.remainingChecks, ['process_usage', 'script_runtime:defined', 'teardown_impact:defined', ...(record === r.workspaces[0] ? ['workspace_owned_terminals'] : [])]); }
 });
 for (const signal of [{ lastStatus: 'running' }, { pendingCount: 1 }, { lastActivityAt: '2026-01-10T11:00:00Z' }]) test(`P1 historical child propagates protection: ${JSON.stringify(signal)}`, () => {
   const r = scan({ agents: [a('parent'), a('archived-child', { archivedAt: '2026-01-03', workspaceId: 'other', labels: { 'paseo.parent-agent-id': 'parent' }, ...signal })], workspaces: [w({ workspaceId: 'other' }), w()] });
@@ -215,7 +215,7 @@ for (const archived of [false, true]) test(`R5 unique four-character workspace p
   const data = { ...structuredClone(base), workspaces: [w({ workspaceId: full, cwd: '/fake/worktrees/project/orphan', archivedAt: archived ? '2026-01-02' : null })], supervisors: [{ directory: 'prefix-owner', ownerIds: [], workspaceIds: [ref], paths: [] }], orphans: [o()] };
   const context = protectionContext(data);
   assert.deepEqual(context.supervisors[0].workspaceIds, [full]); assert.deepEqual(context.supervisors[0].workspaceRefs, [ref]); assert.deepEqual(context.generatedGaps, []);
-  const r = scan(data); assert.equal(r.orphans[0].verdict, 'review'); assert.ok(r.orphans[0].hold.includes('supervisor_scope'));
+  const r = scan(data); assert.equal(r.orphans[0].verdict, archived ? 'review' : 'exclude'); assert.ok(r.orphans[0].hold.includes('supervisor_scope'));
 });
 for (const [ref, ids] of [['wks_abcd', ['wks_abcd000000000001', 'wks_abcd000000000002']], ['wks_dead', ['wks_abcd000000000001']], ['wks_abc', ['wks_abcd000000000001']]]) test(`R5 ambiguous, absent or too-short prefix remains globally blocked: ${ref} ${ids.length}`, async () => {
   const { protectionContext, minWorkspacePrefixLength } = await import('./classify.mjs'); assert.equal(minWorkspacePrefixLength, 4);
