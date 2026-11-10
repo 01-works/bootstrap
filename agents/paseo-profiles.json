@@ -54,7 +54,7 @@
       "model": "claude-opus-5-5",
       "modeId": "plan",
       "thinkingOptionId": "xhigh",
-      "notes": "중요한 아키텍처 결정, 복잡한 원인 분석과 설계에 선택. 요구사항·제약·대안·근거·검증 방법을 정리하고 구현은 Builder에 맡긴다. Opus 한도 소진·접속 불가 시에만 Architect (Astra)를 선택한다."
+      "notes": "중요한 아키텍처 결정, 복잡한 원인 분석과 설계에 선택. 요구사항·제약·대안·근거·검증 방법을 정리하고 구현은 Builder에 맡긴다. 일반 설계의 대체 프로필로는 Opus 한도 소진·접속 불가 시에만 Architect (Astra)를 선택한다. 총괄 감독의 교차 모델 설계·독립 검토에는 Opus 가용 여부와 관계없이 Astra를 선택할 수 있다(yw-chief-supervisor)."
     },
     {
       "id": "bootstrap-architect-astra",
@@ -64,7 +64,7 @@
       "modeId": "auto-review",
       "thinkingOptionId": "xhigh",
       "featureValues": { "plan_mode": true },
-      "notes": "Opus 한도 소진·접속 불가 시에만 사용하는 Architect 대체 프로필. 중요한 설계·복잡한 원인 분석의 근거와 대안을 정리하고 구현은 Builder에 맡긴다."
+      "notes": "일반 설계에서는 Opus 한도 소진·접속 불가 시에만 사용하는 Architect 대체 프로필. 총괄 감독의 교차 모델 설계·독립 검토에는 Opus 가용 여부와 관계없이 Astra를 선택할 수 있다(yw-chief-supervisor). 중요한 설계·복잡한 원인 분석의 근거와 대안을 정리하고 구현은 Builder에 맡긴다."
     },
     {
       "id": "bootstrap-deep-reviewer",
@@ -73,7 +73,7 @@
       "model": "claude-opus-5-5",
       "modeId": "plan",
       "thinkingOptionId": "xhigh",
-      "notes": "중요한 변경, 설계 결과, 논쟁적인 리뷰 지적과 추가 결함 탐색에 선택. 작성자가 Claude여도 사용할 수 있으며 새 세션에서 요구사항·diff·관련 코드·검증 결과를 독립적으로 검토한다. 지적마다 코드 근거·발생 조건·영향·재현 방법을 요구하고, 직접 수정하지 않는다. Opus 한도 소진·접속 불가 시에만 Deep Reviewer (Astra)를 선택한다."
+      "notes": "중요한 변경, 설계 결과, 논쟁적인 리뷰 지적과 추가 결함 탐색에 선택. 작성자가 Claude여도 사용할 수 있으며 새 세션에서 요구사항·diff·관련 코드·검증 결과를 독립적으로 검토한다. 지적마다 코드 근거·발생 조건·영향·재현 방법을 요구하고, 직접 수정하지 않는다. 일반 코드 리뷰의 대체 프로필로는 Opus 한도 소진·접속 불가 시에만 Deep Reviewer (Astra)를 선택한다. 총괄 감독의 교차 모델 설계·독립 검토에는 Opus 가용 여부와 관계없이 Astra를 선택할 수 있다(yw-chief-supervisor)."
     },
     {
       "id": "bootstrap-deep-reviewer-astra",
@@ -83,7 +83,7 @@
       "modeId": "auto-review",
       "thinkingOptionId": "xhigh",
       "featureValues": { "plan_mode": true },
-      "notes": "Opus 한도 소진·접속 불가 시에만 사용하는 Deep Reviewer 대체 프로필. 새 세션에서 중요한 변경과 논쟁적인 지적을 독립 검토한다. 코드 근거·발생 조건·영향·재현 방법을 제시하고 직접 수정하지 않는다. 기본 1차 리뷰에는 Reviewer(GPT-6.1 Sol)를 사용한다."
+      "notes": "일반 코드 리뷰에서는 Opus 한도 소진·접속 불가 시에만 사용하는 Deep Reviewer 대체 프로필. 총괄 감독의 교차 모델 설계·독립 검토에는 Opus 가용 여부와 관계없이 Astra를 선택할 수 있다(yw-chief-supervisor). 새 세션에서 중요한 변경과 논쟁적인 지적을 독립 검토한다. 코드 근거·발생 조건·영향·재현 방법을 제시하고 직접 수정하지 않는다. 기본 1차 리뷰에는 Reviewer(GPT-6.1 Sol)를 사용한다."
     }
   ]
 }
