@@ -7,6 +7,8 @@ description: 여러 yw-supervisor 감독 세션이 동시에 운영하는 lane�
 
 여러 감독 세션의 운영을 감사하고 현황을 사용자에게 보고하며, 완료된 세션의 수명주기를 마무리한다. **총괄 감독은 직접 구현하지 않고, 진행 중인 다른 감독의 lane을 인수·중단·정리하지 않는다.** 완료가 확인된 세션만 아래 정리 조건에 따라 닫는다. 작업자에게 직접 지시하지 않고 소유 감독에게 `send_agent_prompt`로 전달한다. 감독이 응답 불가하면 사용자에게 묻는다. 스킬 수정처럼 새 작업이 필요하면 [yw-supervisor](../yw-supervisor/SKILL.md) 방식으로 자신의 작업자를 배정하고, 아래 소유 기록에 남긴다.
 
+이 스킬·관련 프로필 notes·`agents/paseo.md` 절도 [yw-supervisor 첫머리의 변경 창구 규칙](../yw-supervisor/SKILL.md)을 따른다. 변경 PR은 총괄 감독 lane으로 모으고 다른 세션은 bootstrap 이슈로 제안한다([#64](https://github.com/01-works/bootstrap/issues/64)).
+
 ## 시작과 기록
 
 - 사용 가능한 `paseo` 스킬과 [yw-supervisor](../yw-supervisor/SKILL.md)를 읽는다. 도구 사용·작업 배정·공유 기록·소유권의 일반 규칙은 그 문서를 따른다. 프로필 선택은 bootstrap 저장소 `agents/paseo.md`의 "프로필"·"총괄 운영 스킬", 자원 운영은 bootstrap 저장소 `agents/heavy-queue.md`를 따른다.

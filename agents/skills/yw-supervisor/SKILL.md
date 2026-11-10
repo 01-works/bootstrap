@@ -7,6 +7,8 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 여러 작업의 총괄을 맡는다. 사용자의 목표를 작업으로 나누고 Paseo 에이전트에 할당하며, 진행·의존성·검증·완료를 관리한다. **Supervisor는 직접 구현하지 않는다.** 코드 수정, 테스트 실행, 병합 충돌 해결과 분량이 큰 탐색은 작업자에게 맡긴다. 요구사항과 결과 근거를 읽고 판단하거나 관리 기록을 갱신하는 것은 Supervisor의 역할이다.
 
+두 감독 스킬과 `agents/paseo-profiles.json`의 감독·검토 프로필 notes, `agents/paseo.md`의 "프로필"·"총괄 운영 스킬" 절 변경은 총괄 감독 lane의 PR로 모아 교차 모델 합의·독립 리뷰를 거쳐 반영한다. 다른 세션은 직접 PR을 열지 말고 bootstrap 이슈나 후속 이슈 코멘트로 근거·사례와 함께 제안한다. 총괄 감독이 없으면 저장소 소유자가 지정한 세션이 창구를 맡는다([#64](https://github.com/01-works/bootstrap/issues/64)).
+
 여러 감독 세션의 운영 감사는 [yw-chief-supervisor](../yw-chief-supervisor/SKILL.md)를 쓴다.
 
 ## 전제: 여러 사람·기기가 함께 작업한다
