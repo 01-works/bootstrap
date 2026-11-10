@@ -15,7 +15,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 - 에이전트에 Paseo 도구를 제공하는 설정(`daemon.mcp.injectIntoAgents`, 앱의 Enable Paseo tools)은 `paseo` 단계가 켠다. Supervisor가 작업자를 만들 때 필요하다.
 - 머지된 워크스페이스 자동 아카이브(`daemon.autoArchiveAfterMerge`)는 `paseo` 단계가 끈다. 이전에 켜진 기기도 다음 `paseo` 단계(자동 갱신 포함)에서 꺼진다. 병합 뒤 워크스페이스는 수동으로 아카이브한다.
 - 기본 스킬: Paseo가 `~/.claude/skills/paseo*`(Claude Code)와 `~/.agents/skills/paseo*`에 설치한다. 각 폴더의 `.paseo-managed-files.json`이 Paseo가 관리한다는 표시다. 저장소에 넣지 않는다. 데몬은 이미 설치된 스킬만 자동 갱신하고 처음 설치는 앱 설정(Orchestration skills)에서 해야 해서, `paseo` 단계가 하나도 없을 때만 데몬에 설치를 요청한다(`scripts/paseo-skills.mjs`). 앱의 내부 모듈을 쓰므로 Paseo 버전이 바뀌어 실패하면 앱 설정에서 설치한다. 앱에서 스킬을 하나도 고르지 않은 기기는 그대로 둔다. 앱의 제거(Uninstall)만 하면 다음 `paseo` 단계가 다시 설치하므로, 빼려면 선택을 비운다.
-- 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md)는 이 저장소에서 관리한다. `paseo` 단계가 같은 원본 폴더를 `~/.agents/skills/yw-supervisor`와 `~/.claude/skills/yw-supervisor`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
+- 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md)와 [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md)는 이 저장소에서 관리한다. `paseo` 단계가 각 스킬의 같은 원본 폴더를 `~/.agents/skills/<스킬 이름>`과 `~/.claude/skills/<스킬 이름>`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
 
 ## Claude API 키와 프로필
 
@@ -71,6 +71,12 @@ Paseo에서 Supervisor 프로필로 새 대화를 열고 다음처럼 요청한�
 프로필 선택만으로 스킬이 실행되지는 않는다. 스킬이 실제 작업 지시를 작업자의 `initialPrompt`에 전달한다. Paseo 도구가 보이지 않으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다. CLI로도 운영할 수 있다.
 
 스킬은 여러 사람·기기가 같은 저장소를 함께 다룬다고 가정한다. 작업 소유·진행·인계의 원장은 저장소의 이슈·PR이고, `${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor/<관리 세션 ID>/tasks.md`는 이 기기 전용 보조 기록이다. Paseo로 보이는 것은 `list_hosts`에 등록된 호스트의 에이전트뿐이라, 다른 기기의 lane은 공유 기록으로 판단한다. 무거운 작업은 그 일이 허용된 호스트에 `serverId`로 배정한다. 완료 알림에 따라 다음 조치를 진행하고, 실행 중인 작업을 반복 조회하거나 요청하지 않은 상시 감시를 만들지 않는다. 세부 규칙은 [스킬](skills/yw-supervisor/SKILL.md)을 따른다.
+
+여러 감독 세션을 함께 감사할 때는 [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md)를 쓴다. 감독 1개 운영은 `yw-supervisor`가 맡는다.
+
+> yw-chief-supervisor 스킬로 여러 감독의 lane 현황과 규칙 준수를 감사해줘. 다른 모델 계열의 독립 검토자와 지적·조치에 합의하고, 소유 감독에게 전달한 조치와 내 결정이 필요한 항목을 보고해줘.
+
+총괄 감독은 진행 중인 다른 감독의 lane을 인수·중단·정리하거나 작업자에게 직접 지시하지 않는다. 첫 목표와 이후의 모든 사용자 요청을 완료 근거와 대조하고 교차 모델 확인을 받은 완료 세션만 조건에 따라 archive한다. 감독·lane 발견과 감사 기준, 독립 검토·합의, 완료 판정·정리·보고·인계는 [스킬](skills/yw-chief-supervisor/SKILL.md)을 따른다. 감사 기록은 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor/<총괄 세션 ID>-chief/tasks.md`에 두며, 무기한 감시·heartbeat는 사용자가 요청했을 때만 둔다.
 
 Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 시각적 선택이 중요한 작업에 사용한다. API 연결·상태 관리·확정된 디자인의 단순 수정은 Builder가 기본이다. Opus를 쓸 수 없고 중요한 시각적 선택이 남았다면 Architect (Astra)가 방향·완료 기준을 정하고 Builder가 구현한다. 시각 작업과 기능 작업은 나누는 것이 유익할 때만 분리하고, 한 작업자로 충분한 작은 작업을 억지로 쪼개지 않는다. 같은 파일을 동시에 수정하지 않도록 독립 worktree 또는 순차 작업으로 배정한다. 디자인 방향이 없으면 작업자가 기존 제품에서 근거를 찾거나 중요한 선택을 질문하게 하고, 불필요한 재디자인은 피한다. Opus를 못 써서 일반 UI를 Builder에 넘기면 이유를 알리고, 같은 시각 품질을 보장한다고 말하지 않는다. UI 완료 근거에는 실제 브라우저에서 확인한 렌더링·반응형·키보드 조작·주요 흐름이 포함되어야 한다.
 

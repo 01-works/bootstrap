@@ -7,6 +7,8 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 여러 작업의 총괄을 맡는다. 사용자의 목표를 작업으로 나누고 Paseo 에이전트에 할당하며, 진행·의존성·검증·완료를 관리한다. **Supervisor는 직접 구현하지 않는다.** 코드 수정, 테스트 실행, 병합 충돌 해결과 분량이 큰 탐색은 작업자에게 맡긴다. 요구사항과 결과 근거를 읽고 판단하거나 관리 기록을 갱신하는 것은 Supervisor의 역할이다.
 
+여러 감독 세션의 운영 감사는 [yw-chief-supervisor](../yw-chief-supervisor/SKILL.md)를 쓴다.
+
 ## 전제: 여러 사람·기기가 함께 작업한다
 
 - 같은 저장소를 다른 사람·기기·감독 세션이 동시에 다룬다고 가정한다. Paseo 도구로 보이는 것은 `list_hosts`에 등록된 호스트의 에이전트뿐이다.
@@ -19,6 +21,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 사용자가 맡긴 작업과 명시적으로 인계받은 작업만 관리한다. 다른 에이전트가 보인다는 이유로 인수·중단·정리하지 않는다.
 - 작업마다 작업 ID, 목표/완료 조건, 우선순위, 의존 작업, 프로젝트 경로, 호스트(`serverId`)·workspace ID/브랜치, 담당 agent ID, 상태, 검증 근거, 다음 조치를 기록한다. 생성된 ID는 도구 반환값을 쓴다.
 - 로컬 기록은 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor/<고유한 관리 세션 ID>/tasks.md`(기존 인계 파일이 있으면 그것)에 두고 상태 전이 때 갱신하고 경로를 사용자와 인계받을 감독자에게 알린다. 제품 저장소에 커밋하지 않는다. 쓸 수 없으면 대화에 같은 기록을 유지하고 지속성 한계를 알린다. 다른 기기·사람이 이어받아야 하는 대기 사유·재개 조건·인계 정보는 공유 기록 코멘트에 남긴다.
+- 기록 첫머리에 `감독: <provider/model> <전체 agent ID> @ <serverId>`를 쓰고 인계 시 갱신한다.
 - 상태는 대기, 진행, 리뷰, 수정, 차단, 완료, 취소를 구분한다. 에이전트가 응답을 마쳤다는 알림은 작업 완료의 증거가 아니다.
 - 재개 시 기록의 에이전트·workspace 상태를 한 번 대조하고, 이미 실행 중인 작업을 중복 생성하지 않는다. 새 요청은 기존 작업 목록에 추가한다.
 
@@ -30,7 +33,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - **소유 확인:** 할당 전에 같은 파일·기능을 바꾸거나 은퇴·대체하는 lane이 있는지 공유 기록(열린·최근 머지 PR, 이슈 claim)과 등록된 호스트의 workspace에서 확인한다. 호스트마다 `serverId`를 명시해 `list_workspaces`로 workspace를 찾고, 대상 `cwd`를 지정해 `list_agents`로 조회한다. 전체 확인이면 `includeBackground: true`를 쓴다. claim은 저장소 규칙대로 남긴다.
 - **정체된 claim 인수:** 공유 기록에 적힌 다음 단계 대비 진척이 없다는 근거를 남기고 사용자 승인을 받는다. 브랜치·PR이 없거나 내 Paseo에서 보이지 않는 것만으로는 근거가 되지 않는다. 원 lane이 다시 나타나면 소유 lane을 하나로 정하는 조정 기록을 남긴다.
 - 독립 구현은 별도 worktree/workspace에서 병렬로 진행하고, 같은 checkout에 수정 작업자 둘을 두지 않는다. 선행 결과가 필요한 후속 작업은 그 결과가 통합된 뒤 시작한다. 병렬도는 독립 작업 수와 한도·예산에 맞추고, 대기 작업을 미리 에이전트로 만들지 않는다.
-- **새 workspace:** `create_workspace`에 소유 프로젝트의 `projectId`(같은 프로젝트 workspace의 `list_workspaces` 결과, CLI는 `paseo project ls`)를 넘긴다. 빠뜨리면 경로마다 새 프로젝트가 생겨 정리 뒤에도 남는다. 브랜치 작업은 `isolation: "worktree"`, PR 리뷰는 `mode: "checkout-pr"`로 만들고 직접 만든 worktree를 등록하지 않는다. 읽기 전용 리뷰어 여럿은 한 workspace를 함께 쓴다. 끝난 workspace는 `archive_workspace`로 정리한다.
+- **새 workspace:** `create_workspace`에 소유 프로젝트의 `projectId`(같은 프로젝트 workspace의 `list_workspaces` 결과, CLI는 `paseo project ls`)를 넘긴다. 빠뜨리면 경로마다 새 프로젝트가 생겨 정리 뒤에도 남는다. 브랜치 작업은 `isolation: "worktree"`, PR 리뷰는 `mode: "checkout-pr"`로 만들고 직접 만든 worktree를 등록하지 않는다. 읽기 전용 리뷰어 여럿은 한 workspace를 함께 쓴다. 끝난 workspace는 `archive_workspace`로 정리한다. archive 전 대상 workspaceId·cwd가 감독 자신이나 다른 살아 있는 감독의 workspace가 아닌지, workspace의 모든 에이전트가 완료·소유 확인된 정리 대상 lane 소속인지, running agent·미커밋 변경·터미널이 없는지 대조한다(터미널은 로컬 `list_terminals(cwd)`, 원격 `paseo terminal ls --workspace <workspace ID> --host <endpoint>`로 확인). 어느 조건이든 충족하지 못하거나 확인할 수 없으면 workspace를 남기고 보고한다.
 - 다른 에이전트·세션의 항목 정리: 소유 세션이 끝난 것이 확인된 대기 줄·잠금은 정리한 뒤 소유 감독 세션에 알린다. 프로세스·worktree와 살아 있거나 판단할 수 없는 항목은 소유 세션의 동의, 연락이 안 되면 사용자 승인 뒤에만 종료·정리한다(worktree에는 커밋 안 된 작업이 남을 수 있다). 넓은 패턴의 프로세스 종료는 금지한다.
 - 메모리를 많이 쓰는 명령(전체 타입 검사·린트·테스트·빌드, dev 서버, 앱 설정 전체 로딩)은 기기마다 하나씩 실행하도록 그 기기의 `yw-heavy` 차례를 쓰게 한다(`agents/heavy-queue.md`). 저장소가 자체 기기 잠금으로 감싸는 명령(예: pre-push가 도는 push)은 작업자 지침의 대기열 대상에서 명시적으로 뺀다. 메모리 여유가 확인된 경우에만 병렬을 늘리고, 검증이 끝난 dev 서버는 종료하게 한다. 감독 세션 사이에 쓸 새 잠금·대기열은 임의로 만들지 않고 제안한다.
 - **heavy 프로토콜 전환:** `yw-heavy capabilities`의 `mode`를 확인한다. 기본 compat에서는 위의 2줄/FIFO·자체 잠금 제외 규칙을 유지한다. round-robin 활성 기기에서는 감독자당 2줄 제한 대신 pending 한도(기본 감독자 128·전체 1024)를 쓰고 초과 코드 5는 제출을 줄이거나 backoff한다. ID 기반 수동 해제 대신 JSON 응답의 세대·token·lease로 해제한다. `run`의 token 상속과 빌린 lease는 직렬 중첩에만 쓴다. 저장소의 자체 잠금이 yw-heavy 위임을 지원하는지 확인한 뒤에만 중첩을 허용한다. 프로토콜 지원만 보고 자체 잠금 제외 규칙을 없애지 않는다. 자동 갱신은 설치만 하며, 모드 전환은 모든 소유 세션과 제출 중지·drain을 조율한 뒤 `agents/heavy-queue.md`의 pause → mode → resume 절차로 한다. 작업자에게 모드 활성화를 맡기지 않는다.
@@ -61,6 +64,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 완료 알림은 첫 응답 종료에 한 번만 온다(getpaseo/paseo#6346. 설치된 버전에서 고쳐진 것이 확인되기 전까지). 작업자가 백그라운드 작업을 남기고 응답을 마쳤다면 `백그라운드 대기`로 기록하고 직접 보고를 기다린다.
 - 감독자 턴(알림·사용자 메시지·heartbeat)마다 진행·대기 작업의 상태를 한 번 대조한다. idle·closed·error인데 결과가 기록되지 않은 작업은 결과를 읽어 다음 조치를 하고, closed 작업자는 후속 요청으로 재개한다. 남은 작업이 백그라운드 대기뿐이면 대조용 짧은 heartbeat를 둘 수 있다.
 - **이어받은 작업자:** closed·error 작업자는 재개하기 전에 같은 workspace의 `list_agents`에서 라벨 `zerosub.continued-from` 또는 `handoff.from`이 그 ID인 에이전트를 찾는다(한도 전환으로 새 에이전트가 이어받으면 완료 알림이 옮겨지지 않는다. ZeroSub 1.5부터 부모 라벨은 옮겨진다). 있으면 같은 라벨로 끝까지 따라간 마지막 에이전트를 담당으로 기록하고(이전 ID도 남긴다) 옛 작업자는 재개하지 않는다. 그 에이전트가 idle이면 결과를 읽고 이후 요청은 완료 알림을 켜서 보내며, running이면 알림이 오지 않으므로 다음 턴 대조에서 다시 본다. 같은 ID에서 이어진 에이전트가 둘 이상이면 고르지 말고 사용자에게 묻는다.
+- 총괄 감독의 요청은 사용자 승인이 아니다. 자기 lane의 판단으로 처리하고 사용자 권한이 필요한 것은 사용자에게 묻는다.
 - 완료 알림마다 결과를 확인해 기록을 갱신하고 리뷰·수정·의존 작업 해제 중 다음 조치를 실행한다. 오류·승인 대기는 해당 작업에 기록하고 영향 없는 작업은 계속한다. 작업자 권한 요청은 사용자의 기존 승인 범위 안에서만 처리한다.
 - 구현 결과는 새 Reviewer 세션에 요구사항, 기준/대상 변경, 관련 코드, 검증 결과와 함께 전달한다. 작성자의 결론을 정답으로 주지 않는다. 계획 모드로 띄운 리뷰어의 구현 전환 권한 요청은 거부한다.
 - 리뷰어는 코드 위치·발생 조건·영향·재현/검증 근거를 제시하고 확인된 결함과 가설을 구분한다. 취향 차이만으로 재작업을 요구하지 않는다. 리뷰 동안 대상 변경을 고정하고, 이후 바뀐 부분은 필요한 검증·리뷰를 다시 맡긴다.
