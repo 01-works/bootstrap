@@ -374,6 +374,110 @@ test('flock을 쥔 프로세스가 kill -9되면 다음 작업이 바로 진행�
   assert.equal(await f.finish(p, 1500), 0); assert.equal(p.out, 'ACQUIRED A\n');
 });
 
+// main을 실행하지 않고 실제 함수 정의를 불러 lock_queue의 오류·시간 경계를 검증한다.
+function queueLockHarness(f, body) {
+  const path = join(f.dir, 'queue-lock-harness.sh');
+  const source = readFileSync(script, 'utf8');
+  assert.match(source, /^main "\$@"; exit \$\?$/m);
+  writeFileSync(path, source.replace(/^main "\$@"; exit \$\?$/m, '') + '\ninit\n' + body);
+  return f.start([path]);
+}
+
+test('queue lock: 경합만 재시도, backoff·jitter 상한, FD 없는 sleep, 60초 간격 경고', async t => {
+  const f = fixture(t);
+  const p = queueLockHarness(f, `
+SECONDS=0
+attempts=0
+LOCKF=try_lock
+try_lock() {
+  [ "$*" = '-s -t 0 9' ] || return 64
+  attempts=$((attempts + 1))
+  [ "$attempts" -gt 6 ]
+  case $? in 0) return 0;; *) return 75;; esac
+}
+sleep() {
+  [ ! -e "$EL" ] || return 91
+  /bin/bash -c 'if { : >&9; } 2>/dev/null; then exit 92; fi' || return 93
+  printf 'sleep=%s\\n' "$1"
+  SECONDS=$((SECONDS + 30))
+}
+lock_queue || exit 94
+[ "$LOCKED" = 1 ] && [ -f "$EL" ] || exit 95
+printf 'attempts=%s\\n' "$attempts"
+unlock_queue
+if { : >&9; } 2>/dev/null; then exit 96; fi
+`);
+  assert.equal(await f.finish(p), 0, p.err);
+  const delays = [...p.out.matchAll(/sleep=([0-9.]+)/g)].map(m => Number(m[1]));
+  assert.equal(delays.length, 6);
+  for (const [i, min] of [0.1, 0.2, 0.4, 0.5, 0.5, 0.5].entries()) {
+    assert.ok(delays[i] >= min && delays[i] <= min * 2, `delay ${i}: ${delays[i]}`);
+  }
+  assert.match(p.out, /attempts=7/);
+  assert.equal(p.err.split('대기열 잠금을 기다리는 중:').length - 1, 2);
+  assert.equal(existsSync(f.e), false);
+});
+
+for (const rc of [65, 74, 127]) {
+  test(`queue lock: 경합이 아닌 오류 ${rc}는 재시도 없이 FD를 닫는다`, async t => {
+    const f = fixture(t);
+    const p = queueLockHarness(f, `
+LOCKF=try_lock
+try_lock() { echo attempt; return ${rc}; }
+sleep() { echo unexpected-sleep; return 90; }
+lock_queue
+[ "$?" = 1 ] && [ "$LOCKED" = 0 ] && [ ! -e "$EL" ] || exit 91
+if { : >&9; } 2>/dev/null; then exit 92; fi
+`);
+    assert.equal(await f.finish(p), 0, p.err);
+    assert.equal(p.out, 'attempt\n');
+    assert.match(p.err, new RegExp(`lockf 실패 \\(${rc}\\)`));
+  });
+}
+
+test('queue lock: sleep 오류와 잠금 파일 열기 실패도 FD·편집 표지를 남기지 않는다', async t => {
+  for (const openError of [false, true]) {
+    const f = fixture(t);
+    if (openError) mkdirSync(f.env.YW_HEAVY_FLOCK);
+    const p = queueLockHarness(f, `
+LOCKF=try_lock
+try_lock() { return 75; }
+sleep() { return 1; }
+${openError ? 'exec 9>/dev/null' : ''}
+lock_queue
+[ "$?" = 1 ] && [ "$LOCKED" = 0 ] && [ ! -e "$EL" ] || exit 91
+if { : >&9; } 2>/dev/null; then exit 92; fi
+`);
+    assert.equal(await f.finish(p), 0, p.err);
+    assert.match(p.err, openError ? /대기열 잠금 파일을 열 수 없음/ : /재시도 대기 실패/);
+  }
+});
+
+for (const mode of ['compat', 'round-robin']) {
+  for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) {
+    test(`queue lock 경합 중 ${signal} (${mode}): 잠금 해제 후 취소·명령 미실행`, async t => {
+      const f = fixture(t);
+      if (mode === 'round-robin') enable(f);
+      const holder = f.start(['-c', `exec 9>>${quote(f.env.YW_HEAVY_FLOCK)}; /usr/bin/lockf -s -t 0 9 || exit; echo held; read -r _`]);
+      await f.wait(() => holder.out.includes('held'), 'flock held');
+      const hook = f.hookWith(`sleep() { echo retrying >&2; /bin/sleep "$@"; }`);
+      const p = f.cliEnv({ BASH_ENV: hook }, 'run', 'SIGNAL', 'w', 'S', '--', '/bin/sh', '-c', `touch ${quote(join(f.dir, 'ran'))}`);
+      await f.wait(() => p.err.includes('retrying'), 'contention sleep');
+      p.kill(signal);
+      await pause(250);
+      assert.equal(existsSync(f.e), false, '경합 중 편집 표지를 만들지 않는다');
+      holder.stdin.end('release\n');
+      assert.equal(await f.finish(holder), 0);
+      assert.equal(await f.finish(p), code, p.err);
+      assert.equal(existsSync(join(f.dir, 'ran')), false);
+      assert.equal(existsSync(f.x), false);
+      assert.equal(existsSync(f.e), false);
+      assert.equal(read(f.q).trim(), '');
+      assert.equal(f.sync('run', 'NEXT', 'w', 'S', '--', 'true').status, 0, '취소 후에도 큐 진행');
+    });
+  }
+}
+
 test('구형식 디렉터리 편집 lock: 죽은 owner는 회수, 판단 불가는 보존', async t => {
   const f = fixture(t);
   mkdirSync(f.e); writeFileSync(join(f.e, 'owner.txt'), `{"pid":${dead},"task":"T"}\n`);
@@ -819,8 +923,9 @@ test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉
   const f = fixture(t); enable(f);
   const sleeps = observeFastPolling(f);
   const h = await holding(f, 'A0', 'A');
-  const order = join(f.dir, 'order');
-  const start = (id, sup) => f.cli('run', id, 'w', sup, '--', '/bin/sh', '-c', `echo ${id} >> ${quote(order)}`);
+  const order = join(f.dir, 'order'), inside = join(f.dir, 'inside'), overlaps = join(f.dir, 'overlaps');
+  const start = (id, sup) => f.cli('run', id, 'w', sup, '--', '/bin/sh', '-c',
+    `mkdir ${quote(inside)} || { echo ${id} >> ${quote(overlaps)}; exit 90; }; echo ${id} >> ${quote(order)}; /bin/sleep .05; rmdir ${quote(inside)}`);
   const a1 = start('A1', 'A'); await f.wait(() => read(f.q).includes('A1 '), 'A1 enqueued');
   const a2 = start('A2', 'A'); await f.wait(() => read(f.q).includes('A2 '), 'A2 enqueued');
   const a3 = start('A3', 'A'); await f.wait(() => read(f.q).includes('A3 '), 'A3 enqueued');
@@ -837,6 +942,9 @@ test('v3 감독자 순환·감독자 내 FIFO·재시도 순서, 2줄 초과 즉
   assert.ok(read(sleeps).trim(), '실제로 polling하며 대기했다');
   assert.doesNotMatch(read(sleeps), /^30$/m, '느린 poll 경로를 호출하지 않는다');
   assert.deepEqual(read(order).trim().split('\n'), ['B1', 'C1', 'A1', 'B2', 'A2', 'A3']);
+  assert.equal(read(overlaps), '', '동시 heavy 실행은 최대 1개');
+  assert.equal(read(f.q).trim(), '', '모든 대기자가 최종 완료');
+  assert.equal(existsSync(f.x), false, '마지막 release까지 완료');
   const log = events(f);
   assert.equal(log.filter(e => e.event === 'enqueue' && e.requestId === 'A2').length, 1);
   assert.equal(log.filter(e => e.event === 'start').length, 7);
@@ -1058,6 +1166,8 @@ test('R5-no-reclaim: 취소 큐 삭제 직후 SIGKILL된 감독자는 다른 대
   await f.wait(() => read(f.q + '.rotation').includes('S\n'), 'S registered');
   // B가 편집 잠금 밖에서 대기하게 해 재등록 전에 다른 대기자가 ring을 복구할 가능성을 없앤다.
   const blockB = f.hookWith(`sleep() {
+    # 등록 전 lock_queue의 backoff는 그대로 진행하고, 등록 후 fast poll에서만 멈춘다.
+    if [ "$1" != "$YW_HEAVY_FAST_POLL" ]; then /bin/sleep "$@"; return; fi
     : > "$YW_HEAVY_QUEUE.b-sleep"
     while [ ! -e "$YW_HEAVY_QUEUE.allow-b" ]; do /bin/sleep .01; done
     /bin/sleep "$@"

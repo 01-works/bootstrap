@@ -212,14 +212,17 @@ note() {
 # ---- queue lock: 커널 flock + 구버전을 막는 호환 편집 lock -----------------------
 
 lock_queue() {
-  local rc
+  local rc backoff=100 wait_ms wait_seconds warned_at="$SECONDS"
   # shellcheck disable=SC2093
   if ! exec 9>>"$FL"; then
+    exec 9>&-
     say "대기열 잠금 파일을 열 수 없음: $FL"
     return 1
   fi
   while :; do
-    "$LOCKF" -s -t 60 9
+    # macOS lockf의 FD 경로는 -t가 양수이면 sleep 없이 LOCK_NB를 반복한다.
+    # 한 번만 시도하고 셸에서 쉰다. flock 파일·FD는 재시도 사이에도 그대로 유지한다.
+    "$LOCKF" -s -t 0 9
     rc=$?
     [ "$rc" = 0 ] && break
     if [ "$rc" != 75 ]; then
@@ -227,7 +230,20 @@ lock_queue() {
       say "lockf 실패 ($rc): $FL"
       return 1
     fi
-    say "대기열 잠금을 기다리는 중: $FL"
+    if [ $((SECONDS - warned_at)) -ge 60 ]; then
+      say "대기열 잠금을 기다리는 중: $FL"
+      warned_at="$SECONDS"
+    fi
+    # 100→200→400→500ms + 같은 범위 jitter, 최대 1초. bash 3.2 내장만 쓴다.
+    wait_ms=$((backoff + RANDOM % (backoff + 1)))
+    printf -v wait_seconds '%d.%03d' "$((wait_ms / 1000))" "$((wait_ms % 1000))"
+    if ! sleep "$wait_seconds" 9>&-; then
+      exec 9>&-
+      say "대기열 잠금 재시도 대기 실패: $FL"
+      return 1
+    fi
+    backoff=$((backoff * 2))
+    [ "$backoff" -le 500 ] || backoff=500
   done
   LOCKED=1
   edit_lock
