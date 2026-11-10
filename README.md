@@ -146,7 +146,7 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 
 ## 새 기기 없이 시험하기
 
-설정 병합·파일 보존·실패 판정은 `node --test scripts/*.test.mjs`로 검사한다. PR마다 같은 테스트를 GitHub Actions(`.github/workflows/test.yml`)가 macOS에서 돌린다. 테스트는 임시 경로와 외부 명령 대역을 사용하며 실제 홈·브라우저·인증을 바꾸지 않는다. 새 Mac의 전체 설치나 실제 브라우저 연결은 별도 검증이다.
+설정 병합·파일 보존·실패 판정은 `node --test scripts/*.test.mjs agents/skills/*/*.test.mjs`로 검사한다. PR마다 같은 테스트를 GitHub Actions(`.github/workflows/test.yml`)가 macOS에서 돌린다. 테스트는 임시 경로와 외부 명령 대역을 사용하며 실제 홈·브라우저·인증을 바꾸지 않는다. 새 Mac의 전체 설치나 실제 브라우저 연결은 별도 검증이다.
 
 전체 설치 검증에는 별도 Mac이나 macOS 가상 머신을 사용한다. `HOME`만 임시 경로로 바꾸는 방식은 외부 설치 프로그램의 시스템 변경까지 격리하지 못한다.
 
