@@ -21,8 +21,8 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 사용자가 맡긴 작업과 명시적으로 인계받은 작업만 관리한다. 다른 에이전트가 보인다는 이유로 인수·중단·정리하지 않는다.
 - 작업마다 작업 ID, 목표/완료 조건, 우선순위, 의존 작업, 프로젝트 경로, 호스트(`serverId`)·workspace ID/브랜치, 담당 agent ID, 상태, 검증 근거, 다음 조치를 기록한다. 생성된 ID는 도구 반환값을 쓴다.
 - 로컬 기록은 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor/<고유한 관리 세션 ID>/tasks.md`(기존 인계 파일이 있으면 그것)에 두고 상태 전이 때 갱신하고 경로를 사용자와 인계받을 감독자에게 알린다. 제품 저장소에 커밋하지 않는다. 쓸 수 없으면 대화에 같은 기록을 유지하고 지속성 한계를 알린다. 다른 기기·사람이 이어받아야 하는 대기 사유·재개 조건·인계 정보는 공유 기록 코멘트에 남긴다.
-- 기록 첫머리에 `감독: <provider/model> <전체 agent ID> @ <serverId>`를 쓰고 인계 시 갱신한다.
-- 상태는 대기, 진행, 리뷰, 수정, 차단, 완료, 취소를 구분한다. 에이전트가 응답을 마쳤다는 알림은 작업 완료의 증거가 아니다.
+- 기록 첫머리에 `감독: <provider/model> <전체 agent ID> @ <serverId>`를 쓰고 바로 아래에 `상태: 진행|완료`를 쓰며 인계 시 갱신한다. 대기·차단·미결 보고가 있으면 진행이며, 모두 해소했을 때 완료로 바꾼다. 새 작업을 받으면 진행으로 되돌린다. 시작·인계·재개 시 자신의 `yw.role=supervisor` 라벨을 확인하고, 없으면 `update_agent`로 설정한 뒤 다시 조회한다. 실패하면 기록으로 보완한다. injected MCP `update_agent`는 라벨 값으로 문자열만 받아 라벨을 지울 수 없으므로, `yw.role`에는 정해진 값 `supervisor`만 붙이고 시험용·임시 값은 붙이지 않는다. 이 라벨과 상태는 발견·현황 확인용이며 소유권이나 archive 근거를 대신하지 않는다.
+- 작업 상태는 대기, 진행, 리뷰, 수정, 차단, 완료, 취소를 구분한다. 에이전트가 응답을 마쳤다는 알림은 작업 완료의 증거가 아니다.
 - 재개 시 기록의 에이전트·workspace 상태를 한 번 대조하고, 이미 실행 중인 작업을 중복 생성하지 않는다. 새 요청은 기존 작업 목록에 추가한다.
 
 ## 배정
@@ -60,14 +60,15 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 ## archive 전 공통 안전 대조
 
-에이전트·workspace를 archive하는 모든 경로에 적용한다. 부모 archive는 `paseo.parent-agent-id`를 따라 후손까지 전파될 수 있다. CLI에 `--force`를 주지 않아도 후손은 보호되지 않는다(Paseo 0.15.3 사고).
+에이전트·workspace를 archive하는 모든 경로에 적용한다. 부모 archive는 `paseo.parent-agent-id`를 따라 후손을 연쇄 archive하거나 부모 관계를 제거할 수 있다. Paseo 0.15.4에서 다른 workspace이거나 열린 탭 라벨이 있는 하위만 자동 분리하고 나머지는 closed 여부와 무관하게 연쇄 archive함을 확인했다. CLI에 `--force`를 주지 않아도 후손은 보호되지 않는다(Paseo 0.15.3 사고).
 
-- **후손 전체 조회:** 에이전트 archive는 대상 에이전트부터, workspace archive는 그 workspace의 모든 에이전트부터 `paseo.parent-agent-id` 값이 현재 노드 ID인 자식을 찾고 재귀로 끝까지 조회한다. 직계 자식이나 같은 workspace 목록만으로 끝내지 않는다. 연쇄는 같은 호스트 registry 안에서만 전파된다. 각 노드에서 `paseo agent ls -g --background --label paseo.parent-agent-id=<전체 ID> --json`을 반복하고 원격은 `--host <검증한 endpoint>`를 붙인다. CLI는 cursor로 끝까지 조회한다. MCP `list_agents`는 최대 200개이며 cursor가 없고 시간 필터도 있으므로 전체 후손 조회 수단으로 쓰지 않는다(Paseo 0.15.3). 다른 workspace·별도 탭 자식의 자동 detach 분기를 보호 근거로 삼지 않고 후손 대조에 포함한다. 관계·조회 범위를 확인할 수 없으면 보류한다. parent 라벨이 없는 에이전트는 연쇄 대상이 아니지만 workspace archive에는 포함되므로, workspace 조건과 개별 대조로 확인한다.
-- **범위·완료·소유:** 정리 대상 밖이거나 완료·소유를 확인하지 못한 후손이 하나라도 있으면 기본적으로 archive를 보류한다. 부모의 완료·closed 상태만으로 후손의 완료를 판단하지 않는다.
+- **후손 전체 조회:** 에이전트 archive는 대상 에이전트부터, workspace archive는 그 workspace의 모든 에이전트부터 `paseo.parent-agent-id` 값이 현재 노드 ID인 자식을 찾고 재귀로 끝까지 조회한다. 직계 자식이나 같은 workspace 목록만으로 끝내지 않는다. 연쇄는 같은 호스트 registry 안에서만 전파된다. 각 노드에서 `paseo agent ls -g --background --label paseo.parent-agent-id=<전체 ID> --json`을 반복하고 원격은 `--host <검증한 endpoint>`를 붙인다. CLI는 cursor로 끝까지 조회한다. MCP `list_agents`는 최대 200개이며 cursor가 없어 전체 후손 조회 수단으로 쓰지 않는다. `sinceHours`는 미보관 에이전트를 시간으로 제외하지 않고, 보관된 항목을 포함할 때 그 항목의 활동 시각에 적용된다(Paseo 0.15.3). 다른 workspace·별도 탭 자식의 자동 detach 분기를 보호 근거로 삼지 않고 후손 대조에 포함한다. 관계·조회 범위를 확인할 수 없으면 보류한다. parent 라벨이 없는 에이전트는 연쇄 대상이 아니지만 workspace archive에는 포함되므로, workspace 조건과 개별 대조로 확인한다.
+- **범위·완료·소유:** closed를 포함한 모든 후손과 인계 체인을 완료·소유 판정에 포함한다. 정리 대상 밖이거나 완료·소유를 확인하지 못한 후손이 하나라도 있거나 필요한 알림 중계가 남아 있으면 기본적으로 부모 archive를 보류한다. 부모의 완료·closed 상태만으로 후손의 완료를 판단하지 않는다.
 - **권한 내 분리:** 기존 권한 범위에서 `paseo agent detach <전체 agent ID>`로 분리할 때는 소유와 현재·새 보고 경로(`{serverId, agentId}`, 자동 알림 의존 여부)를 먼저 확인한다. 다른 소유자의 살아 있는 세션 detach는 일반 정리 권한에 포함되지 않는다. 소유 감독의 동의를 받고, 연락이 안 되면 사용자 승인을 받는다. 감독 세션 자체를 detach할 때 동의 주체는 그 감독 자신이나 사용자이며, archive하려는 부모의 동의로 대신하지 않는다. 실행 뒤 parent 라벨이 제거됐는지, workspace·실행 상태가 보존됐는지 readback하고 새 보고 경로를 기록한다. 자동 알림이 새 감독에게 이어진다고 가정하지 말고 후속 결과의 직접 보고 경로를 해당 세션에 알린다.
 - **실행 직전 대조:** detach 뒤에는 남은 후손 전체를 다시 조회하고, archive 호출 직전에 대상·후손의 관계와 상태를 재확인한다. 조회 누락, 분리 실패, 실행 직전 관계·상태 변화(후손의 running·백그라운드 대기·새 요청 포함)가 있으면 archive를 보류하고 이유를 보고한다. `--force`나 MCP로 우회하지 않는다.
-- **에이전트 archive 경로:** 로컬·원격 모두 `paseo agent archive <전체 agent ID>`를 `--force` 없이 사용하고 원격에는 `--host <검증한 endpoint>`를 붙인다. MCP `archive_agent`는 실행 중인 대상도 중단시키므로 쓰지 않는다. CLI의 running 거절은 대상 하나의 사전 검사로 위험을 줄일 뿐, 검사 이후 실행·관계 변화나 후손의 running을 보호하는 원자적 보장은 아니다. 거절 시 보존하고 거절 사유와 실제 상태를 기록한다.
-- **workspace 추가 조건:** 대상 workspaceId·cwd가 감독 자신이나 다른 살아 있는 감독의 workspace가 아닌지, workspace의 모든 에이전트가 완료·소유 확인된 정리 대상 lane 소속인지, running agent·미커밋 변경·터미널이 없는지 대조한다(터미널은 로컬 `list_terminals(cwd)`, 원격 `paseo terminal ls --workspace <workspace ID> --host <endpoint>`로 확인). 어느 조건이든 충족하지 못하거나 확인할 수 없으면 workspace를 남기고 보고한다.
+- **에이전트 archive 경로:** 로컬·원격 모두 `paseo agent archive <전체 agent ID>`를 `--force` 없이 사용하고 원격에는 `--host <검증한 endpoint>`를 붙인다. MCP `archive_agent`는 실행 중인 대상도 중단시키므로 쓰지 않는다. CLI의 running 거절은 대상 하나의 사전 검사로 위험을 줄일 뿐, 검사 이후 실행·관계 변화나 후손의 running을 보호하는 원자적 보장은 아니다. 이미 archive된 응답은 아래 상태 변경 확인을 따르고, 그 밖의 거절 시 보존하고 거절 사유와 실제 상태를 기록한다.
+- **상태 변경 확인:** 라벨·heartbeat/schedule·archive 상태를 바꾼 뒤에는 대상 ID의 실제 상태를 다시 읽고 확인 결과를 기록한다. 성공 반환만으로 적용됐다고 쓰지 않는다. 에이전트 archive 뒤에는 `paseo agent inspect <전체 ID> --json`의 `Archived`·`ArchivedAt`과 부모 관계(`ParentAgentId`)를 대상 및 영향받는 하위에서 확인한다(원격은 검증한 `--host` 사용). 활성 목록에서 사라진 것만으로 성공을 판정하지 않는다. 이미 archive된 경우 기본 출력은 `Error: Agent … is already archived`이며 `--json`에서만 `AGENT_ALREADY_ARCHIVED` 코드가 나온다. 어느 출력이든 같은 readback으로 `Archived: true`와 `ArchivedAt`을 확인한 뒤 성공으로 처리하고, 확인할 수 없으면 보류한다.
+- **workspace 추가 조건:** 구성원은 `list_agents(cwd, includeBackground: true, limit: 200)`로 조회하고 결과가 200개면 전체로 간주하지 않고 보류하거나 `paseo agent ls -g --background --json`의 전체 결과를 대상 `cwd`로 거른다(원격은 검증한 `--host` 사용). 대상 workspaceId·cwd가 감독 자신이나 다른 살아 있는 감독의 workspace가 아닌지, workspace의 모든 에이전트가 완료·소유 확인된 정리 대상 lane 소속인지, running agent·미커밋 변경·터미널이 없는지 대조한다(터미널은 로컬 `list_terminals(cwd)`, 원격 `paseo terminal ls --workspace <workspace ID> --host <endpoint>`로 확인). 어느 조건이든 충족하지 못하거나 확인할 수 없으면 workspace를 남기고 보고한다.
 
 ## 진행과 검증
 
@@ -75,20 +76,20 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 완료 알림은 첫 응답 종료에 한 번만 온다(getpaseo/paseo#6346. 설치된 버전에서 고쳐진 것이 확인되기 전까지). 작업자가 백그라운드 작업을 남기고 응답을 마쳤다면 `백그라운드 대기`로 기록하고 직접 보고를 기다린다.
 - 감독자 턴(알림·사용자 메시지·heartbeat)마다 진행·대기 작업의 상태를 한 번 대조한다. idle·closed·error인데 결과가 기록되지 않은 작업은 결과를 읽어 다음 조치를 하고, closed 작업자는 후속 요청으로 재개한다. 남은 작업이 백그라운드 대기뿐이면 대조용 짧은 heartbeat를 둘 수 있다.
 - **이어받은 작업자:** closed·error 작업자는 재개하기 전에 같은 workspace의 `list_agents`에서 라벨 `zerosub.continued-from` 또는 `handoff.from`이 그 ID인 에이전트를 찾는다(한도 전환으로 새 에이전트가 이어받으면 완료 알림이 옮겨지지 않는다. ZeroSub 1.5부터 부모 라벨은 옮겨진다). 있으면 같은 라벨로 끝까지 따라간 마지막 에이전트를 담당으로 기록하고(이전 ID도 남긴다) 옛 작업자는 재개하지 않는다. 그 에이전트가 idle이면 결과를 읽고 이후 요청은 완료 알림을 켜서 보내며, running이면 알림이 오지 않으므로 다음 턴 대조에서 다시 본다. 같은 ID에서 이어진 에이전트가 둘 이상이면 고르지 말고 사용자에게 묻는다.
-- 총괄 감독의 요청은 사용자 승인이 아니다. 자기 lane의 판단으로 처리하고 사용자 권한이 필요한 것은 사용자에게 묻는다.
+- 총괄 감독의 요청은 사용자 승인이 아니다. 자기 lane의 판단으로 처리하고 사용자 권한이 필요한 것은 사용자에게 묻는다. 결과 보고를 요청받으면 요청 식별자와 총괄의 `{serverId, agentId}`를 기록한다. 작업자에게 넘긴 뒤에도 해당 조치의 최종 결과·검증 근거 또는 차단·필요 결정을 지정된 총괄에게 `send_agent_prompt`로 직접 보고한다. 자기 lane 전체 종료를 기다리지 않는다. 보고에는 `activeTurnBehavior: "steer"`, `notifyOnFinish: false`를 쓴다.
 - 완료 알림마다 결과를 확인해 기록을 갱신하고 리뷰·수정·의존 작업 해제 중 다음 조치를 실행한다. 오류·승인 대기는 해당 작업에 기록하고 영향 없는 작업은 계속한다. 작업자 권한 요청은 사용자의 기존 승인 범위 안에서만 처리한다.
 - 구현 결과는 새 Reviewer 세션에 요구사항, 기준/대상 변경, 관련 코드, 검증 결과와 함께 전달한다. 작성자의 결론을 정답으로 주지 않는다. 계획 모드로 띄운 리뷰어의 구현 전환 권한 요청은 거부한다.
 - 리뷰어는 코드 위치·발생 조건·영향·재현/검증 근거를 제시하고 확인된 결함과 가설을 구분한다. 취향 차이만으로 재작업을 요구하지 않는다. 리뷰 동안 대상 변경을 고정하고, 이후 바뀐 부분은 필요한 검증·리뷰를 다시 맡긴다.
 - 지적마다 `수정 완료 / 근거를 들어 기각 / 미해결`을 기록한다. 수정은 담당 구현자에게 보내 관련 검증을 다시 실행하게 한다. 권한·인증, 데이터 이전, 공개 API 호환성, 동시성처럼 영향이 큰 지적이나 상충된 근거는 Deep Reviewer에 맡기고, 새 근거 없는 반복 논쟁은 재현 작업이나 사용자 판단으로 넘긴다. 이슈 범위를 넘는 요구는 완료 조건·실제 결함 근거로 거르고, 수정 루프마다 새 결함이 나오면 과설계 신호로 보고 범위 축소·보류·종료를 제안한다.
 - 통합은 Builder에 맡기고 통합 후 검증을 받는다. 개별 worktree의 통과를 통합 결과의 통과로 보고하지 않는다. 커밋·병합·배포·외부 전송은 사용자 요청 범위와 저장소의 PR·검사 규칙을 따르고, push 전에는 검증 중 만든 빌드 산출물을 정리하게 한다.
 - 완료 조건을 충족하고 필요한 검증이 통과하며 중요한 미해결 문제가 없을 때 완료한다. 검증하지 못한 항목과 사용자가 수용해야 할 제약은 명확히 남긴다.
-- **보고:** 작업별 상태, 결과, 차단 원인, 다음 조치와 필요한 결정만 간결하게 전한다. 관측한 사실과 추정을 구분하고, 다른 lane·기기에 대한 판단에는 근거로 삼은 공유 기록을 밝힌다. 모든 작업이 끝나면 종료한다. 무기한 감시나 heartbeat/schedule은 사용자가 요청한 경우에만 두고, 백그라운드 대기 대조용 heartbeat는 대기가 끝나면 삭제한다. heartbeat/schedule을 만들거나 지우면 ID·목적·해제 조건을 관리 기록에 남긴다(다른 세션은 heartbeat를 조회할 수 없어 이 기록으로 확인한다).
+- **보고:** 작업별 상태, 결과, 차단 원인, 다음 조치와 필요한 결정만 간결하게 전한다. 관측한 사실과 추정을 구분하고, 다른 lane·기기에 대한 판단에는 근거로 삼은 공유 기록을 밝힌다. 모든 작업이 끝나면 종료한다. 무기한 감시나 heartbeat/schedule은 사용자가 요청한 경우에만 두고, 백그라운드 대기 대조용 heartbeat는 대기가 끝나면 삭제한다. heartbeat/schedule을 만들거나 지우면 ID·목적·해제 조건을 관리 기록에 남긴다(다른 세션의 heartbeat는 MCP로 조회할 수 없으며, 같은 호스트 저장소의 직접 대조는 yw-chief-supervisor의 확인 조건을 따른다). 라벨·heartbeat/schedule·archive 상태 변경 후 확인은 [공통 대조의 상태 변경 확인](#archive-전-공통-안전-대조)을 따른다.
 
 ## 감독자 전체 인계
 
 Opus 한도 소진·접속 불가 시 Supervisor (Astra)로, 또는 사용자가 지정한 감독자(다른 기기일 수 있다)로 인계한다. 작업이 어렵다는 이유로 모델을 바꾸지 않는다.
 
-- 인계 범위는 **관리 중인 모든 작업**이다. 작업 목록, 우선순위·의존성, 호스트·workspace·브랜치, 모든 담당 `{serverId, agentId}`, 결정·검증 결과·미해결 문제, 대기 중인 승인, 다음 조치를 전달한다. 다른 기기에서도 이어받을 수 있도록 각 작업의 공유 기록에도 인계 코멘트를 남긴다. 로컬 기록 경로는 같은 기기일 때만 전달 수단이 된다.
+- 인계 범위는 **관리 중인 모든 작업**이다. 작업 목록, 우선순위·의존성, 호스트·workspace·브랜치, 모든 담당 `{serverId, agentId}`, 결정·검증 결과·미해결 문제, 대기 중인 승인, 미결 결과 보고 요청과 수신자의 `{serverId, agentId}`, 다음 조치를 전달한다. 다른 기기에서도 이어받을 수 있도록 각 작업의 공유 기록에도 인계 코멘트를 남긴다. 로컬 기록 경로는 같은 기기일 때만 전달 수단이 된다.
 - 현재 감독자가 이미 중단되었다면 새 감독자가 공유 기록과 로컬 기록을 읽고 이어받을 수 있어야 한다.
 - 새 감독자는 기록과 실제 상태를 대조하고, 작업자들에게 후속 결과를 보낼 자신의 `{serverId, agentId}`를 알린다. 자식 에이전트의 부모와 자동 알림 수신자는 바뀌지 않는다. 알림이 이전 감독자에게만 오면 이전 감독자가 전달하거나, 새 감독자가 명시적 후속 요청에 완료 알림을 설정한다. 실행 중인 작업에 중복 실행 지시를 보내거나 기존 작업자를 다시 만들지 않는다.
 - 인계 확인 후 이전 감독자는 추가 할당을 멈추고 관리 기록의 소유자를 새 감독자로 바꾼다.
