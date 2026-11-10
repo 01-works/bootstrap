@@ -56,7 +56,7 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
    ```
 
    - **미확인:** 수집기나 입력으로 확인할 수 있었는데 확인하지 못한 조건이다. 관계·보호 자료의 `gaps`, PR 미조회, 그 cwd의 터미널 관측 없음, git 명령 실패가 해당한다. 미확인 조건이 있는 항목은 배치 승인 후보가 되지 않는다.
-   - **남은 확인(`remainingChecks`):** 수집기가 원래 확인하지 않는 조건이다. 프로세스 사용, workspace script 실행 상태, teardown 내용과 영향이 해당한다. 배치 승인 후보에 이 목록이 붙으며, 모델이 실행 직전에 모두 확인하기 전에는 A에 올리지 않는다.
+   - **남은 확인(`remainingChecks`):** 수집기가 원래 확인하지 않는 조건이다. 프로세스 사용, workspace script 실행 상태, teardown 내용과 영향, workspace ID 기준 터미널이 해당한다. 수집기의 터미널 판정은 cwd 기준이므로, workspace 후보에는 목록에 없더라도 workspace ID 기준 터미널 확인이 늘 남는다. 배치 승인 후보에 이 목록이 붙으며, 모델이 실행 직전에 모두 확인하기 전에는 A에 올리지 않는다.
 
 5. **본문 발췌:** 후보의 마지막 사용자 요청과 마지막 응답이 필요하면, 새 출력 경로(예: `<실행 디렉터리>/excerpts`)를 주고 `--excerpts`를 붙여 다시 실행한다. 처음 결과는 그대로 둔다. 수집기는 provider 이력 파일(Claude transcript, Codex rollout)을 직접 읽는다. 찾지 못한 세션은 발췌 없음으로 남기고, `get_agent_activity`로 대신 읽지 않는다.
 6. **누락 확인:** 결과의 메타(호스트, 수집 시각, 옵션)와 `gaps`(파싱 실패, 명령 실패, 누락, 저장값 응답, 발췌 잘림)를 확인한다. 수집이 불완전한 범위는 판단 불가로 둔다.
@@ -101,7 +101,7 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 - **보존 사유:** 위 표의 사유. 여러 개일 수 있다.
 - **정리 판정:** 제외 / 항목별 결정 / 배치 승인 후보. 실행 단계에서는 승인됨 / 적용 확인 / 보류 / 부분 실패를 덧붙인다.
 
-수집기가 내는 분류는 초안이다. 배치 승인 후보(A)로 올리려면 아래 완료 근거와 "자원별 정리 조건"이 **모두 확인돼야** 한다. `gaps`, 명령 오류, provider 불가 등으로 확인하지 못한 조건은 충족한 것으로 치지 않는다.
+수집기가 내는 분류는 초안이다. 초안에서 `supervisor_scope`가 붙은 항목은 review로 나오지만, 계획에서는 C(감독 관리 범위)로 옮긴다. 경계 절의 세 조건을 확인한 것만 다시 검토한다. 배치 승인 후보(A)로 올리려면 아래 완료 근거와 "자원별 정리 조건"이 **모두 확인돼야** 한다. `gaps`, 명령 오류, provider 불가 등으로 확인하지 못한 조건은 충족한 것으로 치지 않는다.
 
 **판단 순서**
 
@@ -158,7 +158,7 @@ archive하면 그 에이전트의 heartbeat에 완료 처리가 시도된다. �
 - 구성원은 MCP 목록과 저장 레코드의 `workspaceId`를 대조해 확정한다. 보관된 구성원도 보호 대조에 포함한다.
 - 비보관 구성원이 모두 이번 계획에서 archive되고 readback까지 끝났다. 또는 비보관 구성원이 없다.
 - 허브, schedule cwd, 감독 관리 범위가 아니다.
-- 터미널과 실행 중인 workspace script가 없다.
+- 터미널과 실행 중인 workspace script가 없다. workspace archive는 cwd가 아니라 **workspaceId에 속한 터미널을 모두 종료**하며, 에이전트가 만든 터미널은 cwd와 상관없이 그 에이전트의 workspace에 속한다. 그래서 전역 `list_terminals`의 cwd 목록은 터미널이 없다는 근거가 되지 않는다. archive 직전에 workspace ID 기준(`paseo terminal ls --workspace <workspace ID> --json`)으로 확인한다. 이 조회를 쓸 수 없으면 그 workspace는 보류한다.
 - 제거할 실제 경로를 다른 곳에서 쓰지 않는다. realpath와 경로 포함 관계로 다음을 확인한다: 자기 작업, 다른 workspace, 에이전트, schedule, 터미널·script, 관측 가능한 프로세스.
 
 디렉터리 처리는 workspace 종류에 따라 다르다.
@@ -241,7 +241,8 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
    - 후손·이어받기·구독의 추가와 변경
    - heartbeat·schedule
    - workspace 구성원과 터미널
-   - git HEAD, 변경, untracked, 등록, 잠금
+   - git HEAD, 변경, untracked, ignored, 등록, 잠금
+   - teardown 정의와 내용
    - 다른 정리 주체가 이미 바꾼 상태
 
    안전에 영향을 주는 차이가 있으면 **그 항목과 그 항목에 의존하는 부모·workspace만** 보류한다. 대상을 조용히 늘리지 않는다.
@@ -251,8 +252,8 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
    - 다른 소유자의 세션을 분리해서 정리를 가능하게 만들지 않는다.
    - "이미 보관됨" 응답은 공통 절에 따라 readback한 뒤 적용 확인으로 처리한다.
    - 그 밖의 거절이나 안전에 영향을 주는 상태 변화가 있으면 보존하고, 사유와 실제 상태를 `result.md`에 기록한다.
-3. **workspace:** 구성원 단계가 모두 적용 확인된 workspace만 MCP `archive_workspace`로 처리한다. workspace archive는 구성원 archive가 하나 실패해도 계속 진행하고 디렉터리를 지울 수 있다. 그래서 구성원 확인을 먼저 끝낸다.
-4. **연결이 끊긴 worktree:** `git -C <소유 저장소> worktree remove <경로>`를 `--force` 없이 실행한다. 거절되면 거기서 멈춘다. 다음 방법으로 우회하지 않는다: ignored 파일 선삭제, `--force`, `rm`, `worktree prune`.
+3. **workspace:** 구성원 단계가 모두 적용 확인된 workspace만 MCP `archive_workspace`로 처리한다. 호출 **직전에** git 상태(ignored 포함), 구성원, workspace ID 기준 터미널, teardown을 다시 읽는다. 1단계 재확인 뒤 에이전트를 처리하는 동안 바뀌었을 수 있기 때문이다. workspace archive는 구성원 archive가 하나 실패해도 계속 진행하고 디렉터리를 지울 수 있다. 그래서 구성원 확인을 먼저 끝낸다.
+4. **연결이 끊긴 worktree:** 호출 직전에 git 상태(ignored 포함)와 경로 사용을 다시 읽는다. `--force` 없는 `git worktree remove`도 ignored 파일은 막지 않고 함께 지우기 때문이다. 그런 다음 `git -C <소유 저장소> worktree remove <경로>`를 `--force` 없이 실행한다. 거절되면 거기서 멈춘다. 다음 방법으로 우회하지 않는다: ignored 파일 선삭제, `--force`, `rm`, `worktree prune`.
 
 ## 결과 확인과 부분 실패
 
