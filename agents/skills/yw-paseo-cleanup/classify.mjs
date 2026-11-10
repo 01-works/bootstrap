@@ -4,13 +4,15 @@ const continuationKeys = ['zerosub.continued-from', 'handoff.from', 'agent-list.
 const waiting = ['active', 'waiting_user', 'waiting_work', 'waiting_schedule'];
 export const within = (path, root) => Boolean(path && root && (path === root || path.startsWith(`${root.replace(/\/$/, '')}/`)));
 const overlaps = (a, b) => within(a, b) || within(b, a);
+export const isOwnedWorkspace = w => w.isPaseoOwnedWorktree === true && [w.worktreeRoot, w.mainRepoRoot].every(path => typeof path === 'string' && path.length > 0);
+const workspacePaths = w => [w.cwd, w.worktreeRoot].filter(path => typeof path === 'string' && path.length > 0);
 export function ageHours(time, now) {
   const value = Date.parse(time), current = Date.parse(now);
   return Number.isFinite(value) && Number.isFinite(current) ? (current - value) / 3600000 : null;
 }
 function scopedGap(gap) {
   // Source-specific data failures are already represented on the affected entity.
-  if (['excerpt', 'git', 'gh'].includes(gap.domain ?? gap.source)) return false;
+  if (['excerpt', 'git', 'gh', 'terminals'].includes(gap.domain ?? gap.source)) return false;
   return true;
 }
 function gapAffects(gap, { id, path, workspaceId, memberIds = [] }) {
@@ -21,6 +23,7 @@ function gapAffects(gap, { id, path, workspaceId, memberIds = [] }) {
 export const minWorkspacePrefixLength = 4;
 export function protectionContext(snapshot) {
   const workspaces = new Map((snapshot.workspaces ?? []).map(w => [w.workspaceId, w]));
+  const agentIds = new Set((snapshot.agents ?? []).map(a => a.id));
   const aliases = new Map(), generatedGaps = [];
   const resolve = reference => {
     if (workspaces.has(reference)) return workspaces.get(reference);
@@ -42,8 +45,15 @@ export function protectionContext(snapshot) {
       }
       for (const path of candidates) if (typeof path === 'string' && path.startsWith('/') && !path.includes('\0')) paths.add(path);
     }
-    return { ...record, workspaceRefs, workspaceIds: [...workspaceIds], paths: [...paths] };
+    const normalized = { ...record, workspaceRefs, workspaceIds: [...workspaceIds], paths: [...paths] };
+    if (record.ownerIds?.some(id => !agentIds.has(id))) {
+      generatedGaps.push({ domain: 'protection', source: `supervisor:${record.directory}`, reason: 'supervisor_owner_unresolved', ...(record.scopeComplete === false ? {} : { scope: { agentIds: [...new Set([...(record.agentIds ?? []), ...record.ownerIds])], workspaceIds: normalized.workspaceIds, paths: normalized.paths } }) });
+    }
+    return normalized;
   });
+  for (const s of snapshot.schedules ?? []) if (!['active', 'paused', 'completed'].includes(s.status)) {
+    generatedGaps.push({ domain: 'protection', source: `schedule:${s.id}`, reason: 'schedule_status_unknown', ...(s.target?.type === 'agent' && s.target.agentId ? { scope: { agentIds: [s.target.agentId] } } : s.cwd ? { scope: { paths: [s.cwd] } } : {}) });
+  }
   const observedGaps = (snapshot.meta?.gaps ?? []).map(gap => gap.scope?.workspaceIds ? { ...gap, scope: { ...gap.scope, workspaceIds: gap.scope.workspaceIds.map(id => aliases.get(id) ?? id) } } : gap);
   const gaps = [...new Map([...observedGaps, ...generatedGaps].map(gap => [JSON.stringify(gap), gap])).values()].filter(scopedGap);
   return { supervisors, generatedGaps, gaps };
@@ -101,17 +111,17 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if (a.pendingCount > 0) r.work = 'waiting_user';
     r.recentActivityOnly = age !== null && age >= minAgeHours && activityAge !== null && activityAge < minAgeHours;
     if (self.has(a.id) || within(a.cwd, selfCwd)) hold(r, 'self', 'current cleanup scope');
-    if (age === null || age < minAgeHours || (activityAge !== null && activityAge < minAgeHours)) hold(r, 'recent', 'recent or unknown activity time');
+    if (age === null || activityAge === null || age < minAgeHours || activityAge < minAgeHours) hold(r, 'recent', 'recent or unknown activity time');
     if (a.archivedAt) r.reasons.push('historical record; not a cleanup target');
   }
-  const schedules = (snapshot.schedules ?? []).filter(s => ['active', 'paused'].includes(s.status));
+  const schedules = (snapshot.schedules ?? []).filter(s => s.status !== 'completed');
   for (const s of schedules) if (s.target?.type === 'agent' && records.has(s.target.agentId)) {
     const r = records.get(s.target.agentId);
     if (!['active', 'waiting_user'].includes(r.work)) r.work = 'waiting_schedule';
     hold(r, 'schedule_dependency', `heartbeat:${s.id}`);
   }
   for (const scope of supervisors) {
-    const unknownOwner = !scope.ownerIds?.length;
+    const unknownOwner = !scope.ownerIds?.length || scope.ownerIds.some(id => !byId.has(id));
     if (unknownOwner || scope.ownerIds.some(id => byId.has(id) && !byId.get(id).archivedAt)) {
       for (const id of new Set([...(scope.agentIds ?? []), ...(scope.ownerIds ?? [])])) if (records.has(id)) hold(records.get(id), 'supervisor_scope', `${unknownOwner ? 'unresolved owner' : 'supervisor record'}:${scope.directory}`);
     }
@@ -141,6 +151,8 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     }
     for (const a of agents) {
       const r = records.get(a.id), p = records.get(a.labels?.[parentKey]);
+      const scopeSources = [p, ...continuationKeys.map(key => records.get(a.labels?.[key]))].filter(Boolean);
+      if (scopeSources.some(source => source.hold.includes('supervisor_scope'))) hold(r, 'supervisor_scope', 'supervisor descendant or successor');
       if (p && protectedRecord(a, r)) { hold(p, 'active_lane', `protected descendant:${a.id}`); waitingForWork(p); }
     }
     for (const component of components) {
@@ -157,6 +169,7 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     r.remainingChecks.push('completion_evidence');
     if (!r.hold.length) r.hold.push('none');
   }
+  const pathUsers = agents.filter(a => !a.archivedAt || protectedRecord(a, records.get(a.id)) || records.get(a.id).work === 'unknown');
   const dataChecks = (r, git) => {
     if (git?.ignoredCount > 0) { hold(r, 'data', 'ignored_present'); r.remainingChecks.push('ignored_reproducibility'); }
     if (!git || git.kind !== 'git' || git.errors?.length) hold(r, 'data', 'git information unavailable or incomplete');
@@ -183,38 +196,43 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
   for (const w of snapshot.workspaces ?? []) {
     const r = make(w.workspaceId), members = agents.filter(a => a.workspaceId === w.workspaceId), active = members.filter(a => !a.archivedAt);
     result.workspaces.push(r);
-    if (overlaps(w.cwd, selfCwd) || members.some(a => records.get(a.id).hold.includes('self'))) hold(r, 'self', 'current cleanup workspace');
+    const ages = [ageHours(w.createdAt, now), ageHours(w.updatedAt, now)];
+    if (ages.some(age => age === null || age < minAgeHours)) hold(r, 'recent', 'recent or unknown workspace time');
+    if (workspacePaths(w).some(path => overlaps(path, selfCwd)) || members.some(a => records.get(a.id).hold.includes('self'))) hold(r, 'self', 'current cleanup workspace');
     if (members.some(a => {
       const record = records.get(a.id);
       const signals = waiting.includes(record.work) || record.hold.some(h => ['self', 'recent', 'active_lane', 'schedule_dependency', 'supervisor_scope'].includes(h));
-      return signals || (!a.archivedAt && record.work === 'unknown' && !record.reasons.some(reason => reason.startsWith('protection_gap:')));
+      return signals || (a.archivedAt && (protectedRecord(a, record) || record.work === 'unknown')) || (!a.archivedAt && record.work === 'unknown' && !record.reasons.some(reason => reason.startsWith('protection_gap:')));
     })) hold(r, 'active_lane', 'member requires protection');
     if (active.length >= 15 || new Set(active.map(root)).size > 1) hold(r, 'hub', 'multiple independent lanes or at least 15 members');
-    if (schedules.some(s => s.target?.type === 'new-agent' && overlaps(s.cwd, w.cwd))) hold(r, 'schedule_dependency', 'scheduled working directory');
-    if ((snapshot.workspaces ?? []).some(other => other.workspaceId !== w.workspaceId && !other.archivedAt && overlaps(other.cwd, w.cwd))) hold(r, 'active_lane', 'overlapping active workspace path');
-    if (agents.some(a => !a.archivedAt && a.workspaceId !== w.workspaceId && within(a.cwd, w.cwd))) hold(r, 'active_lane', 'external agent uses workspace path');
-    if (supervisors.some(s => s.workspaceIds?.includes(w.workspaceId) || s.paths?.some(p => overlaps(p, w.cwd)))) hold(r, 'supervisor_scope', 'workspace path referenced by supervisor record');
-    const local = w.kind !== 'worktree';
+    if (schedules.some(s => s.target?.type === 'new-agent' && workspacePaths(w).some(path => overlaps(s.cwd, path)))) hold(r, 'schedule_dependency', 'scheduled working directory');
+    if ((snapshot.workspaces ?? []).some(other => other.workspaceId !== w.workspaceId && !other.archivedAt && workspacePaths(other).some(p => workspacePaths(w).some(path => overlaps(p, path))))) hold(r, 'active_lane', 'overlapping active workspace path');
+    if (pathUsers.some(a => a.workspaceId !== w.workspaceId && workspacePaths(w).some(path => within(a.cwd, path)))) hold(r, 'active_lane', 'protected agent uses workspace path');
+    if (supervisors.some(s => s.workspaceIds?.includes(w.workspaceId) || s.paths?.some(p => workspacePaths(w).some(path => overlaps(p, path))))) hold(r, 'supervisor_scope', 'workspace path referenced by supervisor record');
+    const local = !isOwnedWorkspace(w);
     if (!local) dataChecks(r, w.git);
     else { r.deleteDirectory = false; r.reasons.push('local directory remains'); }
     observationChecks(r, w, local);
+    r.remainingChecks.push('workspace_owned_terminals');
     r.work = r.hold.length ? 'unknown' : 'candidate';
-    applyGaps(r, { id: w.workspaceId, path: w.cwd, memberIds: members.map(a => a.id) });
-    r.verdict = w.archivedAt || r.hold.some(h => ['self', 'active_lane', 'hub', 'schedule_dependency'].includes(h)) ? 'exclude' : r.hold.length || active.some(a => records.get(a.id).verdict === 'review') ? 'review' : 'batch_candidate';
+    for (const path of workspacePaths(w)) applyGaps(r, { id: w.workspaceId, path, memberIds: members.map(a => a.id) });
+    r.verdict = w.archivedAt || r.hold.some(h => ['self', 'recent', 'active_lane', 'hub', 'schedule_dependency'].includes(h)) ? 'exclude' : r.hold.length || active.some(a => records.get(a.id).verdict === 'review') ? 'review' : 'batch_candidate';
     if (w.archivedAt) r.reasons.push('historical workspace');
     if (!r.hold.length) r.hold.push('none');
   }
   for (const o of snapshot.orphans ?? []) {
-    const r = make(o.path, ageHours(o.modifiedAt, now)); result.orphans.push(r);
+    const r = make(o.path, ageHours(o.observedTimesMax ?? o.modifiedAt, now)); result.orphans.push(r);
+    r.timeBasis = 'observed_times_max';
     dataChecks(r, o.git); observationChecks(r, o);
     if (!o.git || o.git.kind !== 'git') { r.listOnly = true; r.reasons.push('list_only: nonstandard directory'); }
     if (!o.git?.registered) hold(r, 'data', 'not registered with owning repository');
     if (overlaps(o.path, selfCwd)) hold(r, 'self', 'current cleanup directory');
-    if (agents.some(a => !a.archivedAt && within(a.cwd, o.path))) hold(r, 'active_lane', 'agent working directory inside path');
+    if (pathUsers.some(a => within(a.cwd, o.path))) hold(r, 'active_lane', 'protected agent working directory inside path');
+    if ((snapshot.workspaces ?? []).some(w => !w.archivedAt && workspacePaths(w).some(path => within(path, o.path)))) hold(r, 'active_lane', 'active workspace nested inside path');
     if (supervisors.some(s => s.paths?.some(p => overlaps(p, o.path)))) hold(r, 'supervisor_scope', 'referenced by supervisor record');
     if (schedules.some(s => overlaps(s.cwd, o.path))) hold(r, 'schedule_dependency', 'scheduled working directory');
-    if (r.ageHours === null) hold(r, 'data', 'unknown directory modification time');
-    else if (r.ageHours < minAgeHours) hold(r, 'recent', 'recent directory modification');
+    if (r.ageHours === null) hold(r, 'data', 'unknown observed timestamp maximum');
+    else if (r.ageHours < minAgeHours) hold(r, 'recent', 'recent observed timestamp maximum');
     r.work = r.hold.length ? 'unknown' : 'candidate';
     applyGaps(r, { path: o.path });
     r.verdict = r.hold.some(h => ['self', 'active_lane', 'schedule_dependency', 'recent'].includes(h)) ? 'exclude' : r.hold.length ? 'review' : 'batch_candidate';
