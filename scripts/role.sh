@@ -35,6 +35,7 @@ paths() {
   ROLE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles"
   STATE_FILE="$ROLE_DIR/verifier"
   COLIMA_CONFIG="${COLIMA_HOME:-$HOME/.colima}/default/colima.yaml"
+  CLOCK_HELPER="$BOOTSTRAP_ROOT/scripts/verifier-clock.mjs"
   COLIMA_SOCKET="${COLIMA_HOME:-$HOME/.colima}/default/docker.sock"
   LOG_DIR="$HOME/.local/state/verifier/logs"
   LOGS_SRC="$BOOTSTRAP_ROOT/scripts/verifier-logs.sh"
@@ -194,6 +195,103 @@ write_atomic() {
   fi
 }
 
+# 소유 기록은 실제 쓰기 전에 남긴다. VM 파일 소유는 guest marker에도 기록해 VM 재생성을 구분한다.
+clock_state_set() {
+  local key="$1" value="$2"
+  [[ "$(state_get "$key")" != "$value" ]] || return 0
+  write_atomic "$STATE_FILE" 600 awk -v key="$key" -v value="$value" '
+    index($0, key "=") == 1 { print key "=" value; found=1; next } { print }
+    END { if (!found) print key "=" value }' "$STATE_FILE"
+}
+clock_running() { has colima && colima --profile default status >/dev/null 2>&1; }
+clock_config() { node "$CLOCK_HELPER" config "$1" "$COLIMA_CONFIG" "${2:-}"; }
+# default profile을 명시해 COLIMA_PROFILE 등 외부 환경이 다른 VM을 가리켜도 변경하지 않는다.
+clock_guest() {
+  local script
+  script="$(node "$CLOCK_HELPER" script "$1")" || return 1
+  colima --profile default ssh -- sudo sh -c "$script"
+}
+clock_add() {
+  local observed shape owner guest
+  if [[ ! -f "$COLIMA_CONFIG" ]]; then
+    warn 'guest clock: colima 인스턴스 준비 후 role add verifier'
+    return 2
+  fi
+  observed="$(clock_config inspect)" || return 1
+  shape="${observed#* }"
+  owner="$(state_get colima_clock)"
+  case "$owner" in role) ;; existing|pending|'')
+    if [[ "$observed" == present* ]]; then owner=existing; else owner=pending; fi ;;
+    *) fail 'guest clock 소유 기록을 확인하세요'; return 1 ;;
+  esac
+  if ! changing; then
+    dry 'guest clock: system provision 영구화·동일 파일이면 reload/재시작 생략 (chrony 설치 없음)'
+    return 0
+  fi
+  if [[ "$observed" == absent* ]]; then
+    clock_state_set colima_clock_before "$shape" && clock_state_set colima_clock role || return 1
+    write_atomic "$COLIMA_CONFIG" "$(perm "$COLIMA_CONFIG")" clock_config add || return 1
+    ok 'guest clock: system provision 추가함'
+  else
+    clock_state_set colima_clock "$owner" || return 1
+    ok 'guest clock: system provision 이미 적용됨'
+  fi
+  if ! clock_running; then
+    warn 'guest clock: VM 정지 상태. 다음 시작 시 provision 적용 후 role status verifier로 확인'
+    return 2
+  fi
+  guest="$(clock_guest inspect)" || { fail 'guest clock drop-in 조회 실패 또는 기존 파일 충돌'; return 1; }
+  # 기존 파일은 existing으로 보존. provision이 새 VM에 만든 파일은 guest marker가 role로 식별한다.
+  [[ "$guest" != pending ]] || guest=role
+  clock_state_set colima_clock_guest "$guest" || return 1
+  clock_guest apply || { fail 'guest clock 적용 실패 (소유 기록 보존)'; return 1; }
+}
+clock_remove() {
+  local owner observed
+  owner="$(state_get colima_clock)"
+  if [[ "$owner" != role ]]; then
+    info 'guest clock: 기존 provision·drop-in 보존 (role 소유 아님)'
+    return 0
+  fi
+  if [[ -f "$COLIMA_CONFIG" ]]; then
+    observed="$(clock_config inspect)" || return 1
+  else
+    observed=absent
+  fi
+  if ! changing; then dry 'guest clock: role 소유 provision·drop-in만 제거'; return 0; fi
+  # 서비스를 내리기 전에 guest를 복구한다. VM이 정지/접속 불능이면 소유 기록을 보존하고 재시도한다.
+  if ! clock_running; then
+    fail 'guest clock 제거 대기: VM 실행 후 role remove verifier (소유 기록 보존)'
+    return 1
+  fi
+  clock_guest remove || return 1
+  if [[ "$observed" == present* ]]; then
+    write_atomic "$COLIMA_CONFIG" "$(perm "$COLIMA_CONFIG")" clock_config remove "$(state_get colima_clock_before)" || return 1
+  fi
+  ok 'guest clock: role 소유 조치 제거함'
+}
+clock_status() {
+  local observed owner version
+  owner="$(state_get colima_clock)"
+  version="$(limactl --version 2>/dev/null)" || version='limactl 버전 확인 불가'
+  info "guest clock 재평가: $version (확인 기준 2.2.0). Lima 수정 버전 도입 후 https://github.com/lima-vm/lima/pull/5565 확인"
+  info 'guest NTP: timesyncd 유지. 장기 drift·NTP 불통이면 chrony 필요성 재평가 (timedatectl timesync-status)'
+  if [[ ! -f "$COLIMA_CONFIG" ]]; then s_wait 'guest clock: colima 인스턴스 준비 필요'; return; fi
+  if ! observed="$(clock_config inspect)"; then s_bad 'guest clock: provision 조회 실패'; return; fi
+  if [[ "$observed" != present* || ( "$owner" != role && "$owner" != existing ) ]]; then
+    s_bad 'guest clock: provision 또는 소유 기록 없음 → role add verifier'
+  else
+    s_ok "guest clock: system provision 적용됨 ($owner)"
+  fi
+  if ! clock_running; then
+    s_wait 'guest clock: VM 정지 상태; 다음 시작 후 확인 필요'
+  elif clock_guest check >/dev/null 2>&1; then
+    s_ok 'guest clock: drop-in 일치·unit CAP_SYS_TIME 제외·guestagent 실행 중'
+  else
+    s_bad 'guest clock: drop-in/unit capability/guestagent 점검 실패 → role add verifier'
+  fi
+}
+
 # 기존 authorized_keys 뒤에 한 줄을 붙인 내용. 읽지 못하면 실패한다.
 keys_with_line() {
   if [[ -s "$AUTH_KEYS" ]]; then
@@ -240,8 +338,13 @@ agents() {
   return "$st"
 }
 
+verifier_state() {
+  printf "$@"
+  [[ ! -f "$STATE_FILE" ]] || awk '/^colima_clock(_before|_guest)?=/' "$STATE_FILE"
+}
+
 verifier_add() {
-  local key_file='' memory='' key saved current before added line others service owner r st=0 first=0
+  local key_file='' memory='' key saved current before added line others service owner desired r st=0 first=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --ssh-key) [[ -n "${2:-}" ]] || { usage; fail '--ssh-key 다음에 공개키 파일이 필요합니다'; return 1; }; key_file="$2"; shift ;;
@@ -294,6 +397,8 @@ verifier_add() {
     *) fail '알 수 없는 colima 서비스 소유 기록. 상태 파일을 확인하세요'; return 1 ;;
   esac
 
+  [[ ! -f "$COLIMA_CONFIG" ]] || clock_config inspect >/dev/null || return 1
+
   # 상태 파일: 이 파일이 있으면 역할이 켜진 것이다. colima의 원래 값은 처음 본 값 하나만 남긴다(끌 때 되돌림).
   current=''
   [[ -f "$COLIMA_CONFIG" ]] && current="$(colima_memory_now)"
@@ -303,8 +408,11 @@ verifier_add() {
   added="${added:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   if changing; then
     mkdir -p "$ROLE_DIR" || return 1
-    write_atomic "$STATE_FILE" 600 printf 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\ncolima_service=%s\n' \
-      "$memory" "$before" "$key" "$added" "$owner" || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
+    desired="$(verifier_state 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\ncolima_service=%s\n' \
+      "$memory" "$before" "$key" "$added" "$owner")" || return 1
+    if [[ ! -f "$STATE_FILE" || "$(cat "$STATE_FILE")" != "$desired" || "$(perm "$STATE_FILE")" != 600 ]]; then
+      write_atomic "$STATE_FILE" 600 printf '%s\n' "$desired" || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
+    fi
     ok "verifier 켬 ($(pretty "$STATE_FILE"))"
   else
     dry "상태 파일 $(pretty "$STATE_FILE") (colima_memory=$memory, colima_service=$owner)"
@@ -335,6 +443,10 @@ verifier_add() {
   colima_service_add "$service" "$owner" || r=$?
   case "$r" in 0) ;; 2) [[ "$st" == 1 ]] || st=2 ;; *) st=1 ;; esac
 
+  r=0
+  clock_add || r=$?
+  case "$r" in 0) ;; 2) [[ "$st" == 1 ]] || st=2 ;; *) st=1 ;; esac
+
   # 2. 자동 시작 끄기. 이미 떠 있는 Paseo 데몬은 끄지 않는다(이 명령을 Paseo 세션에서 실행 중일 수 있다).
   r=0
   agents verifier || r=$?
@@ -348,7 +460,7 @@ verifier_add() {
   # 3. 로그 디렉터리
   if ! changing; then
     dry "로그 디렉터리 $(pretty "$LOG_DIR") (700)"
-  elif mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"; then
+  elif mkdir -p "$LOG_DIR" && { [[ "$(perm "$LOG_DIR")" == 700 ]] || chmod 700 "$LOG_DIR"; }; then
     ok "로그 디렉터리 $(pretty "$LOG_DIR")"
   else
     fail "로그 디렉터리를 만들지 못했습니다: $(pretty "$LOG_DIR")"
@@ -436,6 +548,8 @@ verifier_status() {
     s_bad '지금 Docker 응답: 없음 (기본 colima 소켓). colima status·Docker CLI·서비스 로그를 확인하세요'
   fi
 
+  clock_status
+
   for name in $VERIFIER_AGENTS; do
     r=0
     node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only "$name" "$(device_flag)" >/dev/null 2>&1 || r=$?
@@ -510,6 +624,8 @@ verifier_remove() {
       return 1
     fi
   fi
+
+  clock_remove || return 1
 
   # 해제가 실패하면 소유 기록을 지우지 않고 재시도할 수 있게 멈춘다.
   colima_service_remove || return 1

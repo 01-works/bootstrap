@@ -122,6 +122,8 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 
 - colima 메모리: `~/.colima/default/colima.yaml`의 `memory:`를 기본 6 GiB로 바꾼다(`--colima-memory`로 변경). 원래 값을 기록한다. 실행 중인 VM은 다시 시작하지 않으므로 다음 시작부터 적용된다. colima 설정이 아직 없으면 `colima start --memory 6`을 한 번 실행한 뒤 다시 켠다.
 - colima 자동 시작: 일반 기기는 수동 시작이 기본이다. verifier role은 `brew services start colima`로 사용자 로그인 서비스를 등록한다(sudo 사용 안 함). 이미 등록돼 있으면 start를 다시 호출하지 않는다. 상태 파일의 `colima_service=role|existing|pending`에 소유 여부를 기록한다. 등록 미시도는 `pending`으로 두고 실제 start 직전에만 `role`로 바꾼다(일부 등록 후 실패해도 복원 가능). `pending` 중 외부에서 등록한 서비스는 remove가 보존하고 재적용하면 `existing`으로 기록한다. 기존 역할 파일은 첫 관측 때 기존 서비스를 보존한다. 인스턴스 설정이 없으면 수동 준비 후 재적용할 때 등록한다. 실행 중인 VM은 재시작하지 않는다.
+- guest 시계: `colima.yaml`의 `provision`에 `mode: system` 항목을 추가하고, 실행 중인 기본 VM에는 바로 적용한다. `/etc/systemd/system/lima-guestagent.service.d/10-no-clock-write.conf`를 정확히 `[Service]\nCapabilityBoundingSet=~CAP_SYS_TIME\n`으로 두어 guestagent의 시계 step을 막는다. 파일이 같으면 쓰기·`daemon-reload`·`try-restart`를 모두 생략하고 "이미 적용됨"으로 표시한다. 기존 수동 조치가 있는 기기는 최초에 provision과 role 소유 메타데이터만 추가되며, 두 번째부터 파일·서비스·설정 변경이 없다. VM 전체를 재시작하지 않는다. 정지 상태라면 다음 시작에 적용하고 대기(2)로 알린다. Colima가 시작할 때 설정을 Lima에 넘기고 system provision은 부팅마다 실행되므로, 호스트 `colima.yaml`을 유지한 VM 재생성에도 적용된다. 프로필 설정까지 삭제한 경우에는 role을 다시 적용한다.
+- guest NTP: 기존 `systemd-timesyncd`를 유지하며 chrony를 설치하지 않는다. 소유자가 timesyncd active인 기기에서 이 drop-in만 적용해 역행 0을 확인했다. [upstream 원인·chrony workaround](https://github.com/lima-vm/lima/issues/5543)와 [수정 PR](https://github.com/lima-vm/lima/pull/5565)은 별개로 추적한다. 확인 기준 Lima는 2.2.0이며 수정 버전 도입 후 조치 필요성을 재평가한다. timesyncd는 작은 오차를 서서히 보정하고 큰 오차는 step하므로 장기 drift·절전 복귀·NTP 불통이면 `colima --profile default ssh -- timedatectl timesync-status`로 확인하고 chrony 필요성을 별도 판단한다. `role status`가 limactl 버전과 재평가 안내를 표시한다.
 - 자동 시작 끄기: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 등록하지 않고 있으면 내린다. 이미 떠 있는 Paseo 데몬과 실행 중인 에이전트 Chrome은 끄지 않는다(이 명령을 Paseo 세션에서 실행할 수 있어서). Chrome은 끝내거나 다음 로그인부터 꺼진다.
 - 로그 디렉터리: `~/.local/state/verifier/logs`(권한 700). 검증을 돌리는 쪽이 여기에 로그를 남긴다. 이 경로가 그쪽과의 약속이다.
 - 읽기 전용 SSH: `~/.ssh/authorized_keys`에 `restrict,command="<홈>/.local/bin/verifier-logs" … bootstrap-role-verifier` 한 줄을 넣는다(홈은 절대 경로로 쓴다). 이 키로 접속하면 어떤 명령을 보내도 `verifier-logs`만 실행되고, 로그 디렉터리의 파일을 `ls`, `tail [-n N] <파일>`, `cat <파일>`로만 읽는다. 같은 키가 제한 없는 다른 줄에 있으면 읽기 전용이 되지 않으므로 고치지 않고 실패한다.
@@ -131,9 +133,11 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
   ssh <verifier 기기> tail -n 200 <파일>
   ```
 
+guest clock 소유는 상태 파일의 `colima_clock=role|existing`(provision)·`colima_clock_guest=role|existing`와 guest의 `/var/lib/bootstrap/verifier-guest-clock` marker로 기록한다. VM 재생성 때 provision이 만든 파일도 marker로 구분한다. 끄면 role 소유 provision과 marker가 있는 동일 drop-in만 제거한다. 기존 수동 drop-in·기존 provision은 보존한다. 사용자가 수정한 항목이나 guest 접속·복구 실패는 소유 기록을 남겨 재시도한다. guest 복구가 끝나기 전에는 colima 서비스를 해제하지 않는다. YAML은 Colima 기본 형식(`[]`, null, block list, 키 없음)을 원문 보존 방식으로 편집하고 복잡한 inline 형식·중복 키는 실패로 알린다.
+
 끄면 role이 등록한 colima 서비스만 `brew services stop colima`로 해제한다(서비스로 실행 중인 VM도 멈출 수 있음). 기존 서비스나 소유 기록이 없는 구버전 역할의 서비스는 보존한다. 해제 실패 시 소유 기록을 남겨 다시 실행할 수 있다. colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
 
-`role status`는 **colima 자동 시작 설정**과 **지금 Docker 응답**을 따로 보고한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
+`role status`는 **guest clock provision·drop-in·unit capability·guestagent 실행 상태**, **colima 자동 시작 설정**, **지금 Docker 응답**을 따로 보고한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
 
 - **0 준비 완료**: 자동 시작 등록·소유 기록, Docker 응답과 기존 역할 검사가 모두 정상이다. 인자 없는 `role status`는 켠 역할이 없어도 기존처럼 0이다.
 - **2 수동 작업 대기**: colima 인스턴스 설정이 없어 최초 준비가 필요하거나(등록 미시도 `pending` 포함), 원격 로그인이 꺼져 있거나, 실행 중인 에이전트의 등록 해제가 대기 중이다.
