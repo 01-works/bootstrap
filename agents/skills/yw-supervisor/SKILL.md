@@ -15,7 +15,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 - 같은 저장소를 다른 사람·기기·감독 세션이 동시에 다룬다고 가정한다. Paseo 도구로 보이는 것은 `list_hosts`에 등록된 호스트의 에이전트뿐이다.
 - **공유 기록이 원장이다.** 저장소의 이슈·PR(저장소가 따로 정한 조정 기록이 있으면 그것)이 작업 소유·진행·인계의 기준이다. 로컬 관리 기록은 내 작업자를 위한 보조 기록이다.
-- **보이지 않는 것은 증거가 아니다.** 등록되지 않은 기기의 작업자, push 전 브랜치, 검증·리뷰 중인 변경은 Paseo와 원격에 나타나지 않을 수 있다. 다른 lane의 진행·정체·완료는 공유 기록(claim·인계 코멘트, PR과 그 head 브랜치)으로 판단하고, 확인할 수 없으면 확인 불가로 남긴다.
+- **보이지 않는 것은 증거가 아니다.** 등록되지 않은 기기의 작업자, push 전 브랜치, 검증·리뷰 중인 변경은 Paseo와 원격에 나타나지 않을 수 있다. 다른 lane의 진행·정체·완료는 공유 기록(claim·인계 코멘트, PR과 그 head 브랜치)으로 판단하고, 확인할 수 없으면 확인 불가로 남긴다. 로컬 원장에 없거나 에이전트 gh가 소유자 계정으로 인증됐다는 이유로 외부·소유 없음으로 판정하지 않는다. 먼저 PR 본문·코멘트의 lane·리뷰·dev red 판정 근거를 확인하고, 필요하면 이슈·PR 코멘트로 소유 lane에 문의한다.
 
 ## 시작과 기록
 
@@ -43,7 +43,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 브라우저 작업은 `agents/browser.md`(공유 연결, 작업자별 own target, 조작 차례), 기기 GUI 작업은 `agents/computer-use.md`를 따른다. Paseo 작업자에게 GUI 작업을 기본으로 배정하지 않는다.
 - 작업자는 Paseo 에이전트로 만든다. 제공자 내장 서브에이전트는 판단 직전의 짧은 읽기 전용 조사에만 Supervisor보다 가벼운 모델로 쓴다. `workspaceId`를 명시해 다른 프로젝트 작업을 현재 workspace에 만들지 않는다.
 - Frontend Builder에는 사용자/사용 목적, 기존 디자인 시스템·참고 화면, 레이아웃·폰트·색상 제약, 화면 크기와 상호작용 상태를 전달하고, 실제 브라우저의 렌더링·반응형·키보드 조작 확인 결과를 받는다. 실행하지 못한 검증은 미검증으로 보고하게 한다.
-- 프로필 notes는 선택 지침이다. 실제 지시는 아래 내용을 채워 `initialPrompt`에 전달한다. 작업자는 Supervisor의 대화를 모른다고 가정한다.
+- 프로필 notes는 선택 지침이다. 실제 지시는 아래 내용을 채워 `initialPrompt`에 전달한다. 작업자는 Supervisor의 대화를 모른다고 가정한다. 브리프의 기본값은 이슈 완료 조건을 만족하는 최소 변경이며, 새 스크립트·schedule·문서·계약 버전은 꼭 필요할 때만 만든다.
 
 ```text
 작업 ID / 역할:
@@ -74,6 +74,8 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 ## 진행과 검증
 
+- 다른 lane의 감독·작업자에게 `send_agent_prompt`를 보내거나 여러 감독에게 공지하기 전, `paseo agent inspect <전체 ID> --json`(원격은 검증한 `--host` 사용)으로 각 대상의 `Archived`·`ArchivedAt`을 확인한다. archive된 대상에게는 보내지 않고, 소유가 불명확하면 총괄에게 묻는다. 메시지는 archive된 대상을 재활성화하므로, 실수로 재활성화하면 소유 감독(없으면 총괄)이 [공통 안전 대조](#archive-전-공통-안전-대조)에 따라 다시 archive한다.
+- closed는 종료나 archive가 아니며 `send_agent_prompt`로 재개할 수 있다. 다른 lane의 신호를 기다리는 감독은 재개 조건을 기록과 신호 보내는 쪽 양쪽에 남기고, 신호를 보내는 쪽은 archive되지 않은 최신 감독이면 closed여도 보낸다. 인계 여부는 아래 이어받은 작업자 절차로 확인한다.
 - 생성·후속 요청에는 완료 알림을 켜고 비동기로 진행한다. 진행 중인 에이전트를 반복 조회하지 않고, 사용자 상태 요청·재개·오류 복구처럼 필요할 때만 조회한다.
 - 완료 알림은 첫 응답 종료에 한 번만 온다(getpaseo/paseo#6346. 설치된 버전에서 고쳐진 것이 확인되기 전까지). 작업자가 백그라운드 작업을 남기고 응답을 마쳤다면 `백그라운드 대기`로 기록하고 직접 보고를 기다린다.
 - 감독자 턴(알림·사용자 메시지·heartbeat)마다 진행·대기 작업의 상태를 한 번 대조한다. idle·closed·error인데 결과가 기록되지 않은 작업은 결과를 읽어 다음 조치를 하고, closed 작업자는 후속 요청으로 재개한다. 남은 작업이 백그라운드 대기뿐이면 대조용 짧은 heartbeat를 둘 수 있다.
@@ -86,6 +88,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 통합은 Builder에 맡기고 통합 후 검증을 받는다. 개별 worktree의 통과를 통합 결과의 통과로 보고하지 않는다. 커밋·병합·배포·외부 전송은 사용자 요청 범위와 저장소의 PR·검사 규칙을 따르고, push 전에는 검증 중 만든 빌드 산출물을 정리하게 한다.
 - 완료 조건을 충족하고 필요한 검증이 통과하며 중요한 미해결 문제가 없을 때 완료한다. 검증하지 못한 항목과 사용자가 수용해야 할 제약은 명확히 남긴다.
 - **보고:** 작업별 상태, 결과, 차단 원인, 다음 조치와 필요한 결정만 간결하게 전한다. 관측한 사실과 추정을 구분하고, 다른 lane·기기에 대한 판단에는 근거로 삼은 공유 기록을 밝힌다. 모든 작업이 끝나면 종료한다. 무기한 감시나 heartbeat/schedule은 사용자가 요청한 경우에만 두고, 백그라운드 대기 대조용 heartbeat는 대기가 끝나면 삭제한다. heartbeat/schedule을 만들거나 지우면 ID·목적·해제 조건을 관리 기록에 남긴다(다른 세션의 heartbeat는 MCP로 조회할 수 없으며, 같은 호스트 저장소의 직접 대조는 yw-chief-supervisor의 확인 조건을 따른다). 라벨·heartbeat/schedule·archive 상태 변경 후 확인은 [공통 대조의 상태 변경 확인](#archive-전-공통-안전-대조)을 따른다.
+- 소유자에게 줄 터미널 명령은 zsh에 블록째 붙여 넣어도 동작하게 작성한다. 줄 끝 `# 설명`을 쓰거나 `read`와 이후 명령을 한 블록에 섞지 않는다. prod DB 읽기 조회는 소유자용 Supabase SQL Editor에 붙일 단일 SELECT 하나로 준비하고 결과를 JSON 한 셀로 합친다(Editor는 마지막 statement 결과만 표시한다).
 
 ## 감독자 전체 인계
 
