@@ -34,7 +34,8 @@ KEY_COMMENT=bootstrap-role-verifier
 paths() {
   ROLE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles"
   STATE_FILE="$ROLE_DIR/verifier"
-  COLIMA_CONFIG="${COLIMA_HOME:-$HOME/.colima}/default/colima.yaml"
+  COLIMA_BASE="${COLIMA_HOME:-$HOME/.colima}"
+  COLIMA_CONFIG="$COLIMA_BASE/default/colima.yaml"
   CLOCK_OVERRIDE="${LIMA_HOME:-${COLIMA_HOME:-$HOME/.colima}/_lima}/_config/override.yaml"
   CLOCK_HELPER="$BOOTSTRAP_ROOT/scripts/verifier-clock.mjs"
   COLIMA_SOCKET="${COLIMA_HOME:-$HOME/.colima}/default/docker.sock"
@@ -202,7 +203,7 @@ clock_claim() {
   write_atomic "$STATE_FILE" 600 awk '
     !/^clock_override=/ { print } END { print "clock_override=role" }' "$STATE_FILE"
 }
-clock_same() { node "$CLOCK_HELPER" override | cmp -s - "$CLOCK_OVERRIDE"; }
+clock_same() { [[ -f "$CLOCK_OVERRIDE" ]] || return 1; node "$CLOCK_HELPER" override | cmp -s - "$CLOCK_OVERRIDE"; }
 clock_running() { has colima && colima --profile default status >/dev/null 2>&1; }
 clock_guest() {
   local script
@@ -210,6 +211,10 @@ clock_guest() {
   colima --profile default ssh -- sudo sh -c "$script"
 }
 clock_add() {
+  if [[ ! -d "$COLIMA_BASE" ]]; then
+    fail "guest clock: 기준 디렉터리 없음 (생성하지 않음): $(pretty "$COLIMA_BASE")"
+    return 1
+  fi
   if [[ -L "$CLOCK_OVERRIDE" ]]; then
     fail "guest clock: override 링크 충돌 (보존): $(pretty "$CLOCK_OVERRIDE")"
     return 1
@@ -221,8 +226,8 @@ clock_add() {
     return 0
   else
     mkdir -p "$(dirname "$CLOCK_OVERRIDE")" && clock_claim && \
-      write_atomic "$CLOCK_OVERRIDE" 644 node "$CLOCK_HELPER" override || return 1
-    ok 'guest clock: override 생성함 (모든 colima profile)'
+      write_atomic "$CLOCK_OVERRIDE" 644 node "$CLOCK_HELPER" override || { fail "guest clock: override 생성 실패 (경로·쓰기 권한 확인): $(pretty "$CLOCK_OVERRIDE")"; return 1; }
+    ok 'guest clock: override 생성함 (그 LIMA_HOME의 모든 Lima 인스턴스)'
   fi
   if ! changing; then
     dry 'guest clock: 실행 중 guest 확인/적용 (동일 파일이면 쓰기·reload·재시작 없음)'
@@ -238,8 +243,7 @@ clock_remove() {
   elif [[ ! -e "$CLOCK_OVERRIDE" && ! -L "$CLOCK_OVERRIDE" ]]; then
     ok 'guest clock: override 이미 제거됨'
   elif [[ -L "$CLOCK_OVERRIDE" ]] || ! clock_same; then
-    fail 'guest clock: 수정된 override 보존 (소유 기록 유지)'
-    return 1
+    warn 'guest clock: 수정된 override는 보존하고 역할 제거는 완료합니다'
   elif ! changing; then
     dry "guest clock: role 소유 override 제거 ($(pretty "$CLOCK_OVERRIDE"))"
   else
@@ -254,7 +258,7 @@ clock_status() {
   info "guest clock 재평가: $version (확인 기준 2.2.0). 수정 Lima 도입 후 https://github.com/lima-vm/lima/pull/5565 확인"
   info '원인: https://github.com/lima-vm/lima/issues/5543 — timesyncd 유지, 장기 drift·NTP 불통이면 chrony 필요성 재평가'
   if [[ ! -L "$CLOCK_OVERRIDE" ]] && clock_same; then
-    s_ok 'guest clock: override 일치 (모든 colima profile)'
+    s_ok 'guest clock: override 일치 (그 LIMA_HOME의 모든 Lima 인스턴스)'
   else
     s_bad 'guest clock: override 없음/내용 충돌 → role add verifier'
   fi
@@ -296,8 +300,7 @@ check_paths() {
 # 수동 작업 대기(2)로 끝난 대상은 AGENTS_PENDING에 남는다.
 agents() {
   local name r st=0 extra=''
-  if [[ "$DRY_RUN" == 1 ]]; then extra="--dry-run --roles $1"
-  elif [[ "$1" == none && -f "$STATE_FILE" ]]; then extra='--roles none'; fi
+  [[ "$DRY_RUN" == 1 ]] && extra="--dry-run --roles $1"
   AGENTS_PENDING=''
   for name in $VERIFIER_AGENTS; do
     r=0
@@ -380,9 +383,9 @@ verifier_add() {
   added="$(state_get added_at)"
   added="${added:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   if changing; then
-    mkdir -p "$ROLE_DIR" || return 1
+    mkdir -p "$ROLE_DIR" || { fail "역할 상태 디렉터리 생성 실패: $(pretty "$ROLE_DIR")"; return 1; }
     desired="$(verifier_state 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\ncolima_service=%s\n' \
-      "$memory" "$before" "$key" "$added" "$owner")" || return 1
+      "$memory" "$before" "$key" "$added" "$owner")" || { fail "역할 상태 내용 생성 실패: $(pretty "$STATE_FILE")"; return 1; }
     if [[ ! -f "$STATE_FILE" || "$(cat "$STATE_FILE")" != "$desired" || "$(perm "$STATE_FILE")" != 600 ]]; then
       write_atomic "$STATE_FILE" 600 printf '%s\n' "$desired" || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
     fi
@@ -598,7 +601,7 @@ verifier_remove() {
     fi
   fi
 
-  clock_remove || st=1
+  clock_remove || return 1
   colima_service_remove || return 1
 
   # 이 역할이 넣은 줄만 지운다. 링크이거나 읽을 수 없으면 알리고 남긴다.
@@ -643,15 +646,13 @@ verifier_remove() {
     fi
   fi
 
-  if [[ "$st" == 1 ]]; then
-    warn '미완료 항목의 소유 기록을 보존합니다 → 고친 뒤 role remove verifier'
-  elif [[ -f "$STATE_FILE" ]]; then
+  if [[ -f "$STATE_FILE" ]]; then
     if changing; then rm -f "$STATE_FILE" && ok "verifier 끔"; else dry "상태 파일 $(pretty "$STATE_FILE") 지우기"; fi
   else
     info 'verifier는 이미 꺼져 있습니다'
   fi
 
-  # 일부 소유 기록이 남아도 remove의 자동 시작 복구는 계속한다 (--roles none).
+  # 상태 파일이 없어졌으니 이 기기 종류의 원래 자동 시작을 복구한다.
   r=0
   agents none || r=$?
   case "$r" in

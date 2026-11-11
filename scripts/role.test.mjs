@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { guestScript, dropIn, overrideYaml } from './verifier-clock.mjs';
+import { guestScript, overrideYaml } from './verifier-clock.mjs';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
+const dropIn = '[Service]\nCapabilityBoundingSet=~CAP_SYS_TIME\n';
 const BODY = 'AAAAC3NzaC1lZDI1NTE5AAAAIVerifierTestKey0123456789abcdefghijklmnop';
 const COLIMA = '# Number of CPUs\ncpu: 2\n\n# Size of the memory in GiB\nmemory: 2\n\nvz:\n  memory: 9\n';
 const mode = path => statSync(path).mode & 0o777;
@@ -314,7 +315,7 @@ test('status 종료 코드: 준비 0, 원격 로그인 꺼짐 2, 어긋남·꺼�
 
 test('colima 설정이 없으면 수동 작업 대기로 두고 나머지는 적용한다', t => {
   const f = sandbox(t);
-  rmSync(join(f.home, '.colima'), { recursive: true });
+  rmSync(join(f.home, '.colima/default'), { recursive: true });
   let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
   assert.equal(result.status, 2, out(result));
   assert.match(result.stderr, /colima start --memory 6/);
@@ -700,7 +701,7 @@ test('Docker 검사는 다른 context·host·TLS 설정을 무시하고 COLIMA_H
 
 test('인스턴스 없음은 수동 대기 2로 두고 준비 후 등록하며 dry-run은 서비스도 바꾸지 않는다', t => {
   const f = sandbox(t);
-  rmSync(join(f.home, '.colima'), { recursive: true });
+  rmSync(join(f.home, '.colima/default'), { recursive: true });
   writeFileSync(join(f.mock, 'docker-off'), '');
   let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
   assert.equal(result.status, 2, out(result));
@@ -726,7 +727,7 @@ test('인스턴스 없음은 수동 대기 2로 두고 준비 후 등록하며 d
 
 test('등록 미시도 뒤 사용자가 등록한 서비스는 remove가 해제하지 않는다', t => {
   const f = sandbox(t);
-  rmSync(join(f.home, '.colima'), { recursive: true });
+  rmSync(join(f.home, '.colima/default'), { recursive: true });
   let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
   assert.equal(result.status, 2, out(result));
   assert.deepEqual(f.serviceChanges(), [], '인스턴스가 없어 등록하지 않았음');
@@ -744,7 +745,7 @@ test('등록 미시도 뒤 사용자가 등록한 서비스는 remove가 해제�
 
 test('등록 미시도 뒤 외부 등록을 apply-active가 기존 서비스로 기록하고 이후 remove도 보존한다', t => {
   const f = sandbox(t);
-  rmSync(join(f.home, '.colima'), { recursive: true });
+  rmSync(join(f.home, '.colima/default'), { recursive: true });
   assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 2);
   assert.deepEqual(f.serviceChanges(), []);
   writeFileSync(join(f.mock, 'registered'), 'user registered');
@@ -765,7 +766,7 @@ test('등록 미시도 뒤 외부 등록을 apply-active가 기존 서비스로 
 
 test('등록 미시도는 status 2·재적용·dry-run에서 pending을 유지하고 실제 start 직전에만 role이 된다', t => {
   const f = sandbox(t);
-  rmSync(join(f.home, '.colima'), { recursive: true });
+  rmSync(join(f.home, '.colima/default'), { recursive: true });
   writeFileSync(join(f.mock, 'docker-off'), '');
   assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 2);
   assert.equal(f.stateOf().colima_service, 'pending');
@@ -856,6 +857,11 @@ test('clock: 즉시 적용은 없는 guest 파일만 쓰며, 충돌은 보존; s
   assert.match(r.stdout, /CapabilityBoundingSet=/);
   assert.match(r.stdout, /limactl version 2.2.0/);
   assert.match(r.stdout, /lima\/pull\/5565/);
+  rmSync(f.override);
+  r = f.role('status', 'verifier');
+  assert.equal(r.status, 1, out(r));
+  assert.doesNotMatch(out(r), /EPIPE|Unhandled.*error|node:events/);
+  writeFileSync(f.override, overrideYaml);
   writeFileSync(join(f.mock, 'cap-sys-time'), '');
   assert.equal(f.role('status', 'verifier').status, 1);
   assert.equal(f.role('add', 'verifier').status, 0, '동일 파일이면 unit 상태와 무관하게 no-op (단순안)');
@@ -864,7 +870,7 @@ test('clock: 즉시 적용은 없는 guest 파일만 쓰며, 충돌은 보존; s
   writeFileSync(join(f.mock, 'guest/drop-in'), 'user edit\n');
   r = f.role('add', 'verifier');
   assert.equal(r.status, 1, out(r));
-  assert.match(out(r), /내용 충돌/);
+  assert.match(out(r), /내용 충돌.*현재 보존.*다음 VM 부팅 때 provision이 교체함/);
   assert.equal(read(join(f.mock, 'guest/drop-in')), 'user edit\n');
   assert.deepEqual(f.systemChanges(), []);
   assert.equal(f.role('status', 'verifier').status, 1);
@@ -896,7 +902,7 @@ test('clock: 표준 delete 후 override 유지, 새 guest에 provision 적용·�
   assert.doesNotMatch(overrideYaml, /chrony|NeedDaemonReload|MainPID|CapBnd|\/var\/lib|version=/);
 });
 
-test('clock: COLIMA_HOME/LIMA_HOME 경로를 따르며, 수정된 role 소유 override와 dry-run은 보존', t => {
+test('clock: 수정된 override를 보존하며 제거 완료 후 재활성화하지 않고, 없는 기준 경로는 만들지 않는다', t => {
   const f = sandbox(t);
   const limaHome = join(f.root, 'separate lima');
   f.env.LIMA_HOME = limaHome;
@@ -907,10 +913,30 @@ test('clock: COLIMA_HOME/LIMA_HOME 경로를 따르며, 수정된 role 소유 ov
   writeFileSync(override, 'user change\n');
   writeFileSync(join(f.mock, 'ssh-fail'), '');
   let r = f.role('remove', 'verifier', '--dry-run');
-  assert.equal(r.status, 1, out(r));
+  assert.equal(r.status, 0, out(r));
   assert.equal(read(override), 'user change\n');
+  assert.ok(existsSync(f.state), 'dry-run은 상태 파일을 보존');
   r = f.role('remove', 'verifier');
-  assert.equal(r.status, 1, out(r));
+  assert.equal(r.status, 0, out(r));
   assert.equal(read(override), 'user change\n');
-  assert.ok(existsSync(f.state), '미완료 소유 기록 보존');
+  assert.equal(existsSync(f.state), false, '제거 완료로 상태 파일을 지움');
+  assert.equal(read(f.auth), '');
+  assert.equal(f.memory(), '2');
+  f.serviceChanges(); f.agents();
+  r = f.role('apply-active');
+  assert.equal(r.status, 0, out(r));
+  assert.match(out(r), /기기 역할 없음/);
+  assert.deepEqual(f.serviceChanges(), [], 'colima 서비스를 다시 등록하지 않음');
+  assert.deepEqual(f.agents(), []);
+  assert.equal(read(f.auth), '', 'SSH 키를 다시 넣지 않음');
+  assert.equal(f.memory(), '2', '메모리를 verifier 값으로 되돌리지 않음');
+  assert.equal(read(override), 'user change\n');
+
+  const missing = sandbox(t);
+  missing.env.COLIMA_HOME = join(missing.root, 'absent-colima');
+  r = missing.role('add', 'verifier', '--ssh-key', missing.keyFile);
+  assert.equal(r.status, 1, out(r));
+  assert.match(out(r), /기준 디렉터리 없음/);
+  assert.equal(existsSync(missing.env.COLIMA_HOME), false, 'COLIMA_HOME을 새로 만들어 경로 선택을 바꾸지 않음');
+  assert.equal(read(missing.auth), `${missing.line}\n`, '다른 role 항목은 계속 적용');
 });
