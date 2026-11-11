@@ -75,7 +75,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 ## 진행과 검증
 
 - 다른 lane의 감독·작업자에게 `send_agent_prompt`를 보내거나 여러 감독에게 공지하기 전, `paseo agent inspect <전체 ID> --json`(원격은 검증한 `--host` 사용)으로 각 대상의 `Archived`·`ArchivedAt`을 확인한다. archive된 대상에게는 보내지 않고, 소유가 불명확하면 총괄에게 묻는다. 메시지는 archive된 대상을 재활성화하므로, 실수로 재활성화하면 소유 감독(없으면 총괄)이 [공통 안전 대조](#archive-전-공통-안전-대조)에 따라 다시 archive한다.
-- closed는 종료나 archive가 아니며 `send_agent_prompt`로 재개할 수 있다. 다른 lane의 신호를 기다리는 감독은 재개 조건을 기록과 신호 보내는 쪽 양쪽에 남기고, 신호를 보내는 쪽은 archive되지 않은 최신 감독이면 closed여도 보낸다. 인계 여부는 아래 이어받은 작업자 절차로 확인한다.
+- closed만으로 작업 완료나 archive를 뜻하지 않으며 `send_agent_prompt`로 재개할 수 있다. 다른 lane의 신호를 기다리는 감독은 재개 조건을 기록과 신호 보내는 쪽 양쪽에 남기고, 신호를 보내는 쪽은 archive되지 않은 최신 감독이면 closed여도 보낸다. 감독의 최신 소유는 아래 이어받은 작업자 절차와 공유 기록의 인계(다른 기기 인계 포함)를 함께 대조하며, 확인할 수 없으면 전송을 보류한다.
 - 생성·후속 요청에는 완료 알림을 켜고 비동기로 진행한다. 진행 중인 에이전트를 반복 조회하지 않고, 사용자 상태 요청·재개·오류 복구처럼 필요할 때만 조회한다.
 - 완료 알림은 첫 응답 종료에 한 번만 온다(getpaseo/paseo#6346. 설치된 버전에서 고쳐진 것이 확인되기 전까지). 작업자가 백그라운드 작업을 남기고 응답을 마쳤다면 `백그라운드 대기`로 기록하고 직접 보고를 기다린다.
 - 감독자 턴(알림·사용자 메시지·heartbeat)마다 진행·대기 작업의 상태를 한 번 대조한다. idle·closed·error인데 결과가 기록되지 않은 작업은 결과를 읽어 다음 조치를 하고, closed 작업자는 후속 요청으로 재개한다. 남은 작업이 백그라운드 대기뿐이면 대조용 짧은 heartbeat를 둘 수 있다.
@@ -88,7 +88,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 통합은 Builder에 맡기고 통합 후 검증을 받는다. 개별 worktree의 통과를 통합 결과의 통과로 보고하지 않는다. 커밋·병합·배포·외부 전송은 사용자 요청 범위와 저장소의 PR·검사 규칙을 따르고, push 전에는 검증 중 만든 빌드 산출물을 정리하게 한다.
 - 완료 조건을 충족하고 필요한 검증이 통과하며 중요한 미해결 문제가 없을 때 완료한다. 검증하지 못한 항목과 사용자가 수용해야 할 제약은 명확히 남긴다.
 - **보고:** 작업별 상태, 결과, 차단 원인, 다음 조치와 필요한 결정만 간결하게 전한다. 관측한 사실과 추정을 구분하고, 다른 lane·기기에 대한 판단에는 근거로 삼은 공유 기록을 밝힌다. 모든 작업이 끝나면 종료한다. 무기한 감시나 heartbeat/schedule은 사용자가 요청한 경우에만 두고, 백그라운드 대기 대조용 heartbeat는 대기가 끝나면 삭제한다. heartbeat/schedule을 만들거나 지우면 ID·목적·해제 조건을 관리 기록에 남긴다(다른 세션의 heartbeat는 MCP로 조회할 수 없으며, 같은 호스트 저장소의 직접 대조는 yw-chief-supervisor의 확인 조건을 따른다). 라벨·heartbeat/schedule·archive 상태 변경 후 확인은 [공통 대조의 상태 변경 확인](#archive-전-공통-안전-대조)을 따른다.
-- 소유자에게 줄 터미널 명령은 zsh에 블록째 붙여 넣어도 동작하게 작성한다. 줄 끝 `# 설명`을 쓰거나 `read`와 이후 명령을 한 블록에 섞지 않는다. prod DB 읽기 조회는 소유자용 Supabase SQL Editor에 붙일 단일 SELECT 하나로 준비하고 결과를 JSON 한 셀로 합친다(Editor는 마지막 statement 결과만 표시한다).
+- 소유자에게 줄 터미널 명령은 zsh에 블록째 붙여 넣어도 동작하게 작성한다. 줄 끝 `# 설명`을 쓰거나 `read`와 이후 명령을 한 블록에 섞지 않는다. 소유자에게 Supabase prod DB 조회를 요청할 때는 SQL Editor에 붙일 단일 SELECT 하나로 준비하고 결과를 JSON 한 셀로 합친다.
 
 ## 감독자 전체 인계
 
