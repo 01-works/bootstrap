@@ -211,9 +211,10 @@ clock_guest() {
   colima --profile default ssh -- sudo sh -c "$script"
 }
 clock_add() {
-  if [[ ! -d "$COLIMA_BASE" ]]; then
-    fail "guest clock: 기준 디렉터리 없음 (생성하지 않음): $(pretty "$COLIMA_BASE")"
-    return 1
+  local base="${LIMA_HOME:-$COLIMA_BASE}"
+  if [[ ! -d "$base" ]]; then
+    warn "guest clock: 기준 디렉터리 없음 (생성하지 않음): $(pretty "$base") → colima start 후 ./bootstrap.sh role add verifier"
+    return 2
   fi
   if [[ -L "$CLOCK_OVERRIDE" ]]; then
     fail "guest clock: override 링크 충돌 (보존): $(pretty "$CLOCK_OVERRIDE")"
@@ -247,7 +248,7 @@ clock_remove() {
   elif ! changing; then
     dry "guest clock: role 소유 override 제거 ($(pretty "$CLOCK_OVERRIDE"))"
   else
-    rm -f "$CLOCK_OVERRIDE" || return 1
+    rm -f "$CLOCK_OVERRIDE" || { fail 'guest clock: override 제거 실패, 소유 기록 보존 → 고친 뒤 ./bootstrap.sh role remove verifier'; return 1; }
     ok 'guest clock: role 소유 override 제거함'
   fi
   info 'guest drop-in은 그대로 둡니다. VM 재생성 시 사라집니다'

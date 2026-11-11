@@ -745,12 +745,16 @@ test('등록 미시도 뒤 사용자가 등록한 서비스는 remove가 해제�
 
 test('등록 미시도 뒤 외부 등록을 apply-active가 기존 서비스로 기록하고 이후 remove도 보존한다', t => {
   const f = sandbox(t);
-  rmSync(join(f.home, '.colima/default'), { recursive: true });
-  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 2);
+  rmSync(join(f.home, '.colima'), { recursive: true });
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 2, out(result));
+  assert.match(out(result), /colima start 후 \.\/bootstrap\.sh role add verifier/);
+  assert.equal(existsSync(join(f.home, '.colima')), false);
   assert.deepEqual(f.serviceChanges(), []);
   writeFileSync(join(f.mock, 'registered'), 'user registered');
-  let result = f.role('apply-active');
+  result = f.role('apply-active');
   assert.equal(result.status, 2, out(result));
+  assert.equal(existsSync(join(f.home, '.colima')), false);
   assert.equal(f.stateOf().colima_service, 'existing');
   assert.deepEqual(f.serviceChanges(), []);
   mkdirSync(join(f.colima, '..'), { recursive: true });
@@ -906,13 +910,19 @@ test('clock: 수정된 override를 보존하며 제거 완료 후 재활성화�
   const f = sandbox(t);
   const limaHome = join(f.root, 'separate lima');
   f.env.LIMA_HOME = limaHome;
-  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  let r = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(r.status, 2, out(r));
+  assert.match(out(r), /기준 디렉터리 없음/);
+  assert.ok(out(r).includes(limaHome), '명시한 LIMA_HOME이 기준');
+  assert.equal(existsSync(limaHome), false, '없는 LIMA_HOME을 만들지 않음');
+  mkdirSync(limaHome);
+  assert.equal(f.role('add', 'verifier').status, 0);
   const override = join(limaHome, '_config/override.yaml');
   assert.equal(read(override), overrideYaml);
   assert.equal(read(f.override), null);
   writeFileSync(override, 'user change\n');
   writeFileSync(join(f.mock, 'ssh-fail'), '');
-  let r = f.role('remove', 'verifier', '--dry-run');
+  r = f.role('remove', 'verifier', '--dry-run');
   assert.equal(r.status, 0, out(r));
   assert.equal(read(override), 'user change\n');
   assert.ok(existsSync(f.state), 'dry-run은 상태 파일을 보존');
@@ -935,7 +945,7 @@ test('clock: 수정된 override를 보존하며 제거 완료 후 재활성화�
   const missing = sandbox(t);
   missing.env.COLIMA_HOME = join(missing.root, 'absent-colima');
   r = missing.role('add', 'verifier', '--ssh-key', missing.keyFile);
-  assert.equal(r.status, 1, out(r));
+  assert.equal(r.status, 2, out(r));
   assert.match(out(r), /기준 디렉터리 없음/);
   assert.equal(existsSync(missing.env.COLIMA_HOME), false, 'COLIMA_HOME을 새로 만들어 경로 선택을 바꾸지 않음');
   assert.equal(read(missing.auth), `${missing.line}\n`, '다른 role 항목은 계속 적용');
