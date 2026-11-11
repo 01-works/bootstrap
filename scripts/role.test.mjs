@@ -5,12 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { config as clockConfig, guestScript, dropIn } from './verifier-clock.mjs';
+import { guestScript, dropIn, overrideYaml } from './verifier-clock.mjs';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
 const BODY = 'AAAAC3NzaC1lZDI1NTE5AAAAIVerifierTestKey0123456789abcdefghijklmnop';
 const COLIMA = '# Number of CPUs\ncpu: 2\n\n# Size of the memory in GiB\nmemory: 2\n\nvz:\n  memory: 9\n';
-const legacyScript = readFileSync(join(repo, 'scripts/fixtures/verifier-clock-v1.sh'), 'utf8');
 const mode = path => statSync(path).mode & 0o777;
 const read = path => existsSync(path) ? readFileSync(path, 'utf8') : null;
 
@@ -35,7 +34,7 @@ colima() {
   if [[ "$1" == --profile ]]; then
     if [[ "$3" == status ]]; then
       printf '%s\\n' "$*" >>"$MOCK/colima-calls"
-      [[ ! -e "$MOCK/colima-off" ]]; return
+      [[ ! -e "$MOCK/colima-off" && -f "$COLIMA_CONFIG" ]]; return
     fi
     [[ "$2 $3 $4 $5 $6 $7" == 'default ssh -- sudo sh -c' ]] || return 99
     [[ ! -e "$MOCK/ssh-fail" ]] || return 1
@@ -64,8 +63,6 @@ brew() {
       # 소유 기록과 메모리를 start 전에 남겼는지 확인한다.
       grep -qx 'colima_service=role' "\${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" || return 99
       cp "$HOME/.colima/default/colima.yaml" "$MOCK/config-at-start"
-      mkdir -p "$HOME/.colima/_lima/colima"
-      touch "$HOME/.colima/_lima/colima/lima.yaml"
       [[ -e "$MOCK/start-noop" ]] || touch "$MOCK/registered"
       [[ ! -e "$MOCK/start-partial" ]]
       ;;
@@ -89,30 +86,18 @@ write_atomic() { printf '%s\\n' "$1" >>"$MOCK/writes-calls"; real_write_atomic "
 `);
   writeFileSync(join(mock, 'guest.mjs'), `import { spawnSync } from 'node:child_process';
 const script = process.argv[2].replace('/etc/systemd/system/lima-guestagent.service.d/10-no-clock-write.conf', process.env.MOCK + '/guest/drop-in')
- .replace('/var/lib/bootstrap/verifier-guest-clock', process.env.MOCK + '/guest/owner')
- .replace('\"/proc/$pid/status\"', '\"' + process.env.MOCK + '/guest/proc/$pid/status\"');
+;
 const r = spawnSync('/bin/sh', ['-c', script], { env: { ...process.env, PATH: process.env.MOCK + ':' + process.env.PATH }, stdio: 'inherit' });
 process.exit(r.status ?? 1);
 `);
-  mkdirSync(join(mock, 'guest/proc/123'), { recursive: true });
-  writeFileSync(join(mock, 'guest/proc/123/status'), 'CapBnd: 0000000000000000\n');
+  mkdirSync(join(mock, 'guest'));
   writeFileSync(join(mock, 'systemctl'), `#!/bin/sh
 printf '%s\\n' "$*" >>"$MOCK/systemctl-calls"
 [ ! -e "$MOCK/systemctl-fail" ] || exit 1
-case "$1" in
-  show)
-    case "$4" in
-      NeedDaemonReload) if [ -e "$MOCK/need-reload" ]; then echo yes; else echo no; fi ;;
-      CapabilityBoundingSet) [ ! -e "$MOCK/cap-sys-time" ] || echo cap_sys_time ;;
-      MainPID) echo 123 ;;
-    esac
-    exit 0 ;;
-  daemon-reload) rm -f "$MOCK/need-reload" "$MOCK/cap-sys-time" ;;
-  try-restart)
-    mkdir -p "$MOCK/guest/proc/123"
-    printf 'CapBnd: 0000000000000000\\n' > "$MOCK/guest/proc/123/status"
-    ;;
-esac
+if [ "$1" = show ]; then
+  [ ! -e "$MOCK/cap-sys-time" ] || echo cap_sys_time
+fi
+exit 0
 `, { mode: 0o755 });
   writeFileSync(join(root, 'scripts/launch-agents.mjs'), `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
@@ -130,9 +115,8 @@ process.exitCode = code ? Number(readFileSync(code, 'utf8')) : 0;
   const colima = join(home, '.colima/default/colima.yaml');
   mkdirSync(join(colima, '..'), { recursive: true });
   writeFileSync(colima, COLIMA, { mode: 0o644 });
-  mkdirSync(join(home, '.colima/_lima/colima'), { recursive: true });
-  writeFileSync(join(home, '.colima/_lima/colima/lima.yaml'), 'fixture: instance\n');
   const paths = {
+    override: join(home, '.colima/_lima/_config/override.yaml'),
     state: join(home, '.config/bootstrap/roles/verifier'), colima, keyFile,
     ssh: join(home, '.ssh'), auth: join(home, '.ssh/authorized_keys'),
     bin: join(home, '.local/bin/verifier-logs'), logs: join(home, '.local/state/verifier/logs'),
@@ -217,7 +201,7 @@ test('켜기: colima 메모리와 이전 값, 정확한 키 한 줄과 권한, �
   let result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
   assert.equal(result.status, 0, out(result));
 
-  assert.equal(readFileSync(f.colima, 'utf8'), clockConfig(COLIMA.replace('memory: 2', 'memory: 6'), 'add'), '최상위 memory 한 줄만, 기본 6 GiB');
+  assert.equal(readFileSync(f.colima, 'utf8'), COLIMA.replace('memory: 2', 'memory: 6'), '최상위 memory 한 줄만, 기본 6 GiB');
   assert.equal(mode(f.colima), 0o644);
   const state = f.stateOf();
   assert.equal(state.colima_memory, '6');
@@ -318,7 +302,7 @@ test('status 종료 코드: 준비 0, 원격 로그인 꺼짐 2, 어긋남·꺼�
     ['authorized_keys 권한', () => chmodSync(f.auth, 0o644), () => chmodSync(f.auth, 0o600)],
     ['자동 시작 남음', () => writeFileSync(join(f.mock, 'agents-exit-check'), '1'), () => rmSync(join(f.mock, 'agents-exit-check'))],
     ['verifier-logs 다름', () => writeFileSync(f.bin, 'changed'), () => copyFileSync(join(repo, 'scripts/verifier-logs.sh'), f.bin)],
-    ['colima 값 다름', () => writeFileSync(f.colima, COLIMA), () => writeFileSync(f.colima, clockConfig(COLIMA.replace('memory: 2', 'memory: 6'), 'add'))],
+    ['colima 값 다름', () => writeFileSync(f.colima, COLIMA), () => writeFileSync(f.colima, COLIMA.replace('memory: 2', 'memory: 6'))],
     ['로그 디렉터리 권한', () => chmodSync(f.logs, 0o755), () => chmodSync(f.logs, 0o700)],
   ]) {
     breakIt();
@@ -337,7 +321,8 @@ test('colima 설정이 없으면 수동 작업 대기로 두고 나머지는 적
   assert.equal(readFileSync(f.auth, 'utf8'), `${f.line}\n`);
   assert.equal(f.stateOf().colima_memory_before, '');
   assert.equal(f.role('status', 'verifier').status, 2);
-  assert.equal(existsSync(join(f.home, '.colima')), false, 'colima 설정·템플릿을 만들지 않는다');
+  assert.equal(existsSync(f.colima), false, '인스턴스 설정·템플릿을 만들지 않는다');
+  assert.equal(read(f.override), overrideYaml, '인스턴스 없이도 영구 override는 준비한다');
 
   mkdirSync(join(f.colima, '..'), { recursive: true });
   writeFileSync(f.colima, COLIMA);
@@ -704,6 +689,8 @@ test('Docker 검사는 다른 context·host·TLS 설정을 무시하고 COLIMA_H
   const custom = join(f.root, 'custom colima');
   mkdirSync(join(custom, 'default'), { recursive: true });
   copyFileSync(f.colima, join(custom, 'default/colima.yaml'));
+  mkdirSync(join(custom, '_lima/_config'), { recursive: true });
+  copyFileSync(f.override, join(custom, '_lima/_config/override.yaml'));
   Object.assign(f.env, { COLIMA_HOME: custom, DOCKER_CONTEXT: 'remote', DOCKER_HOST: 'tcp://remote:2376',
     DOCKER_TLS_VERIFY: '1', DOCKER_CERT_PATH: '/remote/certs' });
   const result = f.role('status', 'verifier');
@@ -802,250 +789,128 @@ test('등록 미시도는 status 2·재적용·dry-run에서 pending을 유지�
   assert.deepEqual(f.serviceChanges(), ['services stop colima']);
 });
 
-test('guest clock: 수동 drop-in은 바이트·inode·mtime 유지, provision만 한 번 추가, 두 번째부터 쓰기·reload·재시작 0', t => {
+
+test('clock: 이미 조치한 verifier는 override만 생성하고 이후 writer·reload·restart 0; remove는 guest를 남긴다', t => {
   const f = sandbox(t);
   writeFileSync(join(f.mock, 'guest/drop-in'), dropIn);
   assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
-  assert.equal(f.stateOf().colima_clock, 'role');
-  assert.equal(f.stateOf().colima_clock_guest, 'existing');
-  assert.deepEqual(f.systemChanges(), [], '기존 파일이면 reload·restart 없음');
-  assert.equal(existsSync(join(f.mock, 'guest/owner')), false, '기존 guest에는 marker도 만들지 않음');
-  const files = [f.colima, f.state, join(f.mock, 'guest/drop-in')];
-  const identity = path => { const { ino, mtimeMs, ctimeMs, mode, size } = statSync(path); return { ino, mtimeMs, ctimeMs, mode, size }; };
-  const snapshot = files.map(identity);
-  const before = tree(f.home);
-  f.serviceChanges();
-  f.calls('writes');
+  // 기존 role만 설치된 소유자 기기를 만든다. clock의 host 파일/소유 기록은 아직 없다.
+  rmSync(f.override);
+  writeFileSync(f.state, read(f.state).replace(/^clock_override=.*\n/m, ''));
+  const files = [f.colima, join(f.mock, 'guest/drop-in')];
+  const identity = path => { const { ino, mtimeMs, ctimeMs } = statSync(path); return { ino, mtimeMs, ctimeMs }; };
+  const before = files.map(identity);
+  f.calls('writes'); f.systemChanges(); f.serviceChanges();
+  let r = f.role('add', 'verifier');
+  assert.equal(r.status, 0, out(r));
+  assert.equal(read(f.override), overrideYaml);
+  assert.deepEqual(files.map(identity), before, 'colima.yaml과 기존 guest는 바이트/메타데이터 모두 그대로');
+  assert.deepEqual(f.calls('writes'), [f.state, f.override], '소유 메타데이터와 override만 쓴다');
+  assert.deepEqual(f.systemChanges(), []);
+  assert.deepEqual(f.serviceChanges(), []);
   for (const args of [['add', 'verifier'], ['apply-active']]) {
-    const r = f.role(...args);
+    const snapshot = tree(f.home);
+    r = f.role(...args);
     assert.equal(r.status, 0, out(r));
     assert.match(r.stdout, /이미 적용됨/);
-    assert.deepEqual(tree(f.home), before);
-    assert.deepEqual(files.map(identity), snapshot, 'inode/mtime/ctime까지 그대로');
+    assert.deepEqual(tree(f.home), snapshot);
+    assert.deepEqual(f.calls('writes'), []);
     assert.deepEqual(f.systemChanges(), []);
-    assert.deepEqual(f.calls('writes'), [], '대상 writer 호출도 0');
     assert.deepEqual(f.serviceChanges(), []);
   }
-  const r = f.role('remove', 'verifier');
-  assert.equal(r.status, 0, out(r));
-  assert.equal(read(join(f.mock, 'guest/drop-in')), dropIn, '기존 수동 조치는 지우지 않음');
-  assert.equal(read(f.colima), COLIMA);
+  assert.equal(f.role('status', 'verifier').status, 0);
+  writeFileSync(join(f.mock, 'colima-off'), '');
+  writeFileSync(join(f.mock, 'ssh-fail'), '');
+  assert.equal(f.role('remove', 'verifier').status, 0, '인스턴스 실행/접속과 무관하게 remove 완료');
+  assert.equal(read(f.override), null);
+  assert.equal(read(join(f.mock, 'guest/drop-in')), dropIn);
   assert.deepEqual(f.systemChanges(), []);
 });
 
-test('guest clock: provision을 새 VM·재시작에 실행하고 role이 만든 drop-in만 제거', t => {
+test('clock: 기존 override 충돌은 보존하며 다른 role 항목은 계속, 동일한 미소유 파일도 remove가 보존', t => {
+  for (const content of ['provision: []\n# user file\n', overrideYaml]) {
+    const f = sandbox(t);
+    mkdirSync(join(f.override, '..'), { recursive: true });
+    writeFileSync(f.override, content);
+    let r = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+    assert.equal(r.status, content === overrideYaml ? 0 : 1, out(r));
+    assert.equal(read(f.override), content);
+    assert.equal(f.memory(), '6');
+    assert.equal(read(f.auth), `${f.line}\n`);
+    assert.equal(f.agents().length, 3);
+    assert.equal(f.stateOf().clock_override, undefined, '이미 있던 파일을 소유하지 않음');
+    r = f.role('remove', 'verifier');
+    assert.equal(r.status, 0, out(r));
+    assert.equal(read(f.override), content);
+  }
+});
+
+test('clock: 즉시 적용은 없는 guest 파일만 쓰며, 충돌은 보존; status는 unit capability와 버전을 보고', t => {
   const f = sandbox(t);
-  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  let r = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(r.status, 0, out(r));
   assert.equal(read(join(f.mock, 'guest/drop-in')), dropIn);
   assert.deepEqual(f.systemChanges(), ['daemon-reload', 'try-restart lima-guestagent']);
-  // VM 재생성: 디스크의 guest 소유 기록도 사라지고 provision은 호스트 설정에 남는다.
-  rmSync(join(f.mock, 'guest'), { recursive: true });
-  mkdirSync(join(f.mock, 'guest'));
-  for (let boot = 0; boot < 2; boot++) {
-    const body = clockConfig(read(f.colima), 'script');
-    assert.ok(body);
-    const result = spawnSync('node', [join(f.mock, 'guest.mjs'), body], { env: f.env, encoding: 'utf8' });
-    assert.equal(result.status, 0, out(result));
-    assert.equal(read(join(f.mock, 'guest/drop-in')), dropIn);
-    assert.deepEqual(f.systemChanges(), boot === 0 ? ['daemon-reload', 'try-restart lima-guestagent'] : []);
-  }
-  assert.equal(f.role('remove', 'verifier').status, 0);
-  assert.equal(read(join(f.mock, 'guest/drop-in')), null);
-  assert.equal(read(join(f.mock, 'guest/owner')), null);
-  assert.deepEqual(f.systemChanges(), ['daemon-reload', 'try-restart lima-guestagent']);
-});
-
-test('guest clock: 실패·VM 정지·충돌은 소유 기록을 보존하고 재시도; status는 unit capability도 확인', t => {
-  const f = sandbox(t);
-  writeFileSync(join(f.mock, 'systemctl-fail'), '');
-  let r = f.role('add', 'verifier', '--ssh-key', f.keyFile);
-  assert.equal(r.status, 1, out(r));
-  assert.ok(existsSync(join(f.mock, 'guest/owner.pending')));
-  rmSync(join(f.mock, 'systemctl-fail'));
-  assert.equal(f.role('add', 'verifier').status, 0);
-  assert.equal(existsSync(join(f.mock, 'guest/owner.pending')), false);
   r = f.role('status', 'verifier');
   assert.equal(r.status, 0, out(r));
+  assert.match(r.stdout, /CapabilityBoundingSet=/);
   assert.match(r.stdout, /limactl version 2.2.0/);
+  assert.match(r.stdout, /lima\/pull\/5565/);
   writeFileSync(join(f.mock, 'cap-sys-time'), '');
   assert.equal(f.role('status', 'verifier').status, 1);
+  assert.equal(f.role('add', 'verifier').status, 0, '동일 파일이면 unit 상태와 무관하게 no-op (단순안)');
+  assert.deepEqual(f.systemChanges(), []);
   rmSync(join(f.mock, 'cap-sys-time'));
-  for (const failure of ['colima-off', 'ssh-fail', 'systemctl-fail']) {
-    writeFileSync(join(f.mock, failure), '');
-    r = f.role('remove', 'verifier');
-    assert.equal(r.status, 1, out(r));
-    assert.ok(existsSync(f.state), failure);
-    rmSync(join(f.mock, failure));
-  }
-  assert.equal(f.role('remove', 'verifier').status, 0);
-  assert.equal(existsSync(f.state), false);
-});
-
-test('guest clock: 기존·수정한 provision/drop-in은 보존, dry-run은 guest에 접근하지 않음', t => {
-  const f = sandbox(t);
-  writeFileSync(f.colima, clockConfig(COLIMA, 'add'));
-  writeFileSync(join(f.mock, 'guest/drop-in'), dropIn);
-  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
-  assert.equal(f.stateOf().colima_clock, 'existing');
-  assert.equal(f.role('remove', 'verifier').status, 0);
-  assert.match(read(f.colima), /bootstrap-verifier-guest-clock id=clock-capability/);
-  // 소유한 파일이 수동 수정되면 제거 중단.
-  writeFileSync(f.colima, COLIMA);
-  rmSync(join(f.mock, 'guest/drop-in'));
-  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
   writeFileSync(join(f.mock, 'guest/drop-in'), 'user edit\n');
-  assert.equal(f.role('remove', 'verifier').status, 1);
-  assert.ok(existsSync(f.state));
-  assert.equal(read(join(f.mock, 'guest/drop-in')), 'user edit\n');
-  writeFileSync(join(f.mock, 'ssh-fail'), '');
-  assert.equal(f.role('add', 'verifier', '--dry-run').status, 0);
-  assert.equal(f.role('remove', 'verifier', '--dry-run').status, 0);
-});
-
-test('guest clock YAML: 기존 provision·다른 키를 보존, empty/null/누락/list 지원, 복잡한 inline·중복·수정은 거부', () => {
-  for (const original of [COLIMA, COLIMA + 'provision: []\nsshConfig: true\n',
-    COLIMA + 'provision: null\n', COLIMA + 'provision: [] # custom comment\n', COLIMA + 'provision: # comment\n', COLIMA + 'provision:\n  - mode: user\n    script: echo keep\nsshConfig: true\n',
-    COLIMA + 'provision:\n- mode: user\n  script: echo keep\nsshConfig: true\n']) {
-    const [, before] = clockConfig(original, 'inspect').trim().split(' ');
-    const applied = clockConfig(original, 'add');
-    assert.equal(clockConfig(applied, 'add'), applied);
-    assert.equal(clockConfig(applied, 'remove', before), original);
-    const yaml = spawnSync('/usr/bin/ruby', ['-ryaml', '-e', 'y=YAML.load(STDIN.read); abort unless y["provision"].is_a?(Array) && y["provision"][0]["mode"] == "system"'], { input: applied, encoding: 'utf8' });
-    assert.equal(yaml.status, 0, yaml.stderr);
-  }
-  for (const text of ['provision: [{mode: user}]\n', 'provision: []\nprovision: []\n', clockConfig(COLIMA, 'add').replace('try-restart', 'restart')]) {
-    assert.throws(() => clockConfig(text, 'add'));
-  }
-  assert.doesNotMatch(guestScript(), /apt-get|enable --now chrony/);
-});
-
-// yaml.v3가 Colima 기본 템플릿으로 다시 저장한 모양: 바깥 주석 marker는 없고 literal script 값만 남는다.
-const colimaSaved = (script, spaces = 4) => {
-  const indent = ' '.repeat(spaces);
-  return '# Custom provision scripts for the virtual machine.\ncpu: 2\nmemory: 6\nprovision:\n' +
-    `${indent}- mode: system\n${indent}  script: |\n` +
-    script.trimEnd().split('\n').map(line => `${indent}    ${line}\n`).join('') + 'sshConfig: true\n';
-};
-
-test('F1: Colima 재저장 후 status 0, add/apply-active 변화 0, remove 뒤 provision 0; before는 최초 값 유지', t => {
-  for (const spaces of [2, 4, 6]) {
-    const f = sandbox(t);
-    writeFileSync(join(f.mock, 'guest/drop-in'), dropIn);
-    assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
-    const originalBefore = f.stateOf().colima_clock_before;
-    writeFileSync(f.colima, colimaSaved(guestScript(), spaces));
-    let r = f.role('status', 'verifier');
-    assert.equal(r.status, 0, out(r));
-    const before = tree(f.home);
-    const stateInode = statSync(f.state).ino, configInode = statSync(f.colima).ino;
-    f.calls('writes'); f.systemChanges(); f.serviceChanges();
-    for (const args of [['add', 'verifier'], ['apply-active']]) {
-      r = f.role(...args);
-      assert.equal(r.status, 0, out(r));
-      assert.deepEqual(tree(f.home), before);
-      assert.equal(statSync(f.state).ino, stateInode);
-      assert.equal(statSync(f.colima).ino, configInode);
-      assert.deepEqual(f.calls('writes'), []);
-      assert.deepEqual(f.systemChanges(), []);
-      assert.deepEqual(f.serviceChanges(), []);
-      assert.equal(f.stateOf().colima_clock_before, originalBefore);
-    }
-    r = f.role('remove', 'verifier');
-    assert.equal(r.status, 0, out(r));
-    assert.doesNotMatch(read(f.colima), /bootstrap-verifier-guest-clock|mode: system/);
-    assert.equal(read(join(f.mock, 'guest/drop-in')), dropIn, '기존 수동 파일 보존');
-  }
-});
-
-test('F2: 알려진 초기판을 2로 이관하고, 알 수 없는 편집만 충돌; clock 충돌이 나머지 role 적용을 막지 않는다', t => {
-  const f = sandbox(t);
-  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
-  const originalBefore = f.stateOf().colima_clock_before;
-  const oldWithComments = colimaSaved(legacyScript, 2)
-    .replace('  - mode: system', '  # bootstrap-role-verifier-guest-clock begin\n  - mode: system')
-    .replace('sshConfig: true', '  # bootstrap-role-verifier-guest-clock end\nsshConfig: true');
-  assert.match(clockConfig(oldWithComments, 'add'), /version=2/);
-  assert.doesNotMatch(clockConfig(oldWithComments, 'add'), /bootstrap-role-verifier-guest-clock (begin|end)/);
-  writeFileSync(f.colima, colimaSaved(legacyScript));
-  assert.match(clockConfig(read(f.colima), 'inspect'), /^upgrade /);
-  let r = f.role('apply-active');
-  assert.equal(r.status, 0, out(r));
-  assert.match(read(f.colima), /id=clock-capability version=2/);
-  assert.equal(f.stateOf().colima_clock_before, originalBefore);
-  // try-restart를 임의로 restart로 바꾸는 것은 알려진 구버전이 아니라 미등록 편집이다.
-  writeFileSync(f.colima, read(f.colima).replace('try-restart', 'restart').replace('memory: 6', 'memory: 2'));
-  rmSync(f.bin); writeFileSync(f.auth, ''); f.agents();
-  r = f.role('apply-active');
-  assert.equal(r.status, 1, out(r));
-  assert.match(out(r), /알 수 없게 수정된/);
-  assert.equal(f.memory(), '6', 'clock 충돌이어도 메모리 적용');
-  assert.ok(existsSync(f.bin), 'clock 충돌이어도 로그 helper 복구');
-  assert.equal(read(f.auth), `${f.line}\n`, 'clock 충돌이어도 SSH 복구');
-  assert.equal(f.agents().length, 3, 'clock 충돌이어도 자동 시작 적용');
-  r = f.role('remove', 'verifier');
-  assert.equal(r.status, 1, out(r));
-  assert.ok(existsSync(f.state), '미완료 clock 소유 기록 보존');
-  assert.equal(read(f.auth), '', '다른 항목 제거는 계속');
-  assert.equal(existsSync(f.bin), false);
-  assert.ok(f.agents().every(call => call.endsWith('--roles none')), 'clock 기록이 남아도 자동 시작 복구');
-});
-
-test('F3/F5: colima delete 뒤 status 실패, 인스턴스가 없으면 guest 제거를 생략; 정지는 재시도', t => {
-  for (const configPresent of [false, true]) {
-    const f = sandbox(t);
-    assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
-    writeFileSync(join(f.mock, 'colima-off'), '');
-    let r = f.role('remove', 'verifier');
-    assert.equal(r.status, 1, out(r));
-    assert.match(out(r), /VM 실행 후/);
-    // 재시도할 role 소유 기록을 유지한 채 표준 delete의 디스크 결과를 재현한다.
-    rmSync(join(f.home, '.colima/_lima/colima'), { recursive: true });
-    if (!configPresent) rmSync(join(f.home, '.colima/default'), { recursive: true });
-    writeFileSync(join(f.mock, 'ssh-fail'), '');
-    r = f.role('status', 'verifier');
-    assert.equal(r.status, 1, out(r));
-    if (!configPresent) assert.match(out(r), /delete 후 role add/);
-    f.systemChanges();
-    r = f.role('remove', 'verifier');
-    assert.equal(r.status, 0, out(r));
-    assert.match(out(r), /인스턴스 부재/);
-    assert.equal(existsSync(f.state), false);
-    assert.deepEqual(f.systemChanges(), [], '없는 VM의 guest 명령을 호출하지 않음');
-    if (configPresent) assert.doesNotMatch(read(f.colima), /mode: system/);
-  }
-});
-
-test('F4: 동일 drop-in의 reload 누락과 실행 프로세스 CapBnd를 각각 수렴시킨 뒤 변화 0', t => {
-  for (const broken of ['reload', 'runtime', 'both']) {
-    const f = sandbox(t);
-    writeFileSync(join(f.mock, 'guest/drop-in'), dropIn);
-    assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
-    const inode = statSync(join(f.mock, 'guest/drop-in')).ino;
-    if (broken !== 'runtime') writeFileSync(join(f.mock, 'need-reload'), '');
-    if (broken !== 'reload') writeFileSync(join(f.mock, 'guest/proc/123/status'), 'CapBnd: 000001ff02000000\n');
-    assert.equal(f.role('status', 'verifier').status, 1);
-    f.systemChanges();
-    let r = f.role('add', 'verifier');
-    assert.equal(r.status, 0, out(r));
-    assert.deepEqual(f.systemChanges(), broken === 'reload' ? ['daemon-reload'] : broken === 'runtime' ? ['try-restart lima-guestagent'] : ['daemon-reload', 'try-restart lima-guestagent']);
-    assert.equal(statSync(join(f.mock, 'guest/drop-in')).ino, inode);
-    assert.equal(f.role('status', 'verifier').status, 0);
-    r = f.role('add', 'verifier');
-    assert.equal(r.status, 0, out(r));
-    assert.deepEqual(f.systemChanges(), []);
-    assert.equal(existsSync(join(f.mock, 'guest/owner')), false, '기존 수동 파일을 소유하지 않음');
-  }
-});
-
-test('F6: SSH/조회 실패와 기존 파일 내용 충돌을 구분한다', t => {
-  const f = sandbox(t);
-  writeFileSync(join(f.mock, 'guest/drop-in'), 'different\n');
-  let r = f.role('add', 'verifier', '--ssh-key', f.keyFile);
-  assert.equal(r.status, 1, out(r));
-  assert.match(out(r), /기존 drop-in 내용\/링크 충돌/);
-  writeFileSync(join(f.mock, 'ssh-fail'), '');
   r = f.role('add', 'verifier');
   assert.equal(r.status, 1, out(r));
-  assert.match(out(r), /SSH\/원격 조회 실패/);
-  assert.doesNotMatch(out(r), /기존 drop-in 내용\/링크 충돌/);
+  assert.match(out(r), /내용 충돌/);
+  assert.equal(read(join(f.mock, 'guest/drop-in')), 'user edit\n');
+  assert.deepEqual(f.systemChanges(), []);
+  assert.equal(f.role('status', 'verifier').status, 1);
+});
+
+test('clock: 표준 delete 후 override 유지, 새 guest에 provision 적용·반복 무변경; remove는 VM 부재에도 완료', t => {
+  const f = sandbox(t);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  f.systemChanges();
+  // 소스로 확인한 delete 범위: profile 설정과 해당 Lima instance만 지운다. _config는 남는다.
+  rmSync(join(f.home, '.colima/default'), { recursive: true });
+  rmSync(join(f.mock, 'guest'), { recursive: true });
+  mkdirSync(join(f.mock, 'guest'));
+  assert.equal(read(f.override), overrideYaml);
+  const script = JSON.parse(read(f.override).split('    script: ')[1]);
+  assert.equal(script, guestScript('provision'));
+  for (const existing of [null, dropIn, 'old content\n']) {
+    if (existing !== null) writeFileSync(join(f.mock, 'guest/drop-in'), existing);
+    const r = spawnSync('node', [join(f.mock, 'guest.mjs'), script], { env: f.env, encoding: 'utf8' });
+    assert.equal(r.status, 0, out(r));
+    assert.equal(read(join(f.mock, 'guest/drop-in')), dropIn);
+    assert.deepEqual(f.systemChanges(), existing === dropIn ? [] : ['daemon-reload', 'try-restart lima-guestagent']);
+  }
+  writeFileSync(join(f.mock, 'ssh-fail'), '');
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.equal(read(f.override), null);
+  assert.equal(read(join(f.mock, 'guest/drop-in')), dropIn);
+  assert.deepEqual(f.systemChanges(), []);
+  assert.doesNotMatch(overrideYaml, /chrony|NeedDaemonReload|MainPID|CapBnd|\/var\/lib|version=/);
+});
+
+test('clock: COLIMA_HOME/LIMA_HOME 경로를 따르며, 수정된 role 소유 override와 dry-run은 보존', t => {
+  const f = sandbox(t);
+  const limaHome = join(f.root, 'separate lima');
+  f.env.LIMA_HOME = limaHome;
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  const override = join(limaHome, '_config/override.yaml');
+  assert.equal(read(override), overrideYaml);
+  assert.equal(read(f.override), null);
+  writeFileSync(override, 'user change\n');
+  writeFileSync(join(f.mock, 'ssh-fail'), '');
+  let r = f.role('remove', 'verifier', '--dry-run');
+  assert.equal(r.status, 1, out(r));
+  assert.equal(read(override), 'user change\n');
+  r = f.role('remove', 'verifier');
+  assert.equal(r.status, 1, out(r));
+  assert.equal(read(override), 'user change\n');
+  assert.ok(existsSync(f.state), '미완료 소유 기록 보존');
 });
