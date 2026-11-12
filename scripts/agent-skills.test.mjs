@@ -50,6 +50,32 @@ test('archive 공통 절: 후손 재귀 조회·보류·강제 및 MCP 우회 �
   assert.match(safety, /`--force`나 MCP로 우회하지 않는다/);
 });
 
+test('교훈 경로: 설치 원본 직접 수정 금지와 bootstrap 단일 수신 경로를 유지한다', () => {
+  for (const name of ['yw-supervisor', 'yw-chief-supervisor']) {
+    const skill = readFileSync(new URL(`../agents/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
+    assert.match(skill, /설치 경로[^\n]*링크 원본을 직접 고치지 않는다/, `${name}: 설치 원본 보호 필요`);
+    const inboxes = [...skill.matchAll(/\]\((https:\/\/github\.com\/[^)]+)\)/g)]
+      .map(([, href]) => new URL(href))
+      .filter(url => url.searchParams.get('q')?.includes('label:skill-lesson'));
+    assert.ok(inboxes.length > 0, `${name}: 수신 링크 필요`);
+    for (const inbox of inboxes) {
+      assert.equal(inbox.pathname, '/01-works/bootstrap/issues');
+      assert.equal(inbox.searchParams.get('q'), 'is:issue is:open label:skill-lesson');
+    }
+  }
+  for (const [source, heading, target] of [
+    ['../agents/skills/yw-paseo-cleanup/SKILL.md', '다른 스킬·호스트·버전과의 경계', '../yw-supervisor/SKILL.md'],
+    ['../agents/paseo.md', '기기 정리 스킬', 'skills/yw-supervisor/SKILL.md'],
+  ]) {
+    const doc = readFileSync(new URL(source, import.meta.url), 'utf8');
+    const section = doc.split(`\n## ${heading}\n`)[1]?.split('\n## ')[0];
+    assert.ok(section, `${source}: 경계 절 필요`);
+    const routing = section.split('\n\n').find(paragraph => paragraph.includes('skill-lesson'));
+    assert.ok(routing, `${source}: 교훈 수신 경로 필요`);
+    assert.ok(routing.includes(`](${target})`), `${source}: 감독의 변경 창구·포착 규칙 참조 필요`);
+  }
+});
+
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {
   test(`${name} 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 보존`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'bootstrap-skills-test-'));

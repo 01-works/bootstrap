@@ -277,6 +277,8 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
 
 ## 다른 스킬·호스트·버전과의 경계
 
+이 스킬 폴더와 `agents/paseo.md`의 "기기 정리 스킬" 절도 [yw-supervisor의 변경 창구·교훈 포착 규칙](../yw-supervisor/SKILL.md)을 따르며, 교훈은 `skill-lesson` 수신 이슈로 보낸다.
+
 | 스킬 | 책임 |
 |---|---|
 | [yw-supervisor](../yw-supervisor/SKILL.md) | 자기가 맡은 작업의 운영·완료 판정과 작업 중 만든 자원 정리 |
