@@ -170,6 +170,14 @@ test('새 사용자 스킬 원본이 오면 paseo 단계로 연결하고 내용 
   assert.equal(result.status, 0, output(result));
   assert.deepEqual(f.calls(), ['paseo 1']);
   assert.equal(readFileSync(join(f.work, skillPath), 'utf8'), 'chief skill v2\n');
+  const referencePath = 'agents/skills/yw-supervisor/references/archive-safety.md';
+  for (const content of ['archive safety v1\n', 'archive safety v2\n']) {
+    f.push({ [referencePath]: content });
+    result = f.update('--auto');
+    assert.equal(result.status, 0, output(result));
+    assert.deepEqual(f.calls(), ['paseo 1'], '중첩 references만 바뀌어도 paseo 단계 선택');
+    assert.equal(readFileSync(join(f.work, referencePath), 'utf8'), content);
+  }
 });
 
 test('수동 작업 대기는 자동으로 반복하지 않고, 터미널에서 실행하면 다시 실행한다', t => {

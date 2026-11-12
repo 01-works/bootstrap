@@ -21,5 +21,8 @@ jobs:
       - name: Skill character counts
         continue-on-error: true
         run: LC_ALL=en_US.UTF-8 wc -m agents/skills/*/SKILL.md
+      - name: Skill reference character counts
+        continue-on-error: true
+        run: LC_ALL=en_US.UTF-8 wc -m agents/skills/*/references/*.md
       - run: node --test scripts/*.test.mjs agents/skills/*/*.test.mjs
       - run: python3 -I scripts/paseo-api-key.test.py

@@ -67,7 +67,7 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 
 관계는 두 종류로 나눠 계산한다.
 
-- **전파 관계:** `paseo.parent-agent-id`. archive가 실제로 연쇄되는 경로이며, [archive 전 공통 안전 대조](../yw-supervisor/SKILL.md#archive-전-공통-안전-대조)의 후손 재귀 조회 대상이다.
+- **전파 관계:** `paseo.parent-agent-id`. archive가 실제로 연쇄되는 경로이며, [archive 전 공통 안전 대조](../yw-supervisor/references/archive-safety.md)의 후손 재귀 조회 대상이다.
 - **보호 관계:** archive가 전파되지는 않지만 끊으면 안 되는 관계다.
   - 이어받기 체인: `zerosub.continued-from`·`handoff.from`·`agent-list.continued-from`
   - 완료 알림 구독: Paseo home의 `finish-subscriptions.json`. 라벨 없이 완료 알림만 기다리는 관계도 있다.
@@ -138,12 +138,16 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 
 ## 자원별 정리 조건
 
+에이전트·workspace archive 후보나 이를 위한 detach를 판단하기 전에 [공통 안전 대조](../yw-supervisor/references/archive-safety.md)를 읽고 적용한다. 참조를 읽을 수 없으면 보류한다.
+
+부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류하고, detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다.
+
 ### 에이전트
 
 다음을 모두 충족해야 한다.
 
 - 완료 후보이고 보존 사유가 없다.
-- [공통 안전 대조](../yw-supervisor/SKILL.md#archive-전-공통-안전-대조)의 후손 전체가 같은 계획 안에서 완료·소유 확인됐다.
+- [공통 안전 대조](../yw-supervisor/references/archive-safety.md)의 후손 전체가 같은 계획 안에서 완료·소유 확인됐다.
 - 걸려 있는 heartbeat, 완료 알림 구독, 알림 중계가 없다.
 
 archive하면 그 에이전트의 heartbeat에 완료 처리가 시도된다. 그래서 사용자가 요청한 감시가 걸린 세션은 정리하지 않는다.
@@ -154,7 +158,7 @@ archive하면 그 에이전트의 heartbeat에 완료 처리가 시도된다. �
 
 다음을 모두 충족해야 한다.
 
-- [공통 안전 대조](../yw-supervisor/SKILL.md#archive-전-공통-안전-대조)의 workspace 추가 조건을 통과한다.
+- [공통 안전 대조](../yw-supervisor/references/archive-safety.md)의 workspace 추가 조건을 통과한다.
 - 구성원은 MCP 목록과 저장 레코드의 `workspaceId`를 대조해 확정한다. 보관된 구성원도 보호 대조에 포함한다.
 - 비보관 구성원이 모두 이번 계획에서 archive되고 readback까지 끝났다. 또는 비보관 구성원이 없다.
 - 허브, schedule cwd, 감독 관리 범위가 아니다.
@@ -246,7 +250,7 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
    - 다른 정리 주체가 이미 바꾼 상태
 
    안전에 영향을 주는 차이가 있으면 **그 항목과 그 항목에 의존하는 부모·workspace만** 보류한다. 대상을 조용히 늘리지 않는다.
-2. **에이전트:** 승인된 잎부터 하나씩 [공통 안전 대조](../yw-supervisor/SKILL.md#archive-전-공통-안전-대조)의 archive 경로와 상태 변경 확인을 따른다.
+2. **에이전트:** 승인된 잎부터 하나씩 [공통 안전 대조](../yw-supervisor/references/archive-safety.md)의 archive 경로와 상태 변경 확인을 따른다.
    - 매 archive 호출 직전에, 아직 보관되지 않은 후손이 0인지 확인한다.
    - 부모 archive로 후손을 한꺼번에 정리하지 않는다.
    - 다른 소유자의 세션을 분리해서 정리를 가능하게 만들지 않는다.

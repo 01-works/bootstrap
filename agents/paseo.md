@@ -13,7 +13,7 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 - `~/.paseo/`: 데몬 설정, 키, 에이전트 기록, 로그가 섞여 있어서 저장소에 넣지 않는다.
 - 예외적으로 공유할 프로필의 기본값만 [paseo-profiles.json](paseo-profiles.json)에 보관한다. `config.json` 전체를 복사하거나 링크하지 않는다.
 - 에이전트에 Paseo 도구를 제공하는 설정(`daemon.mcp.injectIntoAgents`, 앱의 Enable Paseo tools)은 `paseo` 단계가 켠다. Supervisor가 작업자를 만들 때 필요하다.
-- 머지된 워크스페이스 자동 아카이브(`daemon.autoArchiveAfterMerge`)는 `paseo` 단계가 끈다. 이전에 켜진 기기도 다음 `paseo` 단계(자동 갱신 포함)에서 꺼진다. 병합 뒤 워크스페이스는 수동으로 아카이브한다. 에이전트·workspace 정리 전에는 [archive 전 공통 안전 대조](skills/yw-supervisor/SKILL.md#archive-전-공통-안전-대조)를 따른다.
+- 머지된 워크스페이스 자동 아카이브(`daemon.autoArchiveAfterMerge`)는 `paseo` 단계가 끈다. 이전에 켜진 기기도 다음 `paseo` 단계(자동 갱신 포함)에서 꺼진다. 병합 뒤 워크스페이스는 수동으로 아카이브한다. 에이전트·workspace 정리 전에는 [archive 전 공통 안전 대조](skills/yw-supervisor/references/archive-safety.md)를 따른다.
 - 기본 스킬: Paseo가 `~/.claude/skills/paseo*`(Claude Code)와 `~/.agents/skills/paseo*`에 설치한다. 각 폴더의 `.paseo-managed-files.json`이 Paseo가 관리한다는 표시다. 저장소에 넣지 않는다. 데몬은 이미 설치된 스킬만 자동 갱신하고 처음 설치는 앱 설정(Orchestration skills)에서 해야 해서, `paseo` 단계가 하나도 없을 때만 데몬에 설치를 요청한다(`scripts/paseo-skills.mjs`). 앱의 내부 모듈을 쓰므로 Paseo 버전이 바뀌어 실패하면 앱 설정에서 설치한다. 앱에서 스킬을 하나도 고르지 않은 기기는 그대로 둔다. 앱의 제거(Uninstall)만 하면 다음 `paseo` 단계가 다시 설치하므로, 빼려면 선택을 비운다.
 - 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md), [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md), [yw-paseo-cleanup](skills/yw-paseo-cleanup/SKILL.md)은 이 저장소에서 관리한다. `paseo` 단계가 각 스킬의 같은 원본 폴더를 `~/.agents/skills/<스킬 이름>`과 `~/.claude/skills/<스킬 이름>`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
 
@@ -92,7 +92,7 @@ Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 �
 
 - 스킬 폴더의 `scan.mjs`가 저장 레코드·git·gh·감독 기록을 읽기만 해서 분류 초안을 만든다. 실행 기록은 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-paseo-cleanup/<실행 ID>/`에 남는다.
 - status만으로 판단하지 않는다. closed는 끝남이 아니고, 질문·백그라운드·heartbeat를 기다리는 세션도 idle로 보인다. 완료 근거가 확인된 것만 정리 후보가 된다.
-- 배치 승인 후보와 항목별 결정을 나눈 계획을 먼저 보여 주고, 승인받은 범위만 실행한다. archive 안전 규칙은 [archive 전 공통 안전 대조](skills/yw-supervisor/SKILL.md#archive-전-공통-안전-대조)를 따른다.
+- 배치 승인 후보와 항목별 결정을 나눈 계획을 먼저 보여 주고, 승인받은 범위만 실행한다. archive 안전 규칙은 [archive 전 공통 안전 대조](skills/yw-supervisor/references/archive-safety.md)를 따른다.
 - 감독 lane은 그 감독이나 yw-chief-supervisor가 정리한다. 이 스킬은 lane 밖 잔재와, 명시적 완료 판정이 있고 지금 다른 감독·chief가 관리하지 않는 잔재만 다룬다.
 
 ## 설치와 갱신
