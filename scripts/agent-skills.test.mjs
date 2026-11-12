@@ -31,6 +31,22 @@ function referenceMarkdown(dir) {
   });
 }
 
+function assertArchiveLoop(safety, label) {
+  const steps = [...safety.matchAll(/^[ \t]*(\d+)\. (.+)$/gm)];
+  assert.deepEqual(steps.map(([, number]) => Number(number)), [1, 2, 3, 4, 5, 6, 7], `${label}: 재개 루프 단계와 순서`);
+  const conditions = [
+    /승인 범위·완료·소유 조건을 충족한 잎 하나를 고른다/,
+    /호출 직전에 그 대상의 후손 전체를 다시 조회해 미보관 후손이 0인지 확인한다/,
+    /그 대상만 CLI로 `--force` 없이 archive한다/,
+    /대상과 영향받는 후손의 `Archived`·`ArchivedAt`·부모 관계를 readback한다/,
+    /확인에 성공한 뒤에만 다음 대상으로 1\)부터 반복한다/,
+    /구성원 처리가 끝나면 workspace 조건\(자기·살아 있는 감독의 작업 공간 아님, 모든 구성원 완료·소유, 미커밋 변경·터미널 없음\)을 다시 확인한다/,
+    /workspace를 archive하고 readback한다/,
+  ];
+  conditions.forEach((condition, i) => assert.match(steps[i][2], condition, `${label}: 재개 루프 ${i + 1}단계`));
+  assert.match(safety, /미확인, 조건 불충족, readback 실패가 있으면 그 대상과 그것에 의존하는 부모·workspace에서 멈추고 보존한다/, `${label}: 재개 루프 멈춤 조건`);
+}
+
 test('사용자 스킬: frontmatter 이름은 폴더와 같고 본문·참조 링크가 배포 경로 안에서 열린다', () => {
   const root = fileURLToPath(new URL('../agents/skills/', import.meta.url));
   for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -144,6 +160,9 @@ test('archive 공통 절: 후손 재귀 조회·보류·강제 및 MCP 우회 �
     assert.ok(item, `${label}: 안전 항목 필요`);
     for (const pattern of patterns) assert.match(item, pattern, label);
   }
+  const execution = safety.split('- **실행 직전 대조:** ')[1]?.split('\n- **')[0];
+  assert.ok(execution, '참조: 실행 직전 대조 항목 필요');
+  assertArchiveLoop(execution, '참조');
 });
 
 test('archive 본문: 세 진입점에 참조 읽기 조건과 실패·위험·권한·실행 순서 핵심이 남는다', () => {
@@ -158,14 +177,18 @@ test('archive 본문: 세 진입점에 참조 읽기 조건과 실패·위험·�
     assert.match(safety, /archive 후보나 이를 위한 detach를 판단하기 전에 \[공통 안전 대조\]\([^)]+\)를 읽고 적용한다\. 참조를 읽을 수 없으면 보류한다/, name);
     assert.match(safety, /부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류/, name);
     assert.match(safety, /detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다/, name);
-    assert.match(safety, /archive는 잎부터 하나씩 하고, 매 호출 직전에 미보관 후손이 0인지 확인한다/, name);
-    assert.match(safety, /각 archive 직후 대상과 영향받는 후손의 `Archived`·`ArchivedAt`·부모 관계를 다시 읽어 확인하고, 확인되기 전에는 다음 부모·workspace archive로 넘어가지 않는다/, name);
+    assertArchiveLoop(safety, name);
     assert.match(safety, /부모 archive로 후손을 한꺼번에 정리하지 않는다/, name);
-    assert.match(safety, /workspace는 자기·살아 있는 감독의 작업 공간이 아니고, 모든 구성원의 완료·소유와 미커밋 변경·터미널 부재를 확인한 경우에만 archive한다\. 확인할 수 없으면 보존한다/, name);
     assert.match(safety, /감독 자체의 detach 동의는 그 감독 자신이나 사용자에게 받으며, 부모의 동의로 대신하지 않는다/, name);
   }
   const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
   assert.match(supervisor, /라벨·heartbeat\/schedule·archive 상태를 바꾼 뒤에는 대상 ID의 실제 상태를 다시 읽고 확인 결과를 기록한다\. 성공 반환만으로 적용됐다고 쓰지 않는다/);
+  const cleanup = readFileSync(new URL('../agents/skills/yw-paseo-cleanup/SKILL.md', import.meta.url), 'utf8');
+  const execution = cleanup.split('\n## 실행 순서와 직전 재확인\n')[1]?.split('\n## ')[0];
+  assert.ok(execution, 'cleanup: 실행 절 필요');
+  assert.match(execution, /에이전트:\*\* \[archive 재개 루프\]\(#자원별-정리-조건\) 1~5단계를 반복/);
+  assert.match(execution, /workspace:\*\* 구성원 단계가 모두 적용 확인된 workspace만 위 재개 루프 6~7단계/);
+  assert.match(execution, /그 항목과 그 항목에 의존하는 부모·workspace만[^\n]*보류한다\. 대상을 조용히 늘리지 않는다/);
 });
 
 test('교훈 경로: 설치 원본 직접 수정 금지와 bootstrap 단일 수신 경로를 유지한다', () => {

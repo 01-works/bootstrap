@@ -66,9 +66,21 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 에이전트·workspace archive 후보나 이를 위한 detach를 판단하기 전에 [공통 안전 대조](references/archive-safety.md)를 읽고 적용한다. 참조를 읽을 수 없으면 보류한다.
 
-부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류하고, detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다. archive는 잎부터 하나씩 하고, 매 호출 직전에 미보관 후손이 0인지 확인한다. 각 archive 직후 대상과 영향받는 후손의 `Archived`·`ArchivedAt`·부모 관계를 다시 읽어 확인하고, 확인되기 전에는 다음 부모·workspace archive로 넘어가지 않는다. 부모 archive로 후손을 한꺼번에 정리하지 않는다.
+부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류하고, detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다. 부모 archive로 후손을 한꺼번에 정리하지 않는다.
 
-workspace는 자기·살아 있는 감독의 작업 공간이 아니고, 모든 구성원의 완료·소유와 미커밋 변경·터미널 부재를 확인한 경우에만 archive한다. 확인할 수 없으면 보존한다. 감독 자체의 detach 동의는 그 감독 자신이나 사용자에게 받으며, 부모의 동의로 대신하지 않는다.
+감독 자체의 detach 동의는 그 감독 자신이나 사용자에게 받으며, 부모의 동의로 대신하지 않는다.
+
+**archive 재개 루프**
+
+1. 승인 범위·완료·소유 조건을 충족한 잎 하나를 고른다.
+2. 호출 직전에 그 대상의 후손 전체를 다시 조회해 미보관 후손이 0인지 확인한다.
+3. 그 대상만 CLI로 `--force` 없이 archive한다.
+4. 대상과 영향받는 후손의 `Archived`·`ArchivedAt`·부모 관계를 readback한다.
+5. 확인에 성공한 뒤에만 다음 대상으로 1)부터 반복한다.
+6. 구성원 처리가 끝나면 workspace 조건(자기·살아 있는 감독의 작업 공간 아님, 모든 구성원 완료·소유, 미커밋 변경·터미널 없음)을 다시 확인한다.
+7. workspace를 archive하고 readback한다.
+
+미확인, 조건 불충족, readback 실패가 있으면 그 대상과 그것에 의존하는 부모·workspace에서 멈추고 보존한다.
 
 ## 진행과 검증
 

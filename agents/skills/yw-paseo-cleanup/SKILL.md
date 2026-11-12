@@ -140,9 +140,21 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 
 에이전트·workspace archive 후보나 이를 위한 detach를 판단하기 전에 [공통 안전 대조](../yw-supervisor/references/archive-safety.md)를 읽고 적용한다. 참조를 읽을 수 없으면 보류한다.
 
-부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류하고, detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다. archive는 잎부터 하나씩 하고, 매 호출 직전에 미보관 후손이 0인지 확인한다. 각 archive 직후 대상과 영향받는 후손의 `Archived`·`ArchivedAt`·부모 관계를 다시 읽어 확인하고, 확인되기 전에는 다음 부모·workspace archive로 넘어가지 않는다. 부모 archive로 후손을 한꺼번에 정리하지 않는다.
+부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류하고, detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다. 부모 archive로 후손을 한꺼번에 정리하지 않는다.
 
-workspace는 자기·살아 있는 감독의 작업 공간이 아니고, 모든 구성원의 완료·소유와 미커밋 변경·터미널 부재를 확인한 경우에만 archive한다. 확인할 수 없으면 보존한다. 감독 자체의 detach 동의는 그 감독 자신이나 사용자에게 받으며, 부모의 동의로 대신하지 않는다.
+감독 자체의 detach 동의는 그 감독 자신이나 사용자에게 받으며, 부모의 동의로 대신하지 않는다.
+
+**archive 재개 루프**
+
+1. 승인 범위·완료·소유 조건을 충족한 잎 하나를 고른다.
+2. 호출 직전에 그 대상의 후손 전체를 다시 조회해 미보관 후손이 0인지 확인한다.
+3. 그 대상만 CLI로 `--force` 없이 archive한다.
+4. 대상과 영향받는 후손의 `Archived`·`ArchivedAt`·부모 관계를 readback한다.
+5. 확인에 성공한 뒤에만 다음 대상으로 1)부터 반복한다.
+6. 구성원 처리가 끝나면 workspace 조건(자기·살아 있는 감독의 작업 공간 아님, 모든 구성원 완료·소유, 미커밋 변경·터미널 없음)을 다시 확인한다.
+7. workspace를 archive하고 readback한다.
+
+미확인, 조건 불충족, readback 실패가 있으면 그 대상과 그것에 의존하는 부모·workspace에서 멈추고 보존한다.
 
 ### 에이전트
 
@@ -252,13 +264,11 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
    - 다른 정리 주체가 이미 바꾼 상태
 
    안전에 영향을 주는 차이가 있으면 **그 항목과 그 항목에 의존하는 부모·workspace만** 보류한다. 대상을 조용히 늘리지 않는다.
-2. **에이전트:** 승인된 잎부터 하나씩 [공통 안전 대조](../yw-supervisor/references/archive-safety.md)의 archive 경로와 상태 변경 확인을 따른다.
-   - 매 archive 호출 직전에, 아직 보관되지 않은 후손이 0인지 확인한다.
-   - 부모 archive로 후손을 한꺼번에 정리하지 않는다.
+2. **에이전트:** [archive 재개 루프](#자원별-정리-조건) 1~5단계를 반복하며 [공통 안전 대조](../yw-supervisor/references/archive-safety.md)의 archive 경로와 상태 변경 확인을 따른다.
    - 다른 소유자의 세션을 분리해서 정리를 가능하게 만들지 않는다.
    - "이미 보관됨" 응답은 공통 절에 따라 readback한 뒤 적용 확인으로 처리한다.
    - 그 밖의 거절이나 안전에 영향을 주는 상태 변화가 있으면 보존하고, 사유와 실제 상태를 `result.md`에 기록한다.
-3. **workspace:** 구성원 단계가 모두 적용 확인된 workspace만 MCP `archive_workspace`로 처리한다. 호출 **직전에** git 상태(ignored 포함), 구성원, workspace ID 기준 터미널, teardown을 다시 읽는다. 1단계 재확인 뒤 에이전트를 처리하는 동안 바뀌었을 수 있기 때문이다. workspace archive는 구성원 archive가 하나 실패해도 계속 진행하고 디렉터리를 지울 수 있다. 그래서 구성원 확인을 먼저 끝낸다.
+3. **workspace:** 구성원 단계가 모두 적용 확인된 workspace만 위 재개 루프 6~7단계로 MCP `archive_workspace` 처리한다. 호출 **직전에** git 상태(ignored 포함), 구성원, workspace ID 기준 터미널, teardown을 다시 읽는다. 1단계 재확인 뒤 에이전트를 처리하는 동안 바뀌었을 수 있기 때문이다. workspace archive는 구성원 archive가 하나 실패해도 계속 진행하고 디렉터리를 지울 수 있다. 그래서 구성원 확인을 먼저 끝낸다.
 4. **연결이 끊긴 worktree:** 호출 직전에 git 상태(ignored 포함)와 경로 사용을 다시 읽는다. `--force` 없는 `git worktree remove`도 ignored 파일은 막지 않고 함께 지우기 때문이다. 그런 다음 `git -C <소유 저장소> worktree remove <경로>`를 `--force` 없이 실행한다. 거절되면 거기서 멈춘다. 다음 방법으로 우회하지 않는다: ignored 파일 선삭제, `--force`, `rm`, `worktree prune`.
 
 ## 결과 확인과 부분 실패
