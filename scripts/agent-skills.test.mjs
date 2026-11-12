@@ -48,6 +48,8 @@ test('archive 공통 절: 후손 재귀 조회·보류·강제 및 MCP 우회 �
   assert.match(safety, /paseo\.parent-agent-id[^\n]*재귀로 끝까지 조회한다/);
   assert.match(safety, /관계·상태 변화[^\n]*archive를 보류/);
   assert.match(safety, /`--force`나 MCP로 우회하지 않는다/);
+  const archivePath = safety.split('- **에이전트 archive 경로:** ')[1]?.split('\n- **')[0] ?? '';
+  assert.match(archivePath, /이미 archive된 응답은[^\n]*그 밖의 거절 시 보존하고 거절 사유와 실제 상태를 기록한다/);
 });
 
 test('교훈 경로: 설치 원본 직접 수정 금지와 bootstrap 단일 수신 경로를 유지한다', () => {
