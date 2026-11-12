@@ -140,7 +140,7 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 
 에이전트·workspace archive 후보나 이를 위한 detach를 판단하기 전에 [공통 안전 대조](../yw-supervisor/references/archive-safety.md)를 읽고 적용한다. 참조를 읽을 수 없으면 보류한다.
 
-부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류하고, detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다. archive는 잎부터 하나씩 하고, 매 호출 직전에 미보관 후손이 0인지 확인한다. 부모 archive로 후손을 한꺼번에 정리하지 않는다.
+부모·workspace archive는 closed 후손도 연쇄 보관할 수 있으므로, 후손 전체·인계 체인에 범위 밖·미완료·소유 불명·필요한 알림 중계가 있거나 이를 확인할 수 없으면 보류하고, detach는 기존 권한 안에서만 하며 `--force`·MCP 우회는 금지한다. archive는 잎부터 하나씩 하고, 매 호출 직전에 미보관 후손이 0인지 확인한다. 각 archive 직후 대상과 영향받는 후손의 `Archived`·`ArchivedAt`·부모 관계를 다시 읽어 확인하고, 확인되기 전에는 다음 부모·workspace archive로 넘어가지 않는다. 부모 archive로 후손을 한꺼번에 정리하지 않는다.
 
 workspace는 자기·살아 있는 감독의 작업 공간이 아니고, 모든 구성원의 완료·소유와 미커밋 변경·터미널 부재를 확인한 경우에만 archive한다. 확인할 수 없으면 보존한다. 감독 자체의 detach 동의는 그 감독 자신이나 사용자에게 받으며, 부모의 동의로 대신하지 않는다.
 
