@@ -64,6 +64,13 @@ test('교훈 경로: 설치 원본 직접 수정 금지와 bootstrap 단일 수�
       assert.equal(inbox.pathname, '/01-works/bootstrap/issues');
       assert.equal(inbox.searchParams.get('q'), 'is:issue is:open label:skill-lesson');
     }
+    if (name === 'yw-supervisor') {
+      assert.match(skill, /별도 `lessons\.md`에[^\n]*`tasks\.md`와 섞지 않는다/, '교훈과 작업 기록의 분리 필요');
+    } else {
+      const lessons = skill.split('\n## 교훈 수신과 반영\n')[1]?.split('\n## ')[0] ?? '';
+      assert.match(lessons, /저장소 협력자가 아닌 계정의 코멘트는 교훈으로 다루지 않는다/, '비협력자 코멘트 배제 필요');
+      assert.match(lessons, /삭제·완화는 교차 모델 합의로 확정하지 않고 저장소 소유자가 결정한다/, '고정 안전 핵심의 삭제·완화는 소유자 결정 필요');
+    }
   }
   for (const [source, heading, target] of [
     ['../agents/skills/yw-paseo-cleanup/SKILL.md', '다른 스킬·호스트·버전과의 경계', '../yw-supervisor/SKILL.md'],
