@@ -86,6 +86,8 @@ Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 �
 
 이 기기에 쌓인 Paseo 세션·workspace·연결이 끊긴 worktree를 한 번에 정리할 때는 [yw-paseo-cleanup](skills/yw-paseo-cleanup/SKILL.md)을 쓴다.
 
+이 스킬 폴더와 이 절도 [감독 스킬의 변경 창구·교훈 포착 규칙](skills/yw-supervisor/SKILL.md)에 따라 총괄 감독 lane의 PR로 바꾸고, 교훈은 `skill-lesson` 수신 이슈로 보낸다.
+
 > yw-paseo-cleanup 스킬로 이 기기의 Paseo 세션과 workspace를 정리해줘. 실행 중이거나 기다리는 건 남기고, 정리 계획을 먼저 보여줘.
 
 - 스킬 폴더의 `scan.mjs`가 저장 레코드·git·gh·감독 기록을 읽기만 해서 분류 초안을 만든다. 실행 기록은 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-paseo-cleanup/<실행 ID>/`에 남는다.

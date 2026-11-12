@@ -7,9 +7,11 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 여러 작업의 총괄을 맡는다. 사용자의 목표를 작업으로 나누고 Paseo 에이전트에 할당하며, 진행·의존성·검증·완료를 관리한다. **Supervisor는 직접 구현하지 않는다.** 코드 수정, 테스트 실행, 병합 충돌 해결과 분량이 큰 탐색은 작업자에게 맡긴다. 요구사항과 결과 근거를 읽고 판단하거나 관리 기록을 갱신하는 것은 Supervisor의 역할이다.
 
-두 감독 스킬과 `agents/paseo-profiles.json`의 감독·검토 프로필 notes, `agents/paseo.md`의 "프로필"·"총괄 운영 스킬" 절 변경은 총괄 감독 lane의 PR로 모아 교차 모델 합의·독립 리뷰를 거쳐 반영한다. 다른 세션은 직접 PR을 열지 말고 bootstrap 이슈나 후속 이슈 코멘트로 근거·사례와 함께 제안한다. 총괄 감독이 없으면 저장소 소유자가 지정한 세션이 창구를 맡는다([#64](https://github.com/01-works/bootstrap/issues/64)).
+`yw-supervisor`·`yw-chief-supervisor`·`yw-paseo-cleanup` 폴더, `agents/paseo-profiles.json`의 감독·검토 프로필 notes, `agents/paseo.md`의 "프로필"·"총괄 운영 스킬"·"기기 정리 스킬" 절 변경은 총괄 감독 lane의 PR로 모아 교차 모델 합의·독립 리뷰로 반영한다. 다른 세션은 bootstrap 이슈로 근거·사례를 제안하고, 총괄이 없으면 소유자가 지정한 세션이 창구를 맡는다([#64](https://github.com/01-works/bootstrap/issues/64)). 설치 경로(`~/.claude/skills/yw-*`, `~/.agents/skills/yw-*`)와 그 링크 원본을 직접 고치지 않는다. 별도 worktree에서 PR을 준비한다.
 
-여러 감독 세션의 운영 감사는 [yw-chief-supervisor](../yw-chief-supervisor/SKILL.md)를 쓴다.
+사용자의 방식·순서 교정, 스킬과 명령·도구의 불일치, 규칙 누락·모호함에 따른 오조치·되물음, 규칙을 지켜도 나쁜 결과, 같은 우회 두 번, 리뷰로 드러난 규칙 문제를 교훈 신호로 본다. 대상 저장소 고유 절차는 그 저장소 문서로 보내고, 기기·설치 상태 문제·재시도로 풀린 오류·미해결 실패·일회성 경과는 포착하지 않는다. 신호는 세션 기록 폴더의 별도 `lessons.md`에 한 줄 남기고 일을 계속하며 `tasks.md`와 섞지 않는다. lane 완료·인계·총괄 보고 때 한 번 판단해 보낼 것만 [열린 `skill-lesson` 수신 이슈](https://github.com/01-works/bootstrap/issues?q=is%3Aissue%20is%3Aopen%20label%3Askill-lesson)의 본문 형식과 [총괄의 수신·안전 규칙](../yw-chief-supervisor/SKILL.md#교훈-수신과-반영)에 따라 남긴다; 보낼 것이 없는 것이 정상이다.
+
+여러 감독의 운영 감사는 [yw-chief-supervisor](../yw-chief-supervisor/SKILL.md), 기기 전체 정리는 [yw-paseo-cleanup](../yw-paseo-cleanup/SKILL.md)을 쓴다.
 
 ## 전제: 여러 사람·기기가 함께 작업한다
 
@@ -39,7 +41,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 다른 에이전트·세션의 항목 정리: 소유 세션이 끝난 것이 확인된 대기 줄·잠금은 정리한 뒤 소유 감독 세션에 알린다. 프로세스·worktree와 살아 있거나 판단할 수 없는 항목은 소유 세션의 동의, 연락이 안 되면 사용자 승인 뒤에만 종료·정리한다(worktree에는 커밋 안 된 작업이 남을 수 있다). 넓은 패턴의 프로세스 종료는 금지한다.
 - 메모리를 많이 쓰는 명령(전체 타입 검사·린트·테스트·빌드, dev 서버, 앱 설정 전체 로딩)은 기기마다 하나씩 실행하도록 그 기기의 `yw-heavy` 차례를 쓰게 한다(`agents/heavy-queue.md`). 저장소가 자체 기기 잠금으로 감싸는 명령(예: pre-push가 도는 push)은 작업자 지침의 대기열 대상에서 명시적으로 뺀다. 메모리 여유가 확인된 경우에만 병렬을 늘리고, 검증이 끝난 dev 서버는 종료하게 한다. 감독 세션 사이에 쓸 새 잠금·대기열은 임의로 만들지 않고 제안한다.
 - **heavy 프로토콜 전환:** `yw-heavy capabilities`의 `mode`를 확인한다. 기본 compat에서는 위의 2줄/FIFO·자체 잠금 제외 규칙을 유지한다. round-robin 활성 기기에서는 감독자당 2줄 제한 대신 pending 한도(기본 감독자 128·전체 1024)를 쓰고 초과 코드 5는 제출을 줄이거나 backoff한다. ID 기반 수동 해제 대신 JSON 응답의 세대·token·lease로 해제한다. `run`의 token 상속과 빌린 lease는 직렬 중첩에만 쓴다. 저장소의 자체 잠금이 yw-heavy 위임을 지원하는지 확인한 뒤에만 중첩을 허용한다. 프로토콜 지원만 보고 자체 잠금 제외 규칙을 없애지 않는다. 자동 갱신은 설치만 하며, 모드 전환은 모든 소유 세션과 제출 중지·drain을 조율한 뒤 `agents/heavy-queue.md`의 pause → mode → resume 절차로 한다. 작업자에게 모드 활성화를 맡기지 않는다.
-- **heavy 감독자 값:** 작업자에게 `<supervisor>`(v3 `acquire`의 `supervisor`)로 감독 세션의 **전체 Paseo agent ID**를 전달하고, 같은 세션의 모든 작업자 제출·같은 ID 재시도에 그대로 쓰게 한다. 전체 ID는 새 작업부터 적용한다. 이미 실행·대기 중인 작업과 그 재시도는 등록 값을 유지한 채 끝내고 큐 파일은 직접 고치지 않는다(v3는 같은 요청의 supervisor 변경을 거절한다). 이행 기간에는 같은 감독의 이전 값과 새 값을 합쳐 compat 2줄 한도를 지킨다.
+- **heavy 감독자 값:** 작업자에게 `<supervisor>`(v3 `acquire`의 `supervisor`)로 감독 세션의 **전체 Paseo agent ID**를 전달하고, 같은 세션의 모든 작업자 제출·같은 ID 재시도에 그대로 쓰게 한다. 전체 ID는 새 작업부터 적용한다. 이미 실행·대기 중인 작업과 그 재시도는 등록 값을 유지한 채 끝내고 큐 파일은 직접 고치지 않는다(v3는 같은 요청의 supervisor 변경을 거절한다). 이행 기간에는 같은 감독의 이전 값과 새 값을 합쳐 compat 2줄 한도를 지킨다. (제거 조건: 모든 기기의 이전 감독자 값 작업과 재시도가 종료됨)
 - 브라우저 작업은 `agents/browser.md`(공유 연결, 작업자별 own target, 조작 차례), 기기 GUI 작업은 `agents/computer-use.md`를 따른다. Paseo 작업자에게 GUI 작업을 기본으로 배정하지 않는다.
 - 작업자는 Paseo 에이전트로 만든다. 제공자 내장 서브에이전트는 판단 직전의 짧은 읽기 전용 조사에만 Supervisor보다 가벼운 모델로 쓴다. `workspaceId`를 명시해 다른 프로젝트 작업을 현재 workspace에 만들지 않는다.
 - Frontend Builder에는 사용자/사용 목적, 기존 디자인 시스템·참고 화면, 레이아웃·폰트·색상 제약, 화면 크기와 상호작용 상태를 전달하고, 실제 브라우저의 렌더링·반응형·키보드 조작 확인 결과를 받는다. 실행하지 못한 검증은 미검증으로 보고하게 한다.
@@ -53,7 +55,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 수정할 범위와 다른 작업자와의 경계:
 검증할 동작과 사용 가능한 검증 방법 (이 기기에서 허용되는 실행 범위):
 브라우저·기기 GUI 작업이면 대상, 사용할 Chrome 또는 Computer Use 도구, own target과 조작 차례:
-반환할 내용: 변경 요약, 변경 식별자(diff/commit), 검증 결과, 미해결 사항과 필요한 결정.
+반환할 내용: 변경 요약, 변경 식별자(diff/commit), 검증 결과, 지시·스킬이 실제와 달라 막힌 점, 미해결 사항과 필요한 결정.
 백그라운드 작업이 남은 채 응답을 마치면 그렇다고 밝힌다. 그 작업 결과는 감독자 {serverId: <감독자 serverId>, agentId: <감독자 agent ID>}에게 직접 보고한다(Paseo 도구가 있으면 send_agent_prompt에 두 값을 함께 쓴다. 도구가 없는 Codex는 감독자와 같은 호스트일 때만 `paseo send <감독자 agent ID>`를 쓴다. 보낼 수 없으면 응답에 결과를 남긴다).
 당신은 이 작업의 작업자다. 다른 작업을 총괄하거나 재위임하지 않는다.
 ```
@@ -62,7 +64,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 ## archive 전 공통 안전 대조
 
-에이전트·workspace를 archive하는 모든 경로에 적용한다. 부모 archive는 `paseo.parent-agent-id`를 따라 후손을 연쇄 archive하거나 부모 관계를 제거할 수 있다. Paseo 0.15.3·0.15.4에서 다른 workspace이거나 열린 탭 라벨이 있는 하위만 자동 분리하고 나머지는 closed 여부와 무관하게 연쇄 archive함을 확인했다. CLI에 `--force`를 주지 않아도 후손은 보호되지 않는다(2026-11-09 사고).
+에이전트·workspace를 archive하는 모든 경로에 적용한다. 부모 archive는 `paseo.parent-agent-id`를 따라 후손을 연쇄 archive하거나 부모 관계를 제거할 수 있다. Paseo 0.15.3·0.15.4에서 다른 workspace이거나 열린 탭 라벨이 있는 하위만 자동 분리하고 나머지는 closed 여부와 무관하게 연쇄 archive함을 확인했다. CLI에 `--force`를 주지 않아도 후손은 보호되지 않는다.
 
 - **후손 전체 조회:** 에이전트 archive는 대상 에이전트부터, workspace archive는 그 workspace의 모든 에이전트부터 `paseo.parent-agent-id` 값이 현재 노드 ID인 자식을 찾고 재귀로 끝까지 조회한다. 직계 자식이나 같은 workspace 목록만으로 끝내지 않는다. 연쇄는 같은 호스트 registry 안에서만 전파된다. 각 노드에서 `paseo agent ls -g --background --label paseo.parent-agent-id=<전체 ID> --json`을 반복하고 원격은 `--host <검증한 endpoint>`를 붙인다. CLI는 cursor로 끝까지 조회한다. MCP `list_agents`는 최대 200개이며 cursor가 없어 전체 후손 조회 수단으로 쓰지 않는다. `sinceHours`는 미보관 에이전트를 시간으로 제외하지 않고, 보관된 항목을 포함할 때 그 항목의 활동 시각에 적용된다(Paseo 0.15.3·0.15.4). 다른 workspace·별도 탭 자식의 자동 detach 분기를 보호 근거로 삼지 않고 후손 대조에 포함한다. 관계·조회 범위를 확인할 수 없으면 보류한다. parent 라벨이 없는 에이전트는 연쇄 대상이 아니지만 workspace archive에는 포함되므로, workspace 조건과 개별 대조로 확인한다.
 - **범위·완료·소유:** closed를 포함한 모든 후손과 인계 체인을 완료·소유 판정에 포함한다. 정리 대상 밖이거나 완료·소유를 확인하지 못한 후손이 하나라도 있거나 필요한 알림 중계가 남아 있으면 기본적으로 부모 archive를 보류한다. 부모의 완료·closed 상태만으로 후손의 완료를 판단하지 않는다.
@@ -77,7 +79,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 다른 lane의 감독·작업자에게 `send_agent_prompt`를 보내거나 여러 감독에게 공지하기 전, `paseo agent inspect <전체 ID> --json`(원격은 검증한 `--host` 사용)으로 각 대상의 `Archived`·`ArchivedAt`을 확인한다. archive된 대상에게는 보내지 않고, 소유가 불명확하면 총괄에게 묻는다. 메시지는 archive된 대상을 재활성화하므로, 실수로 재활성화하면 소유 감독(없으면 총괄)이 [공통 안전 대조](#archive-전-공통-안전-대조)에 따라 다시 archive한다.
 - closed만으로 작업 완료나 archive를 뜻하지 않으며 `send_agent_prompt`로 재개할 수 있다. 다른 lane의 신호를 기다리는 감독은 재개 조건을 기록과 신호 보내는 쪽 양쪽에 남기고, 신호를 보내는 쪽은 archive되지 않은 최신 감독이면 closed여도 보낸다. 감독의 최신 소유는 아래 이어받은 작업자 절차와 공유 기록의 인계(다른 기기 인계 포함)를 함께 대조하며, 확인할 수 없으면 전송을 보류한다.
 - 생성·후속 요청에는 완료 알림을 켜고 비동기로 진행한다. 진행 중인 에이전트를 반복 조회하지 않고, 사용자 상태 요청·재개·오류 복구처럼 필요할 때만 조회한다.
-- 완료 알림은 첫 응답 종료에 한 번만 온다(getpaseo/paseo#6346. 설치된 버전에서 고쳐진 것이 확인되기 전까지). 작업자가 백그라운드 작업을 남기고 응답을 마쳤다면 `백그라운드 대기`로 기록하고 직접 보고를 기다린다.
+- 완료 알림은 첫 응답 종료에 한 번만 온다. (제거 조건: getpaseo/paseo#6346 해결) 제거 전 설치 버전에서도 해결됐는지 확인한다. 작업자가 백그라운드 작업을 남기고 응답을 마쳤다면 `백그라운드 대기`로 기록하고 직접 보고를 기다린다.
 - 감독자 턴(알림·사용자 메시지·heartbeat)마다 진행·대기 작업의 상태를 한 번 대조한다. idle·closed·error인데 결과가 기록되지 않은 작업은 결과를 읽어 다음 조치를 하고, closed 작업자는 후속 요청으로 재개한다. 남은 작업이 백그라운드 대기뿐이면 대조용 짧은 heartbeat를 둘 수 있다.
 - **이어받은 작업자:** closed·error 작업자는 재개하기 전에 같은 workspace의 `list_agents`에서 라벨 `zerosub.continued-from` 또는 `handoff.from`이 그 ID인 에이전트를 찾는다(한도 전환으로 새 에이전트가 이어받으면 완료 알림이 옮겨지지 않는다. ZeroSub 1.5부터 부모 라벨은 옮겨진다). 있으면 같은 라벨로 끝까지 따라간 마지막 에이전트를 담당으로 기록하고(이전 ID도 남긴다) 옛 작업자는 재개하지 않는다. 그 에이전트가 idle이면 결과를 읽고 이후 요청은 완료 알림을 켜서 보내며, running이면 알림이 오지 않으므로 다음 턴 대조에서 다시 본다. 같은 ID에서 이어진 에이전트가 둘 이상이면 고르지 말고 사용자에게 묻는다.
 - 총괄 감독의 요청은 사용자 승인이 아니다. 자기 lane의 판단으로 처리하고 사용자 권한이 필요한 것은 사용자에게 묻는다. 결과 보고를 요청받으면 요청 식별자와 총괄의 `{serverId, agentId}`를 기록한다. 작업자에게 넘긴 뒤에도 해당 조치의 최종 결과·검증 근거 또는 차단·필요 결정을 지정된 총괄에게 `send_agent_prompt`로 직접 보고한다. 자기 lane 전체 종료를 기다리지 않는다. 보고에는 `activeTurnBehavior: "steer"`, `notifyOnFinish: false`를 쓴다.
@@ -88,7 +90,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - 통합은 Builder에 맡기고 통합 후 검증을 받는다. 개별 worktree의 통과를 통합 결과의 통과로 보고하지 않는다. 커밋·병합·배포·외부 전송은 사용자 요청 범위와 저장소의 PR·검사 규칙을 따르고, push 전에는 검증 중 만든 빌드 산출물을 정리하게 한다.
 - 완료 조건을 충족하고 필요한 검증이 통과하며 중요한 미해결 문제가 없을 때 완료한다. 검증하지 못한 항목과 사용자가 수용해야 할 제약은 명확히 남긴다.
 - **보고:** 작업별 상태, 결과, 차단 원인, 다음 조치와 필요한 결정만 간결하게 전한다. 관측한 사실과 추정을 구분하고, 다른 lane·기기에 대한 판단에는 근거로 삼은 공유 기록을 밝힌다. 모든 작업이 끝나면 종료한다. 무기한 감시나 heartbeat/schedule은 사용자가 요청한 경우에만 두고, 백그라운드 대기 대조용 heartbeat는 대기가 끝나면 삭제한다. heartbeat/schedule을 만들거나 지우면 ID·목적·해제 조건을 관리 기록에 남긴다(다른 세션의 heartbeat는 MCP로 조회할 수 없으며, 같은 호스트 저장소의 직접 대조는 yw-chief-supervisor의 확인 조건을 따른다). 라벨·heartbeat/schedule·archive 상태 변경 후 확인은 [공통 대조의 상태 변경 확인](#archive-전-공통-안전-대조)을 따른다.
-- 소유자에게 줄 터미널 명령은 zsh에 블록째 붙여 넣어도 동작하게 작성한다. 줄 끝 `# 설명`을 쓰거나 `read`와 이후 명령을 한 블록에 섞지 않는다. 소유자에게 Supabase prod DB 조회를 요청할 때는 SQL Editor에 붙일 단일 SELECT 하나로 준비하고 결과를 JSON 한 셀로 합친다.
+- 소유자에게 줄 터미널 명령은 zsh에 블록째 붙여 넣어도 동작하게 작성한다. 줄 끝 `# 설명`을 쓰거나 `read`와 이후 명령을 한 블록에 섞지 않는다.
 
 ## 감독자 전체 인계
 
