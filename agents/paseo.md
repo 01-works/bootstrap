@@ -41,16 +41,16 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-중요한 판단과 시각적 완성도가 중요한 UI 구현은 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.1 Sol에 맡긴다. Opus 한도 소진·접속 불가 시에만 Astra 대체 프로필을 선택한다. 예외: [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치) 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Opus 가용 여부와 관계없이 Architect (Astra)·Deep Reviewer (Astra)를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다. 판단 범위와 모델 구성의 원장은 위 스킬이며, Supervisor (Astra)의 총괄 인계 조건은 그대로 적용한다.
+총괄과 중요한 설계는 Fable 5.2에, 심층 리뷰와 시각적 완성도가 중요한 UI 구현은 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.1 Sol에 맡긴다. 프로필의 Claude 모델(총괄·설계는 Fable, 그 외 Opus)이 한도 소진·접속 불가일 때만 Astra 대체 프로필을 선택한다. 예외: [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치) 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Claude 가용 여부와 관계없이 Architect (Astra)·Deep Reviewer (Astra)를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다. 판단 범위와 모델 구성의 원장은 위 스킬이며, Supervisor (Astra)의 총괄 인계 조건은 그대로 적용한다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
-| Supervisor | Claude Opus 5.5 | high | bypassPermissions |
+| Supervisor | Claude Fable 5.2 | high | bypassPermissions |
 | Supervisor (Astra) | GPT-6 Astra | high | full-access |
 | Builder | GPT-6.1 Sol | high | full-access |
 | Frontend Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Reviewer | GPT-6.1 Sol | xhigh | auto-review + plan |
-| Architect | Claude Opus 5.5 | xhigh | plan |
+| Architect | Claude Fable 5.2 | xhigh | plan |
 | Architect (Astra) | GPT-6 Astra | xhigh | auto-review + plan |
 | Deep Reviewer | Claude Opus 5.5 | xhigh | plan |
 | Deep Reviewer (Astra) | GPT-6 Astra | xhigh | auto-review + plan |
