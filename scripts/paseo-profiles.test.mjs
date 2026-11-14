@@ -16,16 +16,18 @@ test('chief 교차 모델 예외는 설계·심층 검토 4개 프로필에만 �
   ]);
   for (const profile of exceptions) {
     // 제한문이 문장 첫머리에 있어야 한다. "일반 설계에서는 …" 같은 한정어가 붙으면 실패한다.
-    const limit = profile.name.endsWith('(Astra)') ? /^Opus 한도 소진·접속 불가 시에만 / : /\. Opus 한도 소진·접속 불가 시에만 /;
+    // 대체 조건은 그 역할의 기본 Claude 모델을 가리킨다: 설계는 Fable, 심층 리뷰는 Opus.
+    const model = profile.name.startsWith('Architect') ? 'Fable' : 'Opus';
+    const limit = new RegExp(`${profile.name.endsWith('(Astra)') ? '^' : '\\. '}${model} 한도 소진·접속 불가 시에만 `);
     assert.match(profile.notes, limit);
     assert.match(profile.notes, /예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독/);
     assert.match(profile.notes, /교차 모델 합의\(감사·완료 판정·운영 정책 설계\)/);
-    assert.match(profile.notes, /Opus 가용 여부와 관계없이 Astra를 선택할 수 있다/);
+    assert.match(profile.notes, new RegExp(`${model} 가용 여부와 관계없이 Astra를 선택할 수 있다`));
     assert.match(profile.notes, /yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다/);
   }
   const supervisor = manifest.profiles.find(p => p.name === 'Supervisor (Astra)');
-  assert.match(supervisor.notes, /^Opus 한도 소진·접속 불가 시에만/);
-  assert.doesNotMatch(supervisor.notes, /교차 모델|Opus 가용 여부와 관계없이/);
+  assert.match(supervisor.notes, /^Fable 한도 소진·접속 불가 시에만/);
+  assert.doesNotMatch(supervisor.notes, /교차 모델|가용 여부와 관계없이/);
   for (const profile of manifest.profiles) {
     assert.doesNotMatch(profile.notes ?? '', /일반 (설계|코드 리뷰)/, profile.name);
   }
