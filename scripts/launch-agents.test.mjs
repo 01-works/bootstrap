@@ -44,11 +44,16 @@ test('기기 종류별 정의: 데스크톱은 로그인 시 시작, 노트북�
   assert.match(upgrade, /<key>RunAtLoad<\/key><false\/>/, '로그인할 때 데몬과 함께 뜨지 않음');
   assert.match(upgrade, new RegExp(`<key>StartInterval</key><integer>${PASEO_UPGRADE_INTERVAL}</integer>`));
   assert.match(upgrade, /\/h\/.local\/state\/bootstrap\/paseo-upgrade\/upgrade\.log/);
+  const tailscale = plist(desktop.tailscale);
+  assert.match(tailscale, /<string>\/usr\/bin\/open<\/string>\s*<string>-g<\/string>\s*<string>-a<\/string>\s*<string>\/Applications\/Tailscale\.app<\/string>/);
+  assert.match(tailscale, /<key>RunAtLoad<\/key><true\/>/);
+  assert.doesNotMatch(tailscale, /KeepAlive/, '사용자가 끄면 다음 로그인까지 그대로 둠');
   const laptop = definitions({ home: '/h', laptop: true });
   assert.match(plist(laptop['agent-chrome']), /<key>RunAtLoad<\/key><false\/>/);
   assert.doesNotMatch(plist(laptop['agent-chrome']), /KeepAlive/);
   assert.equal(laptop.paseo, null);
   assert.equal(laptop['paseo-upgrade'], null, '노트북은 앱이 스스로 업데이트');
+  assert.equal(laptop.tailscale, null, '노트북은 앱 설정에 맡김');
   assert.match(plist({ label: 'x', args: ['a&b<c>'], runAtLoad: true }), /a&amp;b&lt;c&gt;/);
 });
 
