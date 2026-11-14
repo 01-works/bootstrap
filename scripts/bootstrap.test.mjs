@@ -145,6 +145,8 @@ open() { :; }
 launchctl() { :; }
 is_laptop() { return 1; }
 sudo() { printf 'sudo %s\\n' "$*" >> "$BOOTSTRAP_ROOT/calls"; }
+node() { :; }
+TAILSCALE_APP_CLI=/usr/bin/true
 `;
   const locked = mockStep(t, '70-auth.sh', base + 'filevault_off() { return 1; }\nautologin_on() { return 1; }\n');
   assert.equal(locked.result.status, 2, locked.result.stderr);
@@ -199,6 +201,8 @@ sudo() { ${record}; }
 is_laptop() { return 1; }
 filevault_off() { return 0; }
 autologin_on() { return 1; }
+node() { return 0; }
+TAILSCALE_APP_CLI=/usr/bin/true
 `],
   ];
   for (const [name, mocks] of cases) {
@@ -207,6 +211,32 @@ autologin_on() { return 1; }
     assert.match(result.stderr, /자동 갱신에서는 하지 않습니다 → 터미널에서 \.\/bootstrap\.sh update/);
     assert.equal(existsSync(join(root, 'calls')), false, `${name}: ${existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8') : ''}`);
   }
+});
+
+test('auth 단계: 데스크톱만 Tailscale 자동 시작을 등록하고, 앱이 없으면 대기', t => {
+  const record = 'printf \'%s\\n\' "$*" >> "$BOOTSTRAP_ROOT/calls"';
+  const run = (laptop, app) => mockStep(t, '70-auth.sh', `gh() { return 0; }
+git() { echo 'gh auth git-credential'; }
+open() { :; }
+launchctl() { :; }
+is_laptop() { return ${laptop ? 0 : 1}; }
+filevault_off() { return 0; }
+autologin_on() { return 0; }
+has() { return 0; }
+node() { ${record}; }
+TAILSCALE_APP_CLI=${app}
+`, { BOOTSTRAP_UNATTENDED: '1' });
+  const calls = root => existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8') : '';
+  const desktop = run(false, '/usr/bin/true');
+  assert.equal(desktop.result.status, 0, desktop.result.stdout + desktop.result.stderr);
+  assert.match(calls(desktop.root), /launch-agents\.mjs --only tailscale --desktop/);
+  const laptop = run(true, '/usr/bin/true');
+  assert.equal(laptop.result.status, 0, laptop.result.stdout + laptop.result.stderr);
+  assert.equal(calls(laptop.root), '', '노트북은 앱 설정에 맡김');
+  const missing = run(false, '/nonexistent/Tailscale');
+  assert.equal(missing.result.status, 2, missing.result.stdout + missing.result.stderr);
+  assert.match(missing.result.stderr, /Tailscale 앱 없음/);
+  assert.equal(calls(missing.root), '');
 });
 
 test('browser 단계: 자동 갱신 중 에이전트 Chrome 등록이 바뀌었으면 대기, 다른 실패가 있으면 실패', t => {
