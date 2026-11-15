@@ -56,7 +56,6 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 | paseo | 사용자 스킬 연결, Paseo 데몬 첫 설정(앱 없이), 없는 프로필 추가, Paseo 도구 켜기, 기본 플러그인 설치·버전 맞춤, 데스크톱은 로그인 시 데몬 시작과 Paseo 새 버전 올리기 | [agents/paseo.md](agents/paseo.md) |
 | heavy | 공용 heavy 대기열 도구 `yw-heavy`를 `~/.local/bin`에 설치 (모든 기기) | [agents/heavy-queue.md](agents/heavy-queue.md) |
 | auth | GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내와 로그인할 앱 열기 | [development/git.md](development/git.md) |
-| secrets | 설정한 기기만: Infisical의 공용 비밀값을 `~/.zsh_secrets.infisical`로 받기 | 아래 "비밀값" |
 | autoupdate | 저장소 자동 갱신 등록 (로그인할 때와 10분마다) | 아래 "변경 전파" |
 | roles | 이 기기에 켠 역할만 저장된 값으로 다시 맞춤. 켠 역할이 없으면 아무것도 안 함 | 아래 "기기 역할" |
 
@@ -150,44 +149,6 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 - macOS 원격 로그인 켜기: 시스템 설정 > 일반 > 공유 > 원격 로그인. 꺼져 있으면 `role status`가 수동 작업 대기(2)로 알린다.
 - (선택) 이 기기에서 코딩 에이전트를 쓰지 않으면 Claude Code(`claude` 안에서 `/logout`)와 Codex(`codex logout`)에서 로그아웃한다.
 
-## 비밀값
-
-여러 기기가 같이 쓰는 API 키는 [Infisical](https://infisical.com) Cloud의 프로젝트 한 폴더에 두고, `secrets` 단계가 `~/.zsh_secrets.infisical`(권한 600)로 받는다. 대화형 zsh(`.zshrc`)만 읽으며 Paseo 데몬·에이전트·LaunchAgent 환경에는 넣지 않는다. 손으로 쓰는 `~/.zsh_secrets`는 건드리지 않고, 같은 이름이면 그쪽이 이긴다.
-
-넣는 것: 여러 기기에서 쓰는 개인 API 키. 넣지 않는 것: Paseo 연결 링크(데몬 전체 제어 권한이고 만료·범위 지정이 없다), SSH 개인키(기기마다 만들고 공개키만 등록), 01-software 앱 비밀값(Vercel env가 기준), gh·Claude·Codex 로그인(각 도구가 키체인에 둔다).
-
-처음 한 번 (기기마다):
-
-1. 이 기기에 `~/.config/bootstrap/secrets.env`를 만든다. 식별자만 두며 비밀값이 아니지만 공개 저장소에는 넣지 않는다.
-
-   ```sh
-   INFISICAL_PROJECT_ID=<프로젝트 ID>
-   INFISICAL_ENV=prod          # 생략하면 prod
-   INFISICAL_PATH=/common      # 생략하면 /common
-   # INFISICAL_DOMAIN=https://eu.infisical.com   # US Cloud가 아니면
-   ```
-
-2. 인증을 고른다.
-   - 사람이 쓰는 기기: `./bootstrap.sh --only secrets`가 로그인이 없으면 `infisical login`(브라우저)을 연다. 세션은 키체인에 남는다.
-   - 늘 켜 두는 기기: 그 폴더만 읽는 Infisical 기기 계정(Universal Auth)을 만들고 키체인에 넣는다. 있으면 사람 세션보다 먼저 쓴다.
-
-     ```sh
-     security add-generic-password -U -s bootstrap-infisical -a client-id -w '<client id>'
-     security add-generic-password -U -s bootstrap-infisical -a client-secret -w   # 값은 입력 창에
-     ```
-
-3. `./bootstrap.sh --only secrets`로 받고 새 터미널을 연다. `doctor`가 받은 개수·시각·권한을 확인한다.
-
-동작:
-
-- 설정 파일이 없는 기기는 아무것도 하지 않는다(완료로 처리).
-- 자동 갱신은 이 단계의 스크립트가 바뀔 때만 다시 돌린다. Infisical에서 값을 바꾸면 각 기기에서 `./bootstrap.sh --only secrets`를 실행한다. 자동 갱신에서 로그인이 없으면 수동 작업 대기(2)로 남긴다.
-- 값은 CLI의 `dotenv-export` 대신 JSON으로 받아, 이름을 검사하고 값을 직접 POSIX 작은따옴표로 감싼다(`'`는 `'\''`). `dotenv-export`는 값 안의 작은따옴표를 이스케이프하지 않아 source할 때 셸 코드가 될 수 있다. 여러 줄 값도 그대로 보존된다. 쓰기 전에 `zsh -n`으로 문법을 한 번 더 확인한다.
-- 받기에 실패하거나, JSON이 아니거나, 쓸 수 없는 이름·읽을 권한이 없는 값이 있으면 기존 파일을 그대로 둔다. Infisical CLI는 로그인이 없을 때 대화형 화면 문자를 표준 출력에 내므로 출력은 종료 코드가 0일 때만 쓴다. 로그인 확인은 `login status --json`의 종료 코드(만료·거절이면 1)와 세션 목록을 함께 본다.
-- client secret과 토큰은 명령 인자가 아니라 환경 변수로만 넘긴다. 키체인 조회를 포함한 모든 CLI 명령은 입력을 막고 60초 제한(넘기면 TERM, 2초 뒤 KILL)으로 돌린다.
-- `~/.zsh_secrets.infisical`이 일반 파일이 아니면(폴더·링크) 쓰지 않는다.
-- 상태 기록(`~/.local/state/bootstrap/secrets/last-sync`)에는 시각·개수·인증 방식만 남긴다.
-
 ## 새 기기 없이 시험하기
 
 설정 병합·파일 보존·실패 판정은 `node --test scripts/*.test.mjs agents/skills/*/*.test.mjs`로 검사한다. PR마다 같은 테스트를 GitHub Actions(`.github/workflows/test.yml`)가 macOS에서 돌린다. 테스트는 임시 경로와 외부 명령 대역을 사용하며 실제 홈·브라우저·인증을 바꾸지 않는다. 새 Mac의 전체 설치나 실제 브라우저 연결은 별도 검증이다.
@@ -206,7 +167,7 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 - 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude(`~/.claude/skills`)·Codex(`~/.agents/skills`) 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다. 같은 이름의 다른 스킬이 있으면 덮어쓰지 않고 멈춘다.
 - 기존 파일은 `~/.local/state/bootstrap/backup/<시각>-<번호>/`로 옮긴 뒤 연결한다. 되돌리려면 링크(`~/.zshrc` 등)를 지우고 백업 폴더의 파일을 제자리로 옮긴다.
 - 기기마다 다른 설정은 `~/.zshrc.local`, `~/.gitconfig.local`에 둔다. 저장소에 넣지 않는다.
-- API 키 같은 비밀값은 저장소에 넣지 않는다. 여러 기기가 같이 쓰는 값은 아래 [비밀값](#비밀값)의 Infisical에, 기기별 값은 `~/.zsh_secrets`(권한 600)에 `export`로 둔다. `.zshrc`가 둘 다 있으면 공용 → 기기별 순서로 읽는다. 커밋 전에 gitleaks가 한 번 더 검사한다.
+- API 키 같은 비밀값은 `~/.zsh_secrets`에 `export`로 두고 권한은 600으로 한다. `.zshrc`가 있으면 읽는다. 저장소에는 넣지 않고, 커밋 전에 gitleaks가 한 번 더 검사한다. 여러 기기에서 쓰는 키는 Infisical `bootstrap` 프로젝트(`prod` `/common`)에 보관만 하고, 새 기기에서 필요할 때 복사해 넣는다. 자동으로 받지 않는다: 기기마다 로그인해야 해서 붙여 넣기보다 줄어드는 일이 없다(#93).
 - 넣지 않는 것: 인증 파일(`auth.json`, gh `hosts.yml`), SSH 개인키, 각 도구의 세션·캐시·기록, 도구가 설치해 주는 스킬·플러그인(그 도구가 관리한다).
 
 ## 구조
