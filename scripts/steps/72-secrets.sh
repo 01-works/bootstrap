@@ -4,6 +4,7 @@
 # 받은 값은 대화형 zsh만 읽는다(.zshrc). Paseo 데몬·에이전트·LaunchAgent 환경에는 넣지 않는다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
+umask 077
 
 config="${BOOTSTRAP_SECRETS_CONFIG:-$HOME/.config/bootstrap/secrets.env}"
 target="$HOME/.zsh_secrets.infisical"
@@ -16,8 +17,11 @@ if [[ ! -f "$config" ]]; then
   exit 0
 fi
 
-# 설정 파일은 식별자만 둔다(비밀값 아님). source하지 않고 정해진 키만 읽는다.
-conf() { sed -n "s/^$1=//p" "$config" | tail -1 | tr -d '"'"'"; }
+# 설정 파일은 식별자만 둔다(비밀값 아님). source하지 않고 정해진 키만 읽는다. 줄 끝 `# 주석`과 앞뒤 공백·따옴표는 뗀다.
+conf() {
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=//p" "$config" | tail -1 |
+    sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '"'"'"
+}
 project="$(conf INFISICAL_PROJECT_ID)"
 env_slug="$(conf INFISICAL_ENV)"
 folder="$(conf INFISICAL_PATH)"
@@ -32,43 +36,60 @@ if [[ -n "$domain" ]]; then
   export INFISICAL_DOMAIN="$domain"
 fi
 
-if ! has infisical; then
-  if [[ "$DRY_RUN" == 1 ]]; then
-    info '[dry-run] Infisical CLI 설치 후 비밀값 받기'
-    exit 0
+for tool in infisical node; do
+  if ! has "$tool"; then
+    if [[ "$DRY_RUN" == 1 ]]; then
+      info "[dry-run] $tool 설치 후 비밀값 받기"
+      exit 0
+    fi
+    warn "$tool 명령이 없습니다 → ./bootstrap.sh --only homebrew,runtimes"
+    exit 2
   fi
-  warn 'Infisical CLI가 없습니다 → ./bootstrap.sh --only homebrew'
-  exit 2
-fi
+done
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-secrets.XXXXXX")"
+tmp=''
+trap 'rm -rf "$work"; [[ -z "$tmp" ]] || rm -f "$tmp"' EXIT
+chmod 700 "$work"
 
 # 명령이 사람 입력을 기다리며 멈추지 않게 입력을 막고 시간을 제한한다: limited <출력 파일> <명령...>
+# 제한을 넘기면 TERM, 2초 뒤에도 살아 있으면 KILL을 보낸다. 종료 코드 124는 시간 초과.
 limited() {
   local out="$1"
   shift
   "$@" </dev/null >"$out" 2>"$out.err" &
-  local pid=$! waited=0
+  # 반복 횟수가 아니라 벽시계(SECONDS)로 잰다. 부하가 있으면 sleep 0.1 한 번이 훨씬 길어진다.
+  local pid=$! started=$SECONDS termed=0
   while kill -0 "$pid" 2>/dev/null; do
-    if ((waited >= timeout_s * 10)); then
-      kill "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
+    if ((termed == 0 && SECONDS - started >= timeout_s)); then
+      kill -TERM "$pid" 2>/dev/null || true
       printf 'timeout after %ss\n' "$timeout_s" >>"$out.err"
-      return 124
+      termed=1
+    elif ((termed == 1 && SECONDS - started >= timeout_s + 2)); then
+      kill -KILL "$pid" 2>/dev/null || true
+      break
     fi
     sleep 0.1
-    waited=$((waited + 1))
   done
-  wait "$pid"
+  local status=0
+  wait "$pid" 2>/dev/null || status=$?
+  if ((termed == 1)); then return 124; fi
+  return "$status"
 }
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-secrets.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
-chmod 700 "$work"
+# 키체인 값: 못 읽거나 시간을 넘기면 빈 문자열.
+keychain() {
+  if limited "$work/keychain" security find-generic-password -s "$keychain_service" -a "$1" -w; then
+    tr -d '\n' <"$work/keychain"
+  fi
+  rm -f "$work/keychain"
+}
 
 # 인증: 키체인에 기기 계정(Universal Auth)이 있으면 그것을, 없으면 사람 로그인 세션을 쓴다.
 # client secret과 토큰은 명령 인자가 아니라 환경 변수로만 넘긴다(ps에 보이지 않게).
-client_id="$(security find-generic-password -s "$keychain_service" -a client-id -w 2>/dev/null || true)"
+client_id="$(keychain client-id)"
 if [[ -n "$client_id" ]]; then
-  client_secret="$(security find-generic-password -s "$keychain_service" -a client-secret -w 2>/dev/null || true)"
+  client_secret="$(keychain client-secret)"
   [[ -n "$client_secret" ]] || die "키체인 ${keychain_service}에 client-secret이 없습니다"
   if [[ "$DRY_RUN" == 1 ]]; then
     info "[dry-run] 기기 계정으로 Infisical 로그인 후 $folder 받기"
@@ -79,6 +100,7 @@ if [[ -n "$client_id" ]]; then
     limited "$work/token" infisical login --method=universal-auth --silent --plain || status=$?
   unset client_secret
   token="$(tr -d '[:space:]' <"$work/token")"
+  rm -f "$work/token"
   if [[ "$status" != 0 || -z "$token" ]]; then
     fail "Infisical 기기 계정 로그인 실패 (exit $status): $(head -c 300 "$work/token.err" | tr '\n' ' ')"
     exit 1
@@ -87,9 +109,14 @@ if [[ -n "$client_id" ]]; then
   unset token
   how='기기 계정'
 else
-  # login status는 로그인 여부와 관계없이 0으로 끝나므로 세션 목록을 본다.
-  sessions="$(infisical login status --json 2>/dev/null || true)"
-  if ! grep -q '"sessions": *\[ *{' <<<"$(tr -d '\n' <<<"$sessions")"; then
+  # 0.45.8: 로그인이 없으면 종료 코드 0과 빈 세션 목록, 만료·거절된 세션이면 종료 코드 1이다. 둘 다 로그인이 필요하다.
+  status=0
+  limited "$work/status" infisical login status --json || status=$?
+  sessions=0
+  if [[ "$status" == 0 ]]; then
+    sessions="$(node -e 'try { const s = JSON.parse(require("fs").readFileSync(0, "utf8")).sessions; console.log(Array.isArray(s) ? s.length : 0) } catch { console.log(0) }' <"$work/status")"
+  fi
+  if [[ "$sessions" == 0 ]]; then
     if needs_person 'Infisical 로그인'; then exit 2; fi
     if [[ "$DRY_RUN" == 1 ]]; then
       info '[dry-run] infisical login 후 비밀값 받기'
@@ -108,34 +135,57 @@ if [[ "$DRY_RUN" == 1 ]]; then
 fi
 
 status=0
-limited "$work/export" infisical export --silent --projectId "$project" --env "$env_slug" --path "$folder" --format dotenv-export || status=$?
+limited "$work/export.json" infisical export --silent --projectId "$project" --env "$env_slug" --path "$folder" --format json || status=$?
 if [[ "$status" != 0 ]]; then
   # 실패해도 stdout에 대화형 화면 문자가 섞여 나오므로 출력은 쓰지 않는다.
-  fail "비밀값 받기 실패 (exit $status): $(grep -v '^\s*$' "$work/export.err" | head -3 | tr '\n' ' ' | head -c 300)"
+  fail "비밀값 받기 실패 (exit $status): $(grep -v '^\s*$' "$work/export.json.err" | head -3 | tr '\n' ' ' | head -c 300)"
   info "기존 $(pretty "$target")는 그대로 둡니다"
   exit 1
 fi
 
-# 모든 줄이 `export 이름=값` 한 줄이어야 한다. 여러 줄 값이나 다른 출력이 섞이면 쓰지 않는다.
-count=0
-while IFS= read -r line || [[ -n "$line" ]]; do
-  [[ -z "$line" ]] && continue
-  if [[ ! "$line" =~ ^export\ [A-Za-z_][A-Za-z0-9_]*= ]]; then
-    fail "받은 내용에 export 줄이 아닌 것이 있어 쓰지 않습니다 (여러 줄 값은 지원하지 않음)"
-    exit 1
-  fi
-  count=$((count + 1))
-done <"$work/export"
+# CLI의 dotenv-export는 값 안의 작은따옴표를 이스케이프하지 않아 source할 때 셸 코드가 될 수 있다.
+# 그래서 JSON으로 받아 이름을 검사하고 값을 직접 POSIX 작은따옴표로 감싼다('는 '\''로).
+status=0
+node -e '
+const fs = require("fs");
+let list;
+try { list = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch { console.error("JSON이 아닙니다"); process.exit(3); }
+if (!Array.isArray(list)) { console.error("배열이 아닙니다"); process.exit(3); }
+const lines = [];
+for (const item of list) {
+  const key = item && item.key, value = item && item.value;
+  if (typeof key !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) { console.error("쓸 수 없는 이름이 있습니다"); process.exit(3); }
+  if (item.secretValueHidden === true) { console.error(`${key}: 값을 읽을 권한이 없습니다`); process.exit(3); }
+  if (typeof value !== "string" || value.includes("\0")) { console.error(`${key}: 값이 문자열이 아닙니다`); process.exit(3); }
+  lines.push(`export ${key}=\x27${value.replace(/\x27/g, "\x27\\\x27\x27")}\x27`);
+}
+fs.writeFileSync(process.argv[2], lines.length ? lines.join("\n") + "\n" : "", { mode: 0o600 });
+console.log(lines.length);
+' "$work/export.json" "$work/rendered" >"$work/count" 2>"$work/render.err" || status=$?
+if [[ "$status" != 0 ]]; then
+  fail "받은 내용을 쓸 수 없어 그대로 둡니다: $(head -c 300 "$work/render.err" | tr '\n' ' ')"
+  exit 1
+fi
+count="$(cat "$work/count")"
+# 한 번 더: zsh 문법으로 읽히는지 실행 없이 확인한다.
+if ! /bin/zsh -n "$work/rendered" 2>"$work/syntax.err"; then
+  fail "만든 파일이 zsh 문법 검사를 통과하지 못해 쓰지 않습니다"
+  exit 1
+fi
 
-# 같은 폴더에 600으로 쓰고 한 번에 바꾼다.
+# 같은 폴더에 600으로 쓰고 한 번에 바꾼다. 실패하면 trap이 임시 파일을 지운다.
 mkdir -p "$(dirname "$target")"
+if [[ -e "$target" && ( ! -f "$target" || -L "$target" ) ]]; then
+  die "$(pretty "$target")가 일반 파일이 아니라 쓰지 않습니다"
+fi
 tmp="$(mktemp "$target.XXXXXX")"
 chmod 600 "$tmp"
 {
   printf '# bootstrap secrets 단계가 Infisical(%s %s)에서 받은 값. 직접 고치지 말 것. 기기별 값은 ~/.zsh_secrets\n' "$env_slug" "$folder"
-  cat "$work/export"
+  cat "$work/rendered"
 } >"$tmp"
 mv -f "$tmp" "$target"
+tmp=''
 chmod 600 "$target"
 mkdir -p "$BOOTSTRAP_STATE/secrets"
 printf 'synced_at=%s\ncount=%s\nauth=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$count" "$how" >"$BOOTSTRAP_STATE/secrets/last-sync"
