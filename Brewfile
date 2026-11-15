@@ -5,6 +5,7 @@
 # git·GitHub
 brew "gh"
 brew "gitleaks"  # 이 저장소의 커밋 전 비밀값 검사
+brew "infisical/get-cli/infisical"  # 비밀값 동기화 (README "비밀값", secrets 단계)
 
 # Node: Node 자체는 fnm이 설치한다 (development/node.md)
 brew "fnm"
