@@ -337,7 +337,8 @@ test('doctor의 기기 역할 검사는 verifier에서만 기기 경고를 표�
   writeFileSync(lib, readFileSync(lib, 'utf8') + '\nverifier_status() { verifier_health_warnings; return "${MOCK_ROLE_STATUS:-0}"; }\n');
   for (const [name, body] of Object.entries({
     sysctl: 'echo "vm.swapusage: total = 1000M used = ${MOCK_SWAP_USED:-800}M"',
-    ps: 'echo "/usr/libexec/fseventsd ${MOCK_RSS:-2097152}"',
+    // macOS처럼 comm이 첫 열이면 잘린 경로만 보인다.
+    ps: 'if [ "$2" = "rss=,comm=" ]; then echo "${MOCK_RSS:-2097152} /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"; else echo "/System/Library/   ${MOCK_RSS:-2097152}"; fi',
     pgrep: 'exit 0',
     docker: 'echo "unexpected Docker call" >&2; exit 99',
   })) writeFileSync(join(mock, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });

@@ -198,8 +198,9 @@ verifier_health_warnings() {
   ')"
   [[ -z "$swap" ]] || warn "verifier 기기 상태: swap 사용률 ${swap}% (${VERIFIER_SWAP_WARN_PERCENT}% 이상). README의 run 사이 점검·정리 절차를 확인하세요"
 
-  rss="$(ps -axo comm=,rss= 2>/dev/null | awk -v threshold="$VERIFIER_FSEVENTSD_WARN_KIB" '
-    ($1 == "fseventsd" || $1 ~ /\/fseventsd$/) && $2 >= threshold { if ($2 > max) max = $2 }
+  # macOS ps는 첫 열의 comm을 잘라(/System/Library/) 이름을 알 수 없게 하므로 rss를 먼저, 경로를 마지막에 둔다.
+  rss="$(ps -axo rss=,comm= 2>/dev/null | awk -v threshold="$VERIFIER_FSEVENTSD_WARN_KIB" '
+    ($NF == "fseventsd" || $NF ~ /\/fseventsd$/) && $1 >= threshold { if ($1 > max) max = $1 }
     END { if (max) printf "%.2f", max / 1024 / 1024 }
   ')"
   [[ -z "$rss" ]] || warn "verifier 기기 상태: fseventsd RSS ${rss} GiB (2 GiB 이상). README의 run 사이 점검·정리 절차를 확인하세요"

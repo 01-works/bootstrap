@@ -79,7 +79,8 @@ brew() {
   // 상태 조회는 PATH의 대역으로 격리한다. 실제 sysctl/ps/pgrep/Docker를 호출하지 않는다.
   const commands = {
     sysctl: 'cat "$MOCK/swap"',
-    ps: 'cat "$MOCK/rss"',
+    // macOS처럼 comm을 첫 열에 두면 경로가 잘린다(/System/Library/). 픽스처 한 줄은 "<rss> <경로>"다.
+    ps: 'case "$2" in rss=,comm=) cat "$MOCK/rss" ;; *) awk \'{ printf "%-16.16s %8s\\n", $2, $1 }\' "$MOCK/rss" ;; esac',
     pgrep: 'exit "$(cat "$MOCK/pgrep-exit")"',
     docker: `printf '%s context=%s host=%s tls=%s cert=%s\\n' "$*" "\${DOCKER_CONTEXT:-}" "\${DOCKER_HOST:-}" "\${DOCKER_TLS_VERIFY:-}" "\${DOCKER_CERT_PATH:-}" >>"$MOCK/docker-calls"
 [ ! -e "$MOCK/docker-off" ] || exit 1
@@ -95,7 +96,7 @@ esac`,
     writeFileSync(join(mock, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
   }
   writeFileSync(join(mock, 'swap'), 'vm.swapusage: total = 1024.00M used = 0.00M free = 1024.00M (encrypted)\n');
-  writeFileSync(join(mock, 'rss'), '/System/Library/Frameworks/CoreServices.framework/Frameworks/FSEvents.framework/Support/fseventsd 1024\n');
+  writeFileSync(join(mock, 'rss'), '1024 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd\n');
   writeFileSync(join(mock, 'pgrep-exit'), '1');
   writeFileSync(join(mock, 'containers'), '');
   // 대상 파일 쓰기 호출도 계수한다. 재적용은 임시 파일 writer조차 호출하지 않아야 한다.
@@ -169,7 +170,7 @@ test('기기 상태 경고는 swap/RSS 임계값을 포함하며 준비 완료·
     ['unavailable', 0, false, false],
   ]) {
     writeFileSync(join(f.mock, 'swap'), `vm.swapusage: ${swap}\n`);
-    writeFileSync(join(f.mock, 'rss'), `/usr/libexec/fseventsd ${rss}\nfseventsd-helper 99999999\n`);
+    writeFileSync(join(f.mock, 'rss'), `${rss} /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd\n99999999 /usr/libexec/fseventsd-helper\n`);
     const result = f.role('status', 'verifier');
     assert.equal(result.status, 0, out(result));
     assert.equal(/verifier 기기 상태: swap/.test(result.stderr), swapWarn, swap);
