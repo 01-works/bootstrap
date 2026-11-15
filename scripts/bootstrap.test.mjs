@@ -324,6 +324,55 @@ test('role 명령은 scripts/role.sh로 넘기고, roles 단계는 켠 역할이
   assert.deepEqual(readdirSync(home), [], '역할이 없으면 홈을 건드리지 않는다');
 });
 
+test('doctor의 기기 역할 검사는 verifier에서만 기기 경고를 표시하고 기존 판정은 보존한다', t => {
+  const { root } = sandbox(t);
+  const home = join(root, 'home'), mock = join(root, 'mock');
+  const roles = join(home, '.config/bootstrap/roles');
+  mkdirSync(roles, { recursive: true });
+  mkdirSync(mock);
+  copyFileSync(join(repo, 'scripts/role.sh'), join(root, 'scripts/role.sh'));
+  // 다른 doctor 검사는 기존대로 두고 역할 호출·경고·결과 집계 경계만 실행한다.
+  // role의 준비 상태 검사는 role.test.mjs에서 검증하므로 여기서는 그 결과만 대역으로 둔다.
+  const lib = join(root, 'scripts/lib.sh');
+  writeFileSync(lib, readFileSync(lib, 'utf8') + '\nverifier_status() { verifier_health_warnings; return "${MOCK_ROLE_STATUS:-0}"; }\n');
+  for (const [name, body] of Object.entries({
+    sysctl: 'echo "vm.swapusage: total = 1000M used = ${MOCK_SWAP_USED:-800}M"',
+    ps: 'echo "/usr/libexec/fseventsd ${MOCK_RSS:-2097152}"',
+    pgrep: 'exit 0',
+    docker: 'echo "unexpected Docker call" >&2; exit 99',
+  })) writeFileSync(join(mock, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  const doctor = readFileSync(join(repo, 'scripts/doctor.sh'), 'utf8');
+  const block = doctor.slice(doctor.indexOf('step "기기 역할"'), doctor.indexOf('step "전원"'));
+  const script = `set -uo pipefail
+source "$BOOTSTRAP_ROOT/scripts/lib.sh"
+failed=0; pending=0; verifier=0
+[[ ! -f "$HOME/.config/bootstrap/roles/verifier" ]] || verifier=1
+pass() { ok "$*"; }
+miss() { fail "$*"; failed=$((failed + 1)); }
+wait_for_user() { warn "$*"; pending=$((pending + 1)); }
+${block}
+[[ "$failed" == 0 ]] || exit 1
+[[ "$pending" == 0 ]] || exit 2
+`;
+  const env = { ...process.env, HOME: home, BOOTSTRAP_ROOT: root, BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'),
+    XDG_STATE_HOME: join(root, 'state'), PATH: `${mock}:${process.env.PATH}` };
+  const run = (extra = {}) => spawnSync('/bin/bash', ['-c', script], { env: { ...env, ...extra }, encoding: 'utf8' });
+  let result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /verifier 기기 상태/);
+  writeFileSync(join(roles, 'verifier'), '');
+  result = run({ MOCK_SWAP_USED: '799', MOCK_RSS: '2097151' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /verifier 기기 상태/);
+  for (const code of [0, 2, 1]) {
+    result = run({ MOCK_ROLE_STATUS: String(code) });
+    assert.equal(result.status, code, result.stderr);
+    assert.match(result.stderr, /기기 상태: swap 사용률 80\.0%/);
+    assert.match(result.stderr, /기기 상태: fseventsd RSS 2\.00 GiB/);
+    assert.doesNotMatch(result.stderr, /unexpected Docker/);
+  }
+});
+
 test('모든 bash 스크립트는 변수 이름 바로 뒤에 비ASCII 문자를 붙이지 않는다', () => {
   const files = ['bootstrap.sh', 'install.sh', ...readdirSync(join(repo, 'scripts'), { recursive: true })
     .filter(name => name.endsWith('.sh')).map(name => join('scripts', name))];
