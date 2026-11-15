@@ -258,19 +258,6 @@ if [[ -f "$HOME/.zsh_secrets" ]]; then
   perm="$(stat -f '%Lp' "$HOME/.zsh_secrets")"
   if [[ "$perm" == 600 ]]; then pass "~/.zsh_secrets 권한 600"; else miss "~/.zsh_secrets 권한이 $perm (chmod 600 필요)"; fi
 fi
-# 비밀값 동기화를 설정한 기기만 본다 (scripts/steps/72-secrets.sh).
-if [[ -f "${BOOTSTRAP_SECRETS_CONFIG:-$HOME/.config/bootstrap/secrets.env}" ]]; then
-  if has infisical; then pass "Infisical CLI"; else miss "Infisical CLI 없음 (./bootstrap.sh --only homebrew)"; fi
-  synced="$BOOTSTRAP_STATE/secrets/last-sync"
-  if [[ -f "$HOME/.zsh_secrets.infisical" && -f "$synced" ]]; then
-    perm="$(stat -f '%Lp' "$HOME/.zsh_secrets.infisical")"
-    when="$(sed -n 's/^synced_at=//p' "$synced")"
-    if [[ "$perm" != 600 ]]; then miss "~/.zsh_secrets.infisical 권한이 $perm (./bootstrap.sh --only secrets)"
-    else pass "비밀값 동기화 ($(sed -n 's/^count=//p' "$synced")개, $when)"; fi
-  else
-    wait_for_user "비밀값을 아직 받지 않음 (./bootstrap.sh --only secrets)"
-  fi
-fi
 
 step "자동 갱신"
 if has node && node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only update "$(device_flag)"; then

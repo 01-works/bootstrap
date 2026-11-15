@@ -12,8 +12,6 @@ esac
 alias codexa='codex --dangerously-bypass-approvals-and-sandbox'
 alias codexd='codex --dangerously-bypass-approvals-and-sandbox'
 
-# 비밀값: secrets 단계가 Infisical에서 받은 공용 값 다음에 기기별 값을 읽어, 같은 이름이면 기기별 값이 이긴다.
-[[ -f "$HOME/.zsh_secrets.infisical" ]] && source "$HOME/.zsh_secrets.infisical"
 [[ -f "$HOME/.zsh_secrets" ]] && source "$HOME/.zsh_secrets"
 
 # Node versions and automatic project switching.
