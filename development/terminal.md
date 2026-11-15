@@ -6,7 +6,8 @@
 |---|---|---|
 | [`.zprofile`](../home/zsh/.zprofile) | 로그인 셸 | PATH: Homebrew, fnm 기본 버전, `~/.local/bin` |
 | [`.zshrc`](../home/zsh/.zshrc) | 대화형 셸 | 별칭, pnpm, fnm 자동 전환, 명령어 자동 완성 |
-| `~/.zsh_secrets` | `.zshrc`가 읽음 | API 키. 저장소 밖, 권한 600 |
+| `~/.zsh_secrets.infisical` | `.zshrc`가 먼저 읽음 | 여러 기기 공용 API 키. `secrets` 단계가 Infisical에서 받아 쓴다. 직접 고치지 않음, 권한 600 ([README](../README.md#비밀값)) |
+| `~/.zsh_secrets` | `.zshrc`가 그다음 읽음 | 기기별 API 키. 같은 이름이면 공용 값보다 우선. 저장소 밖, 권한 600 |
 | `~/.zshrc.local` | `.zshrc` 마지막 | 이 기기에만 필요한 설정. 저장소 밖 |
 
 ## 별칭

@@ -112,6 +112,7 @@ flowchart LR
 | Brewfile | `brew bundle` | [docs.brew.sh](https://docs.brew.sh/Brew-Bundle-and-Brewfile) | | 2026-10-07 |
 | gh | `Brewfile` | [GitHub](https://github.com/cli/cli/blob/trunk/docs/install_macos.md) | Homebrew가 공식 권장 방법 | 2026-10-07 |
 | gitleaks | `Brewfile` | [GitHub](https://github.com/gitleaks/gitleaks) | 이 저장소의 커밋 전 비밀값 검사용. 기능 추가는 끝났고 보안 패치만 나온다 (후속 도구는 Betterleaks) | 2026-10-07 |
+| Infisical CLI | `Brewfile` (`infisical/get-cli/infisical`) | [infisical.com](https://infisical.com/docs/cli/install) | 공식 Homebrew tap. `secrets` 단계가 공용 비밀값을 받는 데 쓴다(README "비밀값"). 0.45.8에서 로그인 없는 `export`는 종료 코드 1과 함께 대화형 화면 문자를 표준 출력에 낸다. `dotenv-export`는 값의 작은따옴표를 이스케이프하지 않아 JSON으로 받는다 | 2026-11-15 |
 | Tailscale 앱 | `cask "tailscale-app"` | [tailscale.com](https://tailscale.com/docs/install/mac) | Standalone 버전, 공식 권장. `tailscale` 명령어는 PATH에 두지 않는다. doctor는 앱에 든 명령어로 연결·키 만료를 확인한다 (명령어가 필요하면 앱 설정 → [CLI integration](https://tailscale.com/docs/reference/tailscale-cli)) | 2026-10-20 |
 
 ## Node
