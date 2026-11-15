@@ -29,7 +29,7 @@ function sandbox(t) {
 sharing_enabled() { [[ "$1" == com.openssh.sshd && ! -e "$MOCK/sshd-off" ]]; }
 is_laptop() { return 1; }
 has() {
-  case "$1" in brew|docker) [[ ! -e "$MOCK/$1-missing" ]] ;; *) command -v "$1" >/dev/null 2>&1 ;; esac
+  case "$1" in brew|docker|colima) [[ ! -e "$MOCK/$1-missing" ]] ;; *) command -v "$1" >/dev/null 2>&1 ;; esac
 }
 colima() {
   if [[ "$1" == --profile ]]; then
@@ -74,11 +74,31 @@ brew() {
     *) return 99 ;;
   esac
 }
-docker() {
-  printf '%s context=%s host=%s tls=%s cert=%s\\n' "$*" "\${DOCKER_CONTEXT:-}" "\${DOCKER_HOST:-}" "\${DOCKER_TLS_VERIFY:-}" "\${DOCKER_CERT_PATH:-}" >>"$MOCK/docker-calls"
-  [[ "$1" == --host && "$3" == info && ! -e "$MOCK/docker-off" ]]
-}
+
 `);
+  // 상태 조회는 PATH의 대역으로 격리한다. 실제 sysctl/ps/pgrep/Docker를 호출하지 않는다.
+  const commands = {
+    sysctl: 'cat "$MOCK/swap"',
+    // macOS처럼 comm을 첫 열에 두면 경로가 잘린다(/System/Library/). 픽스처 한 줄은 "<rss> <경로>"다.
+    ps: 'case "$2" in rss=,comm=) cat "$MOCK/rss" ;; *) awk \'{ printf "%-16.16s %8s\\n", $2, $1 }\' "$MOCK/rss" ;; esac',
+    pgrep: 'exit "$(cat "$MOCK/pgrep-exit")"',
+    docker: `printf '%s context=%s host=%s tls=%s cert=%s\\n' "$*" "\${DOCKER_CONTEXT:-}" "\${DOCKER_HOST:-}" "\${DOCKER_TLS_VERIFY:-}" "\${DOCKER_CERT_PATH:-}" >>"$MOCK/docker-calls"
+[ ! -e "$MOCK/docker-off" ] || exit 1
+[ "$1" = --host ] || exit 99
+case "$3" in
+  info) exit 0 ;;
+  ps) cat "$MOCK/containers" ;;
+  inspect) cat "$MOCK/started-$6" ;;
+  *) exit 99 ;;
+esac`,
+  };
+  for (const [name, body] of Object.entries(commands)) {
+    writeFileSync(join(mock, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  }
+  writeFileSync(join(mock, 'swap'), 'vm.swapusage: total = 1024.00M used = 0.00M free = 1024.00M (encrypted)\n');
+  writeFileSync(join(mock, 'rss'), '1024 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd\n');
+  writeFileSync(join(mock, 'pgrep-exit'), '1');
+  writeFileSync(join(mock, 'containers'), '');
   // 대상 파일 쓰기 호출도 계수한다. 재적용은 임시 파일 writer조차 호출하지 않아야 한다.
   const lib = join(root, 'scripts/lib.sh');
   writeFileSync(lib, readFileSync(lib, 'utf8') + `
@@ -109,7 +129,7 @@ const code = [\`\${process.env.MOCK}/agents-exit\${suffix}-\${only}\`, \`\${proc
 process.exitCode = code ? Number(readFileSync(code, 'utf8')) : 0;
 `);
   const env = { ...process.env, HOME: home, MOCK: mock, BOOTSTRAP_ROOT: root, XDG_STATE_HOME: join(root, 'state'),
-    BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'), DRY_RUN: '0', ASSUME_YES: '0', YW_HEAVY_VERIFIER_OVERRIDE_REASON: '' };
+    BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'), PATH: `${mock}:${process.env.PATH}`, DRY_RUN: '0', ASSUME_YES: '0', YW_HEAVY_VERIFIER_OVERRIDE_REASON: '' };
   for (const key of ['XDG_CONFIG_HOME', 'COLIMA_HOME', 'LIMA_HOME', 'COLIMA_PROFILE', 'BOOTSTRAP_LOCKED', 'BOOTSTRAP_UNATTENDED', 'BOOTSTRAP_RESULTS']) delete env[key];
   const keyFile = join(root, 'key.pub');
   writeFileSync(keyFile, `ssh-ed25519 ${BODY} reader@other-mac\n`);
@@ -136,6 +156,78 @@ process.exitCode = code ? Number(readFileSync(code, 'utf8')) : 0;
   };
 }
 const out = result => result.stdout + result.stderr;
+
+test('기기 상태 경고는 swap/RSS 임계값을 포함하며 준비 완료·대기·실패 종료 코드를 보존한다', t => {
+  const f = sandbox(t);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  for (const [swap, rss, swapWarn, rssWarn] of [
+    ['total = 1000.00M used = 799.99M', 2097151, false, false],
+    ['total = 1.00G used = 819.20M', 2097152, true, true],
+    ['total = 1000.00M used = 950.00M', 5500000, true, true],
+    ['total = 1000M used = 800M', 0, true, false],
+    ['total = 1000M used = 0M', 2097152, false, true],
+    ['total = 0.00M used = 0.00M', 0, false, false],
+    ['unavailable', 0, false, false],
+  ]) {
+    writeFileSync(join(f.mock, 'swap'), `vm.swapusage: ${swap}\n`);
+    writeFileSync(join(f.mock, 'rss'), `${rss} /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd\n99999999 /usr/libexec/fseventsd-helper\n`);
+    const result = f.role('status', 'verifier');
+    assert.equal(result.status, 0, out(result));
+    assert.equal(/verifier 기기 상태: swap/.test(result.stderr), swapWarn, swap);
+    assert.equal(/verifier 기기 상태: fseventsd RSS/.test(result.stderr), rssWarn, String(rss));
+  }
+  writeFileSync(join(f.mock, 'swap'), 'total = 1000M used = 800M\n');
+  writeFileSync(join(f.mock, 'sshd-off'), '');
+  assert.equal(f.role('status', 'verifier').status, 2, '경고는 수동 대기 판정도 보존');
+  writeFileSync(join(f.mock, 'docker-off'), '');
+  const result = f.role('status', 'verifier');
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /기기 상태: swap/);
+  assert.deepEqual(f.serviceChanges().filter(line => !line.startsWith('services start ')), []);
+});
+
+test('컨테이너 경고는 UUID lane의 실제 실행 2시간 초과만 검사하고 읽기만 한다', t => {
+  const f = sandbox(t);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  f.calls('docker'); f.serviceChanges(); f.systemChanges();
+  const uuid = '01234567-89ab-cdef-0123-456789abcdef';
+  const old = `console-${uuid}-ecommerce-test`;
+  const boundary = `console-${uuid}-redis-rest`;
+  const young = `console-${uuid}-redis-store`;
+  const other = ['console-not-a-uuid-ecommerce-test', `other-${uuid}-redis-rest`, `console-${uuid}`];
+  writeFileSync(join(f.mock, 'containers'), [old, boundary, young, ...other].join('\n') + '\n');
+  const now = Date.UTC(2026, 10, 16);
+  const clock = join(f.mock, 'clock.cjs');
+  writeFileSync(clock, `Date.now = () => ${now};\n`);
+  f.env.NODE_OPTIONS = `--require=${clock}`;
+  for (const [name, age] of [[old, 7201], [boundary, 7200], [young, 1]]) {
+    writeFileSync(join(f.mock, `started-${name}`), new Date(now - age * 1000).toISOString());
+  }
+  const before = tree(f.home);
+  const result = f.role('status', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.match(result.stderr, new RegExp(`lane 컨테이너 ${old} 실행 7201초`));
+  for (const name of [boundary, young, ...other]) assert.ok(!result.stderr.includes(`lane 컨테이너 ${name} 실행`), name);
+  const calls = f.calls('docker');
+  assert.equal(calls.filter(line => line.includes(' inspect ')).length, 3);
+  assert.ok(calls.every(line => / (ps|inspect|info)( |$)/.test(line)), calls.join('\n'));
+  assert.deepEqual(tree(f.home), before, '상태 조회는 홈을 바꾸지 않음');
+  assert.deepEqual(f.serviceChanges(), []);
+  assert.deepEqual(f.systemChanges(), []);
+});
+
+test('실행 중·프로세스 조회 오류·colima 없음/꺼짐이면 컨테이너 검사를 건너뛴다', t => {
+  const f = sandbox(t);
+  assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
+  for (const [pgrep, marker] of [['0', null], ['2', null], ['1', 'colima-off'], ['1', 'colima-missing']]) {
+    writeFileSync(join(f.mock, 'pgrep-exit'), pgrep);
+    if (marker) writeFileSync(join(f.mock, marker), '');
+    f.calls('docker');
+    f.role('status', 'verifier');
+    assert.ok(f.calls('docker').every(line => !line.includes(' ps ')), `${pgrep} ${marker}`);
+    if (marker) rmSync(join(f.mock, marker));
+  }
+});
 
 // 디렉터리 아래 모든 파일의 내용·권한 (바뀌지 않았는지 비교용).
 function tree(dir) {
@@ -696,7 +788,10 @@ test('Docker 검사는 다른 context·host·TLS 설정을 무시하고 COLIMA_H
     DOCKER_TLS_VERIFY: '1', DOCKER_CERT_PATH: '/remote/certs' });
   const result = f.role('status', 'verifier');
   assert.equal(result.status, 0, out(result));
-  assert.deepEqual(f.calls('docker'), [`--host unix://${custom}/default/docker.sock info context= host= tls= cert=`]);
+  assert.deepEqual(f.calls('docker'), [
+    `--host unix://${custom}/default/docker.sock ps --format {{.Names}} context= host= tls= cert=`,
+    `--host unix://${custom}/default/docker.sock info context= host= tls= cert=`,
+  ]);
 });
 
 test('인스턴스 없음은 수동 대기 2로 두고 준비 후 등록하며 dry-run은 서비스도 바꾸지 않는다', t => {

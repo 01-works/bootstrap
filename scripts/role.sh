@@ -27,6 +27,10 @@ EOF
 ROLES=verifier
 # GiB. 검증 작업은 VM과 호스트 양쪽에서 메모리를 쓰므로 VM에 다 주지 않는다. 기기에 맞게 --colima-memory로 바꾼다.
 VERIFIER_DEFAULT_MEMORY=6
+# 읽기 전용 기기 상태 경고 임계값. 경고는 역할 준비 상태/종료 코드에 영향을 주지 않는다.
+VERIFIER_SWAP_WARN_PERCENT=80
+VERIFIER_FSEVENTSD_WARN_KIB=2097152 # 2 GiB (ps RSS는 KiB)
+VERIFIER_CONTAINER_WARN_SECONDS=7200 # 실행 시작 후 2시간 초과
 # 이 기기에서 자동 시작하지 않는 등록 (launch-agents.mjs가 상태 파일을 보고 끈다).
 VERIFIER_AGENTS='agent-chrome paseo paseo-upgrade'
 KEY_COMMENT=bootstrap-role-verifier
@@ -171,6 +175,54 @@ colima_service_remove() {
 colima_docker_ready() {
   has docker && DOCKER_CONTEXT='' DOCKER_HOST='' DOCKER_TLS_VERIFY='' DOCKER_CERT_PATH='' \
     docker --host "unix://$COLIMA_SOCKET" info >/dev/null 2>&1
+}
+
+# memory_pressure의 free percentage로는 swap 포화를 놓칠 수 있어 vm.swapusage를 직접 본다.
+verifier_health_warnings() {
+  local swap rss names name started age r
+  swap="$(sysctl vm.swapusage 2>/dev/null | awk -v threshold="$VERIFIER_SWAP_WARN_PERCENT" '
+    function bytes(s, unit) {
+      unit = substr(s, length(s)); s += 0
+      if (unit == "K") return s * 1024
+      if (unit == "M") return s * 1024 * 1024
+      if (unit == "G") return s * 1024 * 1024 * 1024
+      if (unit == "T") return s * 1024 * 1024 * 1024 * 1024
+      return s
+    }
+    { for (i = 1; i <= NF; i++) {
+        if ($i == "total" && $(i+1) == "=") total = bytes($(i+2))
+        if ($i == "used" && $(i+1) == "=") used = bytes($(i+2))
+      }
+    }
+    END { if (total > 0 && used / total * 100 >= threshold) printf "%.1f", used / total * 100 }
+  ')"
+  [[ -z "$swap" ]] || warn "verifier 기기 상태: swap 사용률 ${swap}% (${VERIFIER_SWAP_WARN_PERCENT}% 이상). README의 run 사이 점검·정리 절차를 확인하세요"
+
+  # macOS ps는 첫 열의 comm을 잘라(/System/Library/) 이름을 알 수 없게 하므로 rss를 먼저, 경로를 마지막에 둔다.
+  rss="$(ps -axo rss=,comm= 2>/dev/null | awk -v threshold="$VERIFIER_FSEVENTSD_WARN_KIB" '
+    ($NF == "fseventsd" || $NF ~ /\/fseventsd$/) && $1 >= threshold { if ($1 > max) max = $1 }
+    END { if (max) printf "%.2f", max / 1024 / 1024 }
+  ')"
+  [[ -z "$rss" ]] || warn "verifier 기기 상태: fseventsd RSS ${rss} GiB (2 GiB 이상). README의 run 사이 점검·정리 절차를 확인하세요"
+
+  # pgrep의 1만 실행 없음이다. 조회 오류나 실행 중일 때는 남은 컨테이너라고 판정하지 않는다.
+  r=0
+  pgrep -fl nightly-local-check >/dev/null 2>&1 || r=$?
+  [[ "$r" == 1 ]] || return 0
+  has colima && colima --profile default status >/dev/null 2>&1 && has docker && has node || return 0
+  names="$(DOCKER_CONTEXT='' DOCKER_HOST='' DOCKER_TLS_VERIFY='' DOCKER_CERT_PATH='' \
+    docker --host "unix://$COLIMA_SOCKET" ps --format '{{.Names}}' 2>/dev/null)" || return 0
+  while IFS= read -r name; do
+    [[ "$name" =~ ^console-[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}-.+$ ]] || continue
+    # CreatedAt은 재시작 전 생성 시각이다. 실제 연속 실행 시간은 StartedAt으로 확인한다.
+    started="$(DOCKER_CONTEXT='' DOCKER_HOST='' DOCKER_TLS_VERIFY='' DOCKER_CERT_PATH='' \
+      docker --host "unix://$COLIMA_SOCKET" inspect --format '{{.State.StartedAt}}' "$name" 2>/dev/null)" || continue
+    age="$(node -e 'const start = Date.parse(process.argv[1]); if (Number.isFinite(start)) console.log(Math.floor((Date.now() - start) / 1000))' "$started" 2>/dev/null)"
+    if [[ "$age" =~ ^[0-9]+$ ]] && [[ "$age" -gt "$VERIFIER_CONTAINER_WARN_SECONDS" ]]; then
+      warn "verifier 기기 상태: nightly-local-check 실행 없이 lane 컨테이너 ${name} 실행 ${age}초 (2시간 초과). README의 run 사이 점검·정리 절차를 확인하세요"
+    fi
+  done <<<"$names"
+  return 0
 }
 
 # 최상위 memory: 한 줄만 바꾼다. 같은 디렉터리의 임시 파일에 쓰고 mv로 바꾼다.
@@ -490,6 +542,7 @@ verifier_status() {
     fail 'verifier 꺼짐 (켜기: ./bootstrap.sh role add verifier --ssh-key <공개키 파일>)'
     return 1
   fi
+  verifier_health_warnings
   if [[ "$(perm "$STATE_FILE")" == 600 ]]; then s_ok "상태 파일 $(pretty "$STATE_FILE")"; else s_bad "상태 파일 권한이 $(perm "$STATE_FILE") (600이어야 함)"; fi
 
   memory="$(state_get colima_memory)"

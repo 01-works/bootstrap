@@ -149,6 +149,21 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 - macOS 원격 로그인 켜기: 시스템 설정 > 일반 > 공유 > 원격 로그인. 꺼져 있으면 `role status`가 수동 작업 대기(2)로 알린다.
 - (선택) 이 기기에서 코딩 에이전트를 쓰지 않으면 Claude Code(`claude` 안에서 `/logout`)와 Codex(`codex logout`)에서 로그아웃한다.
 
+#### run 사이 점검·정리 절차
+
+`./bootstrap.sh role status verifier`와 verifier 역할을 켠 기기의 `./bootstrap.sh doctor`는 swap 사용률 80% 이상, `fseventsd` RSS 2 GiB 이상을 경고한다. `nightly-local-check` 실행이 없는데 `console-<uuid>-*` 컨테이너가 2시간 넘게 실행 중이어도 경고한다. 컨테이너 검사는 기본 colima가 없거나 꺼져 있으면 건너뛴다. 이 경고는 기존 종료 코드를 바꾸지 않으며, 삭제·재시작·sudo를 자동 실행하지 않는다.
+
+경고가 있으면 사람이 다음 순서로 점검한다. 실행 중인 run이 있으면 끝날 때까지 기다린다.
+
+1. Paseo Verifier 화면이나 `pgrep -fl nightly-local-check`로 실행이 없는지 확인한다.
+2. 새 run이 시작되지 않도록 loop를 내린다: `launchctl bootout gui/$(id -u)/local.01-software.verifier-loop`. 내리는 사이 실행이 시작됐을 수 있으므로 프로세스 종료도 다시 확인한다.
+3. [01-software runbook의 termination-unconfirmed 복구 절차](https://github.com/01-office/01-software/blob/dev/docs/runbooks/verifier-machine.md#9-recover-a-termination-unconfirmed-marker)를 확인한다. marker가 있으면 lane·프로세스 종료 확인과 복구 조건을 따른다. 살아 있거나 소유자를 모르는 작업은 정리하지 않는다.
+4. `docker --host "unix://${COLIMA_HOME:-$HOME/.colima}/default/docker.sock" ps`로 남은 `console-<uuid>-*` lane 컨테이너를 확인하고, 종료된 run의 잔여물임을 확인한 이름만 같은 소켓의 `docker rm -f <확인한 컨테이너 이름...>`로 삭제한다.
+5. `fseventsd` 메모리가 큰 경우 `sudo killall fseventsd`로 재시작한다. 사람이 직접 실행하며 관리자 인증이 필요하다.
+6. loop를 다시 올린다: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.01-software.verifier-loop.plist`.
+
+**`~/Library/Caches/pnpm`은 지우지 않는다.** 이 절차의 정리 대상이 아니며 다음 run에서 의존성을 다시 받는 부담을 만든다. nightly 실행·복구·대기열의 자세한 절차는 위 runbook을 따른다.
+
 ## 새 기기 없이 시험하기
 
 설정 병합·파일 보존·실패 판정은 `node --test scripts/*.test.mjs agents/skills/*/*.test.mjs`로 검사한다. PR마다 같은 테스트를 GitHub Actions(`.github/workflows/test.yml`)가 macOS에서 돌린다. 테스트는 임시 경로와 외부 명령 대역을 사용하며 실제 홈·브라우저·인증을 바꾸지 않는다. 새 Mac의 전체 설치나 실제 브라우저 연결은 별도 검증이다.
