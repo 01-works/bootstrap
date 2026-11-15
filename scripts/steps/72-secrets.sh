@@ -175,7 +175,8 @@ fi
 
 # 같은 폴더에 600으로 쓰고 한 번에 바꾼다. 실패하면 trap이 임시 파일을 지운다.
 mkdir -p "$(dirname "$target")"
-if [[ -e "$target" && ( ! -f "$target" || -L "$target" ) ]]; then
+# 링크는 깨진 것도 거부한다(-e는 깨진 링크에 거짓이라 -L을 따로 본다).
+if [[ -L "$target" ]] || [[ -e "$target" && ! -f "$target" ]]; then
   die "$(pretty "$target")가 일반 파일이 아니라 쓰지 않습니다"
 fi
 tmp="$(mktemp "$target.XXXXXX")"

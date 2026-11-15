@@ -197,5 +197,13 @@ test('secrets 단계: README 형식의 줄 끝 주석을 읽고, 잘못된 설�
   result = s.run({ FAKE_SESSION: 'active' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /일반 파일이 아니라/);
+
+  // 깨진 링크도 덮어쓰지 않는다.
+  rmSync(s.target, { recursive: true });
+  symlinkSync(join(s.root, 'missing-target'), s.target);
+  result = s.run({ FAKE_SESSION: 'active' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /일반 파일이 아니라/);
+  assert.equal(existsSync(join(s.root, 'missing-target')), false);
   assert.deepEqual(s.leftovers(), []);
 });
