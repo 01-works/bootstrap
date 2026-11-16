@@ -85,6 +85,28 @@ test('교훈 경로: 설치 원본 직접 수정 금지와 bootstrap 단일 수�
   }
 });
 
+test('chief 순찰·재개: 사용자 승인·새 권한 금지·만료 안전 불변식', () => {
+  const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+  const chief = read('../agents/skills/yw-chief-supervisor/SKILL.md');
+  const cleanup = read('../agents/skills/yw-paseo-cleanup/SKILL.md');
+  const patrol = chief.split('\n## 순찰과 재개\n')[1]?.split('\n## ')[0] ?? '';
+  const bullet = (text, name) => text.split(`- **${name}:** `)[1]?.split('\n- ')[0] ?? '';
+  assert.match(bullet(patrol, '순찰'), /^사용자가 요청하면[^\n]*`maxRuns` 또는 `expiresIn`[^\n]*자동으로 연장하지 않는다/);
+  const progress = bullet(patrol, '감독 lane 진행 요청');
+  for (const required of [/보관되지 않았고/, /보류·중지 지시·사용자 질문·pending·기록된 대기 사유 없이/, /전송 직전 상태를 확인/, /기존 승인 범위 안의 것만/, /한 번 보낸다/, /새 권한·범위를 담지 않고/]) assert.match(progress, required);
+  assert.doesNotMatch(progress, /archive|detach|인수|merge|병합|머지|배포|--force|삭제|중단|승인 없이/);
+  const independent = bullet(patrol, '독립 대화');
+  for (const required of [/사용자가 승인한 것만/, /새 권한·범위 없음/, /한 번 재개/, /소유 인수·작업자 배정·중단은 하지 않는다/, /자동 재개는 사용자가 승인 범위에 정한 경우에만 한다/, /하위 세션에는 메시지를 보내지 않고/]) assert.match(independent, required);
+  assert.match(bullet(patrol, '결정 큐'), /"추천대로"는 보여 준 항목에만[^\n]*실행 직전 상태를 다시 확인/);
+  assert.match(bullet(chief.split('\n## 보고와 인계\n')[1] ?? '', '교체'), /결정 큐로 새 세션 교체를 제안하고, 승인되면/);
+  assert.match(chief, /안전 조건으로 지정된 도구[^\n]*보류하고 보고하며, 보호 수준이 낮은 경로로 바꾸지 않는다/);
+  assert.match(chief, /진행 중인 작업자를 직접 재개·중단하거나 lane을 인수하지 않는다/);
+  assert.match(chief, /사용자 승인이 필요한 조치는 합의만으로 실행하지 않는다/);
+  assert.match(chief, /관리 중인 에이전트는 전체 ID로 적는다/);
+  assert.match(cleanup, /`-chief\/tasks\.md`\(현재 관리 범위\)와 `-chief\/log\.md`\(완료 판정 근거\)/);
+  assert.match(cleanup.split('\n## 하지 않는 것\n')[1] ?? '', /다른 세션에 질문이나 재개 요청을 보내지 않는다/);
+});
+
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {
   test(`${name} 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 보존`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'bootstrap-skills-test-'));

@@ -121,6 +121,31 @@ test('P2 supervisor header variants resolve owner; absent header produces a scop
     assert.equal(gaps.length, 1); assert.equal(gaps[0].reason, 'supervisor_owner_unknown'); assert.deepEqual(gaps[0].scope.agentIds, [member]); assert.deepEqual(gaps[0].scope.paths, ['/tmp/fake/.paseo/worktrees/project/orphan']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('chief log.md references do not create supervisor scope; tasks.md references do', async () => {
+  const { collectSupervisors } = await import('./scan.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'cleanup-chief-log-')), owner = '11111111-1111-4111-8111-111111111111', current = '22222222-2222-4222-8222-222222222222', closed = '33333333-3333-4333-8333-333333333333';
+  try {
+    const target = join(dir, 'yw-supervisor', `${owner}-chief`); mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'tasks.md'), `감독: claude/fake ${owner} @ srv_fake\n상태: 진행\n| lane | ${current} |`);
+    writeFileSync(join(target, 'log.md'), `- 완료 판정 ${closed} wks_closedlane`);
+    const gaps = [], [record] = collectSupervisors(dir, gaps);
+    assert.equal(record.chief, true); assert.deepEqual(record.ownerIds, [owner]);
+    assert.ok(record.agentIds.includes(current)); assert.ok(!record.agentIds.includes(closed)); assert.ok(!record.workspaceIds.includes('wks_closedlane'));
+    assert.equal(gaps.length, 0);
+    const { classify } = await import('./classify.mjs');
+    const base = JSON.parse(readFileSync(new URL('./fixtures/base.json', import.meta.url)));
+    const agent = id => ({ ...structuredClone(base.fixtureAgent), id });
+    const result = classify({ ...structuredClone(base), agents: [agent(current), agent(closed)], supervisors: [record] });
+    const hold = id => result.agents.find(r => r.id === id).hold;
+    assert.ok(hold(current).includes('supervisor_scope')); assert.ok(!hold(closed).includes('supervisor_scope'));
+    writeFileSync(join(target, 'tasks.md'), `감독: claude/fake ${owner} @ srv_fake\n| lane | 44444444 |`);
+    assert.ok(!collectSupervisors(dir, []).at(0).agentIds.includes('44444444'), '짧은 ID는 보호 근거가 되지 않으므로 기록은 전체 ID를 써야 한다');
+    const successor = '55555555-5555-4555-8555-555555555555', handedGaps = [];
+    writeFileSync(join(target, 'tasks.md'), `감독: claude/fake ${owner} @ srv_fake\n상태: 완료\n후임: ${successor} ~/.local/state/yw-supervisor/${successor}-chief/`);
+    const handed = collectSupervisors(dir, handedGaps).at(0);
+    assert.equal(handedGaps.length, 0, '인계 뒤 옛 기록도 감독 머리말을 남겨 범위 없는 보호 gap을 만들지 않는다'); assert.deepEqual(handed.agentIds.sort(), [owner, successor].sort());
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 test('P1 terminal observation coverage and definitions are distinct from runtime checks', async () => {
   const { normalizeTerminals, observePath } = await import('./scan.mjs');
   const dir = mkdtempSync(join(tmpdir(), 'cleanup-observe-'));
