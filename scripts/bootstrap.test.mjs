@@ -336,7 +336,7 @@ test('doctor의 기기 역할 검사는 verifier에서만 기기 경고를 표�
   const lib = join(root, 'scripts/lib.sh');
   writeFileSync(lib, readFileSync(lib, 'utf8') + '\nverifier_status() { verifier_health_warnings; return "${MOCK_ROLE_STATUS:-0}"; }\n');
   for (const [name, body] of Object.entries({
-    sysctl: 'echo "vm.swapusage: total = 1000M used = ${MOCK_SWAP_USED:-800}M"',
+    sysctl: 'echo "vm.swapusage: total = 12288M used = ${MOCK_SWAP_USED:-8192}M"',
     // macOS처럼 comm이 첫 열이면 잘린 경로만 보인다.
     ps: 'if [ "$2" = "rss=,comm=" ]; then echo "${MOCK_RSS:-2097152} /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"; else echo "/System/Library/   ${MOCK_RSS:-2097152}"; fi',
     pgrep: 'exit 0',
@@ -362,13 +362,13 @@ ${block}
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stderr, /verifier 기기 상태/);
   writeFileSync(join(roles, 'verifier'), '');
-  result = run({ MOCK_SWAP_USED: '799', MOCK_RSS: '2097151' });
+  result = run({ MOCK_SWAP_USED: '8191', MOCK_RSS: '2097151' });
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stderr, /verifier 기기 상태/);
   for (const code of [0, 2, 1]) {
     result = run({ MOCK_ROLE_STATUS: String(code) });
     assert.equal(result.status, code, result.stderr);
-    assert.match(result.stderr, /기기 상태: swap 사용률 80\.0%/);
+    assert.match(result.stderr, /기기 상태: swap 사용량 8\.0 GiB/);
     assert.match(result.stderr, /기기 상태: fseventsd RSS 2\.00 GiB/);
     assert.doesNotMatch(result.stderr, /unexpected Docker/);
   }

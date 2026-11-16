@@ -28,7 +28,9 @@ ROLES=verifier
 # GiB. 검증 작업은 VM과 호스트 양쪽에서 메모리를 쓰므로 VM에 다 주지 않는다. 기기에 맞게 --colima-memory로 바꾼다.
 VERIFIER_DEFAULT_MEMORY=6
 # 읽기 전용 기기 상태 경고 임계값. 경고는 역할 준비 상태/종료 코드에 영향을 주지 않는다.
-VERIFIER_SWAP_WARN_PERCENT=80
+# swap은 비율이 아니라 사용량(MiB)으로 본다. macOS는 swap 총량이 동적이라 정상(2.6/3.0 GiB)도 비율이 80%를 넘는다.
+# 저하 실측은 11.7 GiB(RAM 16 GiB)였다(01-software #10193, #10321).
+VERIFIER_SWAP_WARN_MIB=8192
 VERIFIER_FSEVENTSD_WARN_KIB=2097152 # 2 GiB (ps RSS는 KiB)
 VERIFIER_CONTAINER_WARN_SECONDS=7200 # 실행 시작 후 2시간 초과
 # 이 기기에서 자동 시작하지 않는 등록 (launch-agents.mjs가 상태 파일을 보고 끈다).
@@ -180,7 +182,7 @@ colima_docker_ready() {
 # memory_pressure의 free percentage로는 swap 포화를 놓칠 수 있어 vm.swapusage를 직접 본다.
 verifier_health_warnings() {
   local swap rss names name started age r
-  swap="$(sysctl vm.swapusage 2>/dev/null | awk -v threshold="$VERIFIER_SWAP_WARN_PERCENT" '
+  swap="$(sysctl vm.swapusage 2>/dev/null | awk -v threshold="$VERIFIER_SWAP_WARN_MIB" '
     function bytes(s, unit) {
       unit = substr(s, length(s)); s += 0
       if (unit == "K") return s * 1024
@@ -194,9 +196,9 @@ verifier_health_warnings() {
         if ($i == "used" && $(i+1) == "=") used = bytes($(i+2))
       }
     }
-    END { if (total > 0 && used / total * 100 >= threshold) printf "%.1f", used / total * 100 }
+    END { if (used / 1024 / 1024 >= threshold) printf "%.1f", used / 1024 / 1024 / 1024 }
   ')"
-  [[ -z "$swap" ]] || warn "verifier 기기 상태: swap 사용률 ${swap}% (${VERIFIER_SWAP_WARN_PERCENT}% 이상). README의 run 사이 점검·정리 절차를 확인하세요"
+  [[ -z "$swap" ]] || warn "verifier 기기 상태: swap 사용량 ${swap} GiB ($((VERIFIER_SWAP_WARN_MIB / 1024)) GiB 이상). README의 run 사이 점검·정리 절차를 확인하세요"
 
   # macOS ps는 첫 열의 comm을 잘라(/System/Library/) 이름을 알 수 없게 하므로 rss를 먼저, 경로를 마지막에 둔다.
   rss="$(ps -axo rss=,comm= 2>/dev/null | awk -v threshold="$VERIFIER_FSEVENTSD_WARN_KIB" '

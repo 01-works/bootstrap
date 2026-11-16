@@ -151,7 +151,7 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 
 #### run 사이 점검·정리 절차
 
-`./bootstrap.sh role status verifier`와 verifier 역할을 켠 기기의 `./bootstrap.sh doctor`는 swap 사용률 80% 이상, `fseventsd` RSS 2 GiB 이상을 경고한다. `nightly-local-check` 실행이 없는데 `console-<uuid>-*` 컨테이너가 2시간 넘게 실행 중이어도 경고한다. 컨테이너 검사는 기본 colima가 없거나 꺼져 있으면 건너뛴다. 이 경고는 기존 종료 코드를 바꾸지 않으며, 삭제·재시작·sudo를 자동 실행하지 않는다.
+`./bootstrap.sh role status verifier`와 verifier 역할을 켠 기기의 `./bootstrap.sh doctor`는 swap 사용량 8 GiB 이상(macOS는 swap 총량이 동적이라 비율은 저하를 나타내지 못한다), `fseventsd` RSS 2 GiB 이상을 경고한다. `nightly-local-check` 실행이 없는데 `console-<uuid>-*` 컨테이너가 2시간 넘게 실행 중이어도 경고한다. 컨테이너 검사는 기본 colima가 없거나 꺼져 있으면 건너뛴다. 이 경고는 기존 종료 코드를 바꾸지 않으며, 삭제·재시작·sudo를 자동 실행하지 않는다.
 
 경고가 있으면 사람이 다음 순서로 점검한다. 실행 중인 run이 있으면 끝날 때까지 기다린다.
 
@@ -160,7 +160,8 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 3. [01-software runbook의 termination-unconfirmed 복구 절차](https://github.com/01-office/01-software/blob/dev/docs/runbooks/verifier-machine.md#9-recover-a-termination-unconfirmed-marker)를 확인한다. marker가 있으면 lane·프로세스 종료 확인과 복구 조건을 따른다. 살아 있거나 소유자를 모르는 작업은 정리하지 않는다.
 4. `docker --host "unix://${COLIMA_HOME:-$HOME/.colima}/default/docker.sock" ps`로 남은 `console-<uuid>-*` lane 컨테이너를 확인하고, 종료된 run의 잔여물임을 확인한 이름만 같은 소켓의 `docker rm -f <확인한 컨테이너 이름...>`로 삭제한다.
 5. `fseventsd` 메모리가 큰 경우 `sudo killall fseventsd`로 재시작한다. 사람이 직접 실행하며 관리자 인증이 필요하다.
-6. loop를 다시 올린다: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.01-software.verifier-loop.plist`.
+6. swap 대부분을 colima VM이 차지하면(`top -o cmprs`에서 `com.apple.Virtualization.VirtualMachine`) `brew services restart colima`로 VM을 다시 띄운다. 오래 켜 둔 VM은 게스트 메모리를 놓지 않아 호스트에서 압축·swap으로 쌓인다. 데이터 볼륨은 유지되며, 같은 VM의 다른 컨테이너도 잠시 멈췄다가 다시 뜬다.
+7. loop를 다시 올린다: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.01-software.verifier-loop.plist`.
 
 **`~/Library/Caches/pnpm`은 지우지 않는다.** 이 절차의 정리 대상이 아니며 다음 run에서 의존성을 다시 받는 부담을 만든다. nightly 실행·복구·대기열의 자세한 절차는 위 runbook을 따른다.
 
