@@ -97,14 +97,15 @@ test('chief 순찰·재개: 만료·승인·1회·소유 규칙과 기록 경로
   assert.match(watch, /^사용자가 요청하면[^\n]*`maxRuns` 또는 `expiresIn`[^\n]*자동으로 연장하지 않는다/);
   assert.doesNotMatch(watch, forbidden);
   const progress = bullet(patrol, '감독 lane 진행 요청');
-  for (const required of [/최신 소유 감독/, /보관되지 않은/, /전송 직전 확인/, /활성 턴/, /사용자 질문/, /pending/, /대기 사유/, /기존 승인 범위 안의 것만/, /새 권한·범위를 담지 않는다/, /한 번만 보내고/, /결정 큐로 올린다/]) assert.match(progress, required);
+  for (const required of [/최신 소유 감독/, /보관되지 않은/, /전송 직전 확인/, /활성 턴/, /후속 보류·중지 지시/, /사용자 질문/, /pending/, /대기 사유/, /기존 승인 범위 안의 것만/, /새 권한·범위를 담지 않는다/, /한 번만 보내고/, /결정 큐로 올린다/]) assert.match(progress, required);
   assert.doesNotMatch(progress, forbidden, '진행 요청에 정리·인수·병합·자율 권한을 넣지 않는다');
   const independent = bullet(patrol, '독립 대화');
   assert.match(independent, /소유가 확인되면 그 감독 lane으로 다룬다/);
   assert.match(independent, /확인해 확정한다/);
+  assert.match(independent, /`get_agent_activity` 일괄 조회·최근 활동 대화 제외/);
   const resume = bullet(patrol, '재개');
   for (const required of [/^사용자가 결정 큐에서 승인한 목록·범위 안에서만/, /새 권한·범위 없음/, /부모·생성 세션/, /반복하지 않고/, /소유 인수·작업자 배정·중단은 하지 않는다/]) assert.match(resume, required);
-  assert.doesNotMatch(resume, /승인 없이|위임이 명확하면/);
+  assert.match(resume, /자동 재개는 사용자가 대상·조건을 승인 범위에 정한 경우에만 한다/);
   const conversation = bullet(patrol, '관리 기록 없이 하위를 만든 사용자 대화');
   assert.match(conversation, /하위 세션에는[^\n]*메시지를 보내지 않고/);
   assert.match(conversation, /편입은 결정 큐에서 사용자 승인으로/);
@@ -115,15 +116,19 @@ test('chief 순찰·재개: 만료·승인·1회·소유 규칙과 기록 경로
   const rotation = bullet(report, '교체');
   assert.match(rotation, /결정 큐로 교체를 제안하고, 사용자가 승인하거나 요청하면/);
   assert.match(rotation, /조치 담당 총괄은 한 번에 하나다/);
+  assert.match(rotation, /후임의 인수와 수신자 변경을 확인한 뒤[^\n]*`감독:` 머리말과 `상태: 완료`/);
+  assert.match(rotation, /detach·readback하고, 옛 총괄은 그 뒤에만 정리한다/);
   assert.match(chief, /안전 조건으로 지정한 도구[^\n]*보류하고 보고하며, 보호 수준이 낮은 경로나 다른 세션으로 바꾸지 않는다/);
+  assert.doesNotMatch(chief, /MCP로 대신/, '안전 도구를 MCP로 대체하는 경로를 열지 않는다');
+  const records = chief.split('\n## 시작과 기록\n')[1]?.split('\n## ')[0] ?? '';
+  for (const required of [/시작 때 다른 `\*-chief\/tasks\.md`가 `상태: 진행`[^\n]*인계받거나 읽기만 한다/, /보낸 진행·재개 요청\(대상·다음 조치·시각\)/, /기존 append-only `tasks\.md`는[^\n]*`log\.md`로 옮긴 뒤 새로 쓴다\(제거 조건:/, /매 턴[^\n]*`tasks\.md`와 설치 원본 저장소의 `agents\/skills` 최신 커밋을 확인한다/]) assert.match(records, required);
   assert.match(chief, /진행 중인 작업자를 직접 재개·중단하거나 lane을 인수하지 않는다/);
   assert.match(chief, /사용자 승인이 필요한 조치는 합의만으로 실행하지 않는다/);
   assert.match(chief, /지금 관리하는 에이전트는 모두 전체 ID로/);
   assert.match(chief, /지속 승인은 사용자 원문·시각과 함께, 총괄이 넓혀 고치지 않는다/);
   assert.match(chief, /yw-supervisor\/<총괄 감독 세션 ID>-chief\/`/);
-  for (const [name, doc] of [['cleanup', cleanup], ['paseo.md', read('../agents/paseo.md')]]) {
-    assert.match(doc, /-chief\/[^\n]*`tasks\.md`[^\n]*`log\.md`|`-chief\/tasks\.md`[^\n]*`-chief\/log\.md`/, `${name}: chief 기록 경로 일치 필요`);
-  }
+  assert.match(cleanup, /- `-chief\/tasks\.md`\(현재 관리 범위\)와 `-chief\/log\.md`\(완료 판정 근거\)/, 'cleanup은 chief 현재 기록과 경과를 모두 읽는다');
+  assert.match(read('../agents/paseo.md'), /-chief\/`의 `tasks\.md`\(현재 상태\)와 `log\.md`\(경과\)/);
   const boundary = cleanup.split('\n## 하지 않는 것\n')[1]?.split('\n## ')[0] ?? '';
   assert.match(boundary, /다른 세션에 질문이나 재개 요청을 보내지 않는다/);
 });
