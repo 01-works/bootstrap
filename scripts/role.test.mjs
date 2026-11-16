@@ -161,11 +161,12 @@ test('기기 상태 경고는 swap/RSS 임계값을 포함하며 준비 완료·
   const f = sandbox(t);
   assert.equal(f.role('add', 'verifier', '--ssh-key', f.keyFile).status, 0);
   for (const [swap, rss, swapWarn, rssWarn] of [
-    ['total = 1000.00M used = 799.99M', 2097151, false, false],
-    ['total = 1.00G used = 819.20M', 2097152, true, true],
-    ['total = 1000.00M used = 950.00M', 5500000, true, true],
-    ['total = 1000M used = 800M', 0, true, false],
-    ['total = 1000M used = 0M', 2097152, false, true],
+    // 11-17 실측: 비율 87.8%여도 사용량 2.6 GiB면 정상
+    ['total = 3072.00M used = 2697.81M', 2097151, false, false],
+    ['total = 10.00G used = 8.00G', 2097152, true, true],
+    ['total = 12288.00M used = 11980.00M', 5500000, true, true],
+    ['total = 10G used = 8192M', 0, true, false],
+    ['total = 10G used = 8191M', 2097152, false, true],
     ['total = 0.00M used = 0.00M', 0, false, false],
     ['unavailable', 0, false, false],
   ]) {
@@ -176,7 +177,7 @@ test('기기 상태 경고는 swap/RSS 임계값을 포함하며 준비 완료·
     assert.equal(/verifier 기기 상태: swap/.test(result.stderr), swapWarn, swap);
     assert.equal(/verifier 기기 상태: fseventsd RSS/.test(result.stderr), rssWarn, String(rss));
   }
-  writeFileSync(join(f.mock, 'swap'), 'total = 1000M used = 800M\n');
+  writeFileSync(join(f.mock, 'swap'), 'total = 10G used = 8192M\n');
   writeFileSync(join(f.mock, 'sshd-off'), '');
   assert.equal(f.role('status', 'verifier').status, 2, '경고는 수동 대기 판정도 보존');
   writeFileSync(join(f.mock, 'docker-off'), '');
