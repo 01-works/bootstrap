@@ -1,4 +1,5 @@
-// Paseo 기본 플러그인을 목록의 버전으로 맞춘다. 개발용 폴더 설치와 다른 소스 설치는 건드리지 않는다.
+// Paseo 기본 플러그인을 목록의 버전으로 맞추고, 목록에서 은퇴시킨 플러그인은 지우며, 목록이 정한 설정 키를 맞춘다.
+// 개발용 폴더 설치와 다른 소스 설치는 건드리지 않는다.
 // 설치·갱신은 실행 중인 데몬이 한다. 데몬이 꺼져 있으면 마지막 동기화 이후 목록이 바뀐 경우에만 데몬을 켠다.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -6,9 +7,13 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { isDeepStrictEqual } from 'node:util';
+import { appRuntime, runAppScript } from './paseo-skills.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifestPath = join(root, 'agents/paseo-plugins.json');
+const settingsClient = fileURLToPath(new URL('./paseo-plugins-settings-client.mjs', import.meta.url));
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 // github:owner/repo:path → Paseo가 기록하는 git 원격과 플러그인 경로. 레지스트리(owner/slug)는 null.
 export function gitSource(source) {
@@ -16,8 +21,21 @@ export function gitSource(source) {
   return match ? { remote: `https://github.com/${match[1]}.git`, pluginPath: match[2] } : null;
 }
 
+const sourceForm = source => gitSource(source) || /^[^/:\s]+\/[^/:\s]+$/.test(source);
+
+// 설치 기록(identity)이 목록의 소스에서 온 것인지. 레지스트리는 npm·git 배포 모두 registry.id로 본다.
+function sameSource(identity, source) {
+  const git = gitSource(source);
+  return git ? identity?.kind === 'git' && !identity.registry && identity.remote === git.remote && identity.pluginPath === git.pluginPath
+    : identity?.registry?.id === source;
+}
+
+// 레지스트리 검토 버전: npm 배포는 version, git 배포는 commit.
+export const reviewedTarget = target => target?.version ?? target?.commit;
+
 export function validate(manifest) {
   if (!Array.isArray(manifest.plugins)) throw new Error('plugins는 배열이어야 합니다');
+  if (manifest.retired !== undefined && !Array.isArray(manifest.retired)) throw new Error('retired는 배열이어야 합니다');
   const ids = new Set();
   for (const plugin of manifest.plugins) {
     if (!plugin || typeof plugin.id !== 'string' || !plugin.id || typeof plugin.source !== 'string' || !plugin.source) {
@@ -27,12 +45,65 @@ export function validate(manifest) {
     ids.add(plugin.id);
     if (gitSource(plugin.source)) {
       if (!/^[0-9a-f]{40}$/.test(plugin.ref ?? '')) throw new Error(`${plugin.id}: git 소스는 ref에 커밋 전체 해시가 필요합니다`);
-    } else if (!/^[^/:\s]+\/[^/:\s]+$/.test(plugin.source)) {
+      if (plugin.version !== undefined) throw new Error(`${plugin.id}: git 소스에는 version 대신 ref를 씁니다`);
+    } else if (plugin.ref !== undefined) {
+      throw new Error(`${plugin.id}: 레지스트리 소스에는 ref 대신 version을 씁니다`);
+    } else if (!sourceForm(plugin.source)) {
       throw new Error(`${plugin.id}: 지원하지 않는 소스입니다 (github:owner/repo:path 또는 레지스트리 owner/slug)`);
     } else if (typeof plugin.version !== 'string' || !plugin.version) {
       throw new Error(`${plugin.id}: 레지스트리 소스는 version이 필요합니다`);
     }
+    if (plugin.settings === undefined) continue;
+    if (!isObject(plugin.settings)) throw new Error(`${plugin.id}: settings는 객체여야 합니다`);
+    for (const [id, values] of Object.entries(plugin.settings)) {
+      if (!/^[a-z][a-z0-9_-]*$/.test(id) || !isObject(values) || !Object.keys(values).length) {
+        throw new Error(`${plugin.id}: settings.${id}는 비어 있지 않은 키·값 객체여야 합니다`);
+      }
+    }
   }
+  for (const plugin of manifest.retired ?? []) {
+    if (!plugin || typeof plugin.id !== 'string' || !plugin.id || typeof plugin.source !== 'string' || !sourceForm(plugin.source)) {
+      throw new Error('retired 항목에 id와 지원하는 source가 필요합니다');
+    }
+    if (ids.has(plugin.id)) throw new Error(`플러그인 id가 중복됩니다: ${plugin.id}`);
+    ids.add(plugin.id);
+  }
+}
+
+// 데몬에 저장된 플러그인 설정 값(Paseo의 plugin-settings/<플러그인>/<설정>.json). 없으면 빈 값, 읽을 수 없으면 null.
+export function storedSettings(home, pluginId, settingsId) {
+  try {
+    const stored = JSON.parse(readFileSync(join(home, 'plugin-settings', pluginId, `${settingsId}.json`), 'utf8'));
+    return isObject(stored?.values) ? stored.values : null;
+  } catch (error) {
+    return error.code === 'ENOENT' ? {} : null;
+  }
+}
+
+// 목록이 정한 설정 키 중 저장값과 다른 것. 목록의 소스에서 설치되어 실행 중인 플러그인만 본다(설정은 실행 중인 플러그인이 받는다).
+// 목록에 없는 키는 앱에서 바꾼 값을 그대로 둔다.
+export function settingsDrift(manifest, listed, read) {
+  if (!listed) return [];
+  const drift = [];
+  for (const plugin of manifest.plugins) {
+    if (!plugin.settings) continue;
+    const current = listed.find(item => item.id === plugin.id);
+    if (!current || current.enabled === false || current.status !== 'running' || !sameSource(current.installation?.identity, plugin.source)) continue;
+    for (const [id, values] of Object.entries(plugin.settings)) {
+      const stored = read(plugin.id, id) ?? {};
+      const keys = Object.keys(values).filter(key => !isDeepStrictEqual(stored[key], values[key]));
+      if (keys.length) drift.push({ plugin: plugin.id, id, values, keys });
+    }
+  }
+  return drift;
+}
+
+// 설정을 맞춰야 하는데 실행 중이 아닌 플러그인(목록의 소스, 켜짐). 데몬을 막 켠 직후에는 아직 시작하지 않았을 수 있다.
+export function settingsNotRunning(manifest, listed) {
+  return manifest.plugins.filter(plugin => {
+    const current = plugin.settings && listed.find(item => item.id === plugin.id);
+    return current && current.enabled !== false && current.status !== 'running' && sameSource(current.installation?.identity, plugin.source);
+  }).map(plugin => plugin.id);
 }
 
 // listed: 데몬의 `paseo plugin ls --json` 결과. 데몬이 꺼져 있으면 null이고 설정의 ID만으로 판단한다.
@@ -41,7 +112,7 @@ export function planPlugins(config, manifest, listed) {
   const installed = new Map(listed
     ? listed.map(plugin => [plugin.id, plugin])
     : Object.entries(config.plugins ?? {}).map(([id, plugin]) => [id, { id, enabled: plugin?.enabled !== false }]));
-  const plan = { enable: config.pluginsEnabled !== true, install: [], update: [], dev: [], foreign: [], disabled: [], stopped: [] };
+  const plan = { enable: config.pluginsEnabled !== true, install: [], update: [], remove: [], dev: [], foreign: [], disabled: [], stopped: [], retiredKept: [] };
   for (const wanted of manifest.plugins) {
     const current = installed.get(wanted.id);
     if (!current) {
@@ -53,13 +124,19 @@ export function planPlugins(config, manifest, listed) {
     if (!listed) continue;
     const identity = current.installation?.identity;
     const revision = current.installation?.currentRevision;
-    const git = gitSource(wanted.source);
     if (identity?.kind === 'directory') plan.dev.push({ id: wanted.id, path: identity.path });
-    else if (git ? identity?.kind === 'git' && identity.remote === git.remote && identity.pluginPath === git.pluginPath
-      : identity?.registry?.id === wanted.source) {
-      const target = git ? wanted.ref : wanted.version;
+    else if (sameSource(identity, wanted.source)) {
+      const target = wanted.ref ?? wanted.version;
       if (revision !== target) plan.update.push({ plugin: wanted, from: revision ?? '?' });
     } else plan.foreign.push({ id: wanted.id, source: current.source ?? identity?.kind ?? '?' });
+  }
+  // 은퇴한 플러그인은 목록의 소스에서 설치된 것만 지운다. 데몬이 꺼져 있으면 소스를 알 수 없어 판단하지 않는다.
+  for (const retired of manifest.retired ?? []) {
+    const current = listed && installed.get(retired.id);
+    if (!current) continue;
+    const identity = current.installation?.identity;
+    if (sameSource(identity, retired.source)) plan.remove.push(retired);
+    else plan.retiredKept.push({ id: retired.id, source: identity?.kind === 'directory' ? identity.path : current.source ?? identity?.kind ?? '?' });
   }
   return plan;
 }
@@ -93,13 +170,33 @@ function report(plan) {
   if (plan.enable) console.log('켜기: 플러그인 사용 (pluginsEnabled)');
   for (const plugin of plan.install) console.log(`설치 필요: ${plugin.id} (${plugin.source})`);
   for (const { plugin, from } of plan.update) console.log(`버전 맞춤 필요: ${plugin.id} ${from} → ${plugin.ref ?? plugin.version}`);
+  for (const plugin of plan.remove) console.log(`제거 필요 (목록에서 은퇴): ${plugin.id}`);
+  for (const { id, source } of plan.retiredKept) console.log(`은퇴했지만 다른 소스 설치 (유지): ${id} ${source}`);
   for (const { id, path } of plan.dev) console.log(`개발 중 (폴더 설치, 유지): ${id} ${path}`);
   for (const { id, source } of plan.foreign) console.log(`다른 소스 설치 (유지): ${id} ${source}`);
   for (const id of plan.disabled) console.log(`꺼진 상태 (유지): ${id}`);
   for (const { id, status, error } of plan.stopped) console.log(`실행 안 됨: ${id} (${status}${error ? `: ${error}` : ''})`);
 }
 
-const pending = plan => plan.enable || plan.install.length || plan.update.length;
+const pending = plan => plan.enable || plan.install.length || plan.update.length || plan.remove.length;
+const reportDrift = drift => drift.forEach(({ plugin, id, keys }) => console.log(`설정 맞춤 필요: ${plugin} ${id} (${keys.join(', ')})`));
+
+// 앱의 Node 런타임으로 설정 RPC를 부른다. 결과는 호출한 쪽이 저장값을 다시 읽어 확인한다.
+// 앱 CLI가 아니면(npm 설치) 맞출 수 없으므로 false: 알리기만 하고 실패로 치지 않는다(doctor는 차이를 계속 경고한다).
+function applySettings(home, drift) {
+  const runtime = appRuntime();
+  if (!runtime) {
+    console.log('설정 맞춤 불가: PATH의 paseo가 Paseo 앱 안의 CLI가 아닙니다. 앱의 플러그인 설정에서 맞추세요');
+    return false;
+  }
+  const result = runAppScript(runtime, settingsClient, home, {
+    BOOTSTRAP_PLUGIN_SETTINGS: JSON.stringify(drift.map(({ plugin, id, values }) => ({ plugin, id, values })))
+  });
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+  if (output) console.log(output.slice(0, 1000));
+  if (result.status !== 0) console.log(`설정 클라이언트 실패: 종료 ${result.status ?? result.signal}${result.error ? ` (${result.error.message})` : ''}`);
+  return true;
+}
 
 function syncedPath(home) {
   const state = process.env.XDG_STATE_HOME || join(homedir(), '.local/state');
@@ -115,7 +212,7 @@ function updateRegistry(home, plugin) {
     console.log(`레지스트리 확인 실패: ${plugin.id} ${preview?.error ?? (result.stderr || result.stdout).trim().slice(0, 200)}`);
     return 'failed';
   }
-  const target = preview.target?.version;
+  const target = reviewedTarget(preview.target);
   if (target !== plugin.version) {
     console.log(`유지: ${plugin.id} 레지스트리 검토 버전(${target ?? preview.outcome})이 목록의 ${plugin.version}과 다릅니다`);
     return 'kept';
@@ -139,6 +236,10 @@ function apply(home, config, manifest) {
     const ref = plugin.ref ? ['--ref', plugin.ref] : [];
     if (paseo(['plugin', 'install', plugin.source, '--id', plugin.id, ...ref, '--home', home], { stdio: 'inherit' }).status !== 0) failed.add(plugin.id);
   }
+  for (const plugin of plan.remove) {
+    console.log(`제거: ${plugin.id} (목록에서 은퇴)`);
+    if (paseo(['plugin', 'remove', plugin.id, '--home', home], { stdio: 'inherit' }).status !== 0) failed.add(plugin.id);
+  }
   // 레지스트리 설치는 그때의 검토 버전이 들어오므로 다시 보고 맞춘다.
   if (plan.install.length) plan = planPlugins({ ...config, pluginsEnabled: enabled }, manifest, requireList(home));
   for (const { plugin } of plan.update) {
@@ -153,11 +254,26 @@ function apply(home, config, manifest) {
     }
   }
   // 명령의 종료 코드만 믿지 않고 결과를 다시 읽어 확인한다.
-  const after = planPlugins({ ...config, pluginsEnabled: enabled }, manifest, requireList(home));
+  // 설정은 실행 중인 플러그인이 받으므로, 데몬을 막 켰거나 방금 설치해 아직 실행 중이 아니면 잠시(10초) 기다린다.
+  let list = requireList(home);
+  for (let waited = 0; settingsNotRunning(manifest, list).length && waited < 10; waited++) {
+    spawnSync('sleep', ['1']);
+    list = requireList(home);
+  }
+  const after = planPlugins({ ...config, pluginsEnabled: enabled }, manifest, list);
+  const read = (plugin, id) => storedSettings(home, plugin, id);
+  const drift = settingsDrift(manifest, list, read);
+  const settingsApplied = !drift.length || applySettings(home, drift);
+  if (settingsApplied) for (const { plugin, id } of settingsDrift(manifest, list, read)) failed.add(`${plugin} 설정 ${id}`);
+  // 설정을 확인하지 못한 채로 동기화 기록을 남기면, 데몬이 꺼진 다음 실행이 다시 맞추지 않는다.
+  const unverified = settingsNotRunning(manifest, list);
+  for (const id of unverified) console.log(`설정 확인 못 함: ${id} 실행 중 아님. 다음 실행에서 다시 맞춥니다`);
   for (const plugin of after.install) failed.add(plugin.id);
   for (const { plugin } of after.update) if (!kept.has(plugin.id)) failed.add(plugin.id);
+  for (const plugin of after.remove) failed.add(plugin.id);
   for (const { id, status } of after.stopped) if (touched.has(id)) failed.add(`${id}(${status})`);
   if (failed.size) throw new Error(`실패: ${[...failed].join(', ')}. paseo plugin ls·paseo plugin logs <id> 로 원인을 확인하고 다시 실행하세요`);
+  return settingsApplied && !unverified.length;
 }
 
 // 자체 플러그인은 그 폴더를 마지막으로 바꾼 main의 커밋(그 커밋의 CI가 하나 이상 있고 모두 성공일 때),
@@ -186,7 +302,7 @@ function bump(home, manifest) {
     } else {
       const result = paseo(['plugin', 'update', plugin.id, '--check', '--json', '--home', home]);
       const preview = json(result)?.[0];
-      target = preview?.target?.version ?? (preview?.outcome === 'current' ? preview?.current?.currentRevision : undefined);
+      target = reviewedTarget(preview?.target) ?? (preview?.outcome === 'current' ? preview?.current?.currentRevision : undefined);
       if (!target) {
         console.log(`건너뜀: ${plugin.id} 레지스트리 검토 버전 확인 실패 (데몬이 켜져 있고 이 기기에 레지스트리로 설치되어 있어야 함)`);
         continue;
@@ -199,7 +315,9 @@ function bump(home, manifest) {
   }
   if (!changed) return;
   const line = plugin => `{ ${Object.entries(plugin).map(([key, value]) => `${JSON.stringify(key)}: ${JSON.stringify(value)}`).join(', ')} }`;
-  writeFileSync(manifestPath, `{\n  "plugins": [\n${manifest.plugins.map(plugin => `    ${line(plugin)}`).join(',\n')}\n  ]\n}\n`);
+  const list = (key, items) => `  "${key}": [\n${items.map(plugin => `    ${line(plugin)}`).join(',\n')}\n  ]`;
+  const sections = [list('plugins', manifest.plugins), ...(manifest.retired?.length ? [list('retired', manifest.retired)] : [])];
+  writeFileSync(manifestPath, `{\n${sections.join(',\n')}\n}\n`);
   console.log('agents/paseo-plugins.json을 고쳤습니다. 커밋·push하면 자동 갱신으로 모든 기기에 적용됩니다.');
 }
 
@@ -230,12 +348,14 @@ function main() {
   const inSync = existsSync(synced) && readFileSync(synced, 'utf8').trim() === digest;
   const listed = listPlugins(home);
   const plan = planPlugins(config, manifest, listed);
+  const drift = settingsDrift(manifest, listed, (plugin, id) => storedSettings(home, plugin, id));
   report(plan);
+  reportDrift(drift);
 
   if (check) {
     const offline = !listed && !inSync;
     if (offline) console.log('데몬이 꺼져 있고 마지막으로 맞춘 뒤 목록이 바뀌었습니다.');
-    if (pending(plan) || offline || plan.foreign.length || plan.disabled.length || plan.stopped.length) process.exitCode = 1;
+    if (pending(plan) || drift.length || offline || plan.foreign.length || plan.disabled.length || plan.stopped.length) process.exitCode = 1;
     else console.log(`Paseo 플러그인이 저장소 목록과 일치합니다${listed ? '' : ' (데몬이 꺼져 있어 버전·실행 상태는 확인 못 함)'}.`);
     return;
   }
@@ -244,7 +364,7 @@ function main() {
     console.log('데몬이 꺼져 있고 마지막으로 맞춘 뒤 목록이 바뀌지 않았습니다.');
     return;
   }
-  if (listed && !pending(plan)) {
+  if (listed && !pending(plan) && !drift.length) {
     console.log('맞출 플러그인이 없습니다.');
     if (!inSync && !dryRun) writeSynced(synced, digest);
     return;
@@ -262,8 +382,7 @@ function main() {
     if (started.status !== 0) throw new Error('Paseo 데몬 시작 실패');
   }
   try {
-    apply(home, config, manifest);
-    writeSynced(synced, digest);
+    if (apply(home, config, manifest)) writeSynced(synced, digest);
   } finally {
     // 꺼져 있던 데몬은 다시 끈다. 켜 둔 채 두면 백그라운드 실행에서 띄운 데몬이 계속 남는다.
     if (!listed && paseo(['daemon', 'stop', '--home', home], { stdio: ['ignore', 'inherit', 'inherit'] }).status !== 0) {
