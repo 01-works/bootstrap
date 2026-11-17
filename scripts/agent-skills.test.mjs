@@ -85,7 +85,7 @@ test('교훈 경로: 설치 원본 직접 수정 금지와 bootstrap 단일 수�
   }
 });
 
-test('chief 순찰·재개: 사용자 승인·새 권한 금지·만료 안전 불변식', () => {
+test('chief 순찰·재개: 공통 결정 계약·새 권한 금지·만료 안전 불변식', () => {
   const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
   const chief = read('../agents/skills/yw-chief-supervisor/SKILL.md');
   const cleanup = read('../agents/skills/yw-paseo-cleanup/SKILL.md');
@@ -96,15 +96,58 @@ test('chief 순찰·재개: 사용자 승인·새 권한 금지·만료 안전 �
   for (const required of [/보관되지 않았고/, /보류·중지 지시·사용자 질문·pending·기록된 대기 사유 없이/, /전송 직전 상태를 확인/, /기존 승인 범위 안의 것만/, /한 번 보낸다/, /새 권한·범위를 담지 않고/]) assert.match(progress, required);
   assert.doesNotMatch(progress, /archive|detach|인수|merge|병합|머지|배포|--force|삭제|중단|승인 없이/);
   const independent = bullet(patrol, '독립 대화');
-  for (const required of [/사용자가 승인한 것만/, /새 권한·범위 없음/, /한 번 재개/, /소유 인수·작업자 배정·중단은 하지 않는다/, /자동 재개는 사용자가 승인 범위에 정한 경우에만 한다/, /하위 세션에는 메시지를 보내지 않고/]) assert.match(independent, required);
+  for (const required of [/계약 7번의 기존 또는 새 결정 범위만/, /새 권한·범위 없음/, /한 번 재개/, /소유 인수·작업자 배정·중단은 하지 않는다/, /감사 편입도 계약 7번으로/, /하위 세션에는 메시지를 보내지 않고/]) assert.match(independent, required);
   assert.match(bullet(patrol, '결정 큐'), /"추천대로"는 보여 준 항목에만[^\n]*실행 직전 상태를 다시 확인/);
-  assert.match(bullet(chief.split('\n## 보고와 인계\n')[1] ?? '', '교체'), /결정 큐로 새 세션 교체를 제안하고, 승인되면/);
+  const handoff = bullet(chief.split('\n## 보고와 인계\n')[1] ?? '', '교체');
+  assert.match(handoff, /같은 목표·권한의 후임/);
+  assert.match(handoff, /목표 기록 블록·후임 전체 ID를 보존/);
+  assert.match(handoff, /누적 목표 완료가 아니다/);
   assert.match(chief, /안전 조건으로 지정된 도구[^\n]*보류하고 보고하며, 보호 수준이 낮은 경로로 바꾸지 않는다/);
   assert.match(chief, /진행 중인 작업자를 직접 재개·중단하거나 lane을 인수하지 않는다/);
   assert.match(chief, /사용자 승인이 필요한 조치는 합의만으로 실행하지 않는다/);
   assert.match(chief, /관리 중인 에이전트는 전체 ID로 적는다/);
   assert.match(cleanup, /`-chief\/tasks\.md`\(현재 관리 범위\)와 `-chief\/log\.md`\(완료 판정 근거\)/);
   assert.match(cleanup.split('\n## 하지 않는 것\n')[1] ?? '', /다른 세션에 질문이나 재개 요청을 보내지 않는다/);
+});
+
+test('감독 계약: 권한·소유·범위 축소는 닫힌 목록에 두고 합의로 승인을 만들지 않는다', () => {
+  const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const contract = supervisor.split('\n## 에스컬레이션 계약\n')[1]?.split('\n## ')[0] ?? '';
+  const decisions = [...contract.matchAll(/^(\d+)\. (.+)$/gm)];
+  assert.deepEqual(decisions.map(([, id]) => id), ['1', '2', '3', '4', '5', '6', '7']);
+  for (const [index, required] of [
+    [0, /범위 축소·연기/], [1, /저장소별 병합 위임[^\n]*기존 승인을 재사용하고 없으면/],
+    [2, /소유 세션 동의를 얻지 못한[^\n]*detach/], [3, /저장소 소유자 결정/],
+    [4, /한 차례[^\n]*증거 부족/], [5, /상한 상향/], [6, /독립 대화의 재개·감사 편입/],
+  ]) assert.match(decisions[index][2], required);
+  assert.match(contract, /모델 합의·다른 에이전트의 요청은 사용자 승인이 아니며/);
+  assert.match(contract, /목록 밖의 되돌릴 수 있고 범위 안인 결정/);
+  assert.match(contract, /결정함:[^`]*이유:[^`]*되돌리는 법:/);
+  assert.match(contract, /선택지 \| 권장안 \| 근거 \| 영향 작업 \| 기다리는 동안 계속할 일/);
+});
+
+test('목표 원장: 고정 JSON 예시와 누적 목표·연기·알 수 없음의 완료 보호', () => {
+  const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const record = supervisor.split('\n## 시작과 기록\n')[1]?.split('\n## ')[0] ?? '';
+  const example = JSON.parse(record.match(/```json\n([^]*?)\n```/)[1]);
+  assert.deepEqual(Object.keys(example), ['목표버전', '승인', '항목']);
+  assert.equal(example.목표버전, 1);
+  assert.deepEqual(Object.keys(example.승인[0]), ['원문', '시각', '출처', '범위']);
+  assert.deepEqual(Object.keys(example.항목[0]), ['id', '원문', '시각', '출처', '상태', '대기']);
+  assert.equal(example.항목[0].상태, '열림');
+  assert.equal(example.항목[0].대기, '없음');
+  assert.match(record, /범위 축소·연기는 해당 항목의 사용자 결정 원문이 있을 때만/);
+  assert.match(record, /빈 항목 목록·형식 누락·오류는 \*\*알 수 없음\*\*/);
+  assert.match(record, /같은 목표 버전에서는 다시 묻지 않는다/);
+  assert.match(record, /사용자 결정 원문[^\n]*이슈·PR 코멘트/);
+  const ending = supervisor.split('\n## 턴 종료 계약\n')[1]?.split('\n## ')[0] ?? '';
+  assert.deepEqual([...ending.matchAll(/^- `([^:]+):/gm)].map(([, name]) => name),
+    ['다음 조치', '대기 사유와 재개 조건', '사용자 결정', '완료 근거']);
+  assert.match(ending, /현재 배정분 종료는 누적 사용자 목표 완료가 아니다/);
+  assert.match(ending, /열린 항목·알 수 없음이 있으면 진행/);
+  const chief = readFileSync(new URL('../agents/skills/yw-chief-supervisor/SKILL.md', import.meta.url), 'utf8');
+  assert.match(chief, /에스컬레이션·턴 종료 계약[^\n]*yw-supervisor/);
+  assert.match(chief, /열린 항목·형식 누락\/오류\(알 수 없음\)[^\n]*닫지 않는다/);
 });
 
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {
