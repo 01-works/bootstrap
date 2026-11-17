@@ -1,7 +1,7 @@
 {
   "plugins": [
     { "id": "mac-monitor", "source": "github:01-works/paseo-plugin:mac-monitor", "ref": "c9eb48e0a812aa5e6d70366075fa77cb6df16823" },
-    { "id": "supervision", "source": "github:01-works/paseo-plugin:supervision", "ref": "2ac723f7713441ee049286695bdf557d5f97f766" },
+    { "id": "supervision", "source": "github:01-works/paseo-plugin:supervision", "ref": "cea05dbd7658b3bef063a6b4e2bb7ce8b1ce5e27" },
     { "id": "better-paseo", "source": "roundreddot/better-paseo", "version": "d4c85ccafe6d5dfc4abcef85667eca0b3cc3bb2e", "settings": {"title-generation":{"afterFirstReply":true,"customModel":true,"provider":"claude","model":"claude-haiku-5-5","disableThinking":true,"prompt":"Generate a concise, specific task title from the supplied conversation. Write the title in Korean when the conversation is mainly in Korean; otherwise use the language of the first user message. Focus on the actual goal and preserve key module names, issue numbers, and technical identifiers. Limit the title to 60 characters including spaces. Return only the title, without quotes, explanations, or Markdown."}} },
     { "id": "zerosub", "source": "kapybara-org/zerosub", "version": "1.5.1" }
   ],

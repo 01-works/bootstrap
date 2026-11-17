@@ -70,7 +70,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 플러그인이 없으면 lane 폴더를 만들고 `paseo workspace create --isolation local --path '<lane 폴더>' --project '<코드 projectId>' --title '감독 · <목표>'`로 등록한다. 그 workspace에서 Supervisor 프로필로 `yw-supervisor 스킬로 <목표와 완료 조건>을 총괄해줘`라고 요청한다.
 
-lane 이름·`tasks.md`·감독 ID·인계·승인·종료는 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 목표 하나 = 소유 감독 하나 = workspace 하나다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다.
+lane 이름·`tasks.md`·감독 ID·인계·승인·종료는 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 목표 하나 = 소유 감독 하나 = workspace 하나다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다. 도구가 없으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다.
 
 여러 감독 세션을 함께 감사할 때는 [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md)를 쓴다. 감독 1개 운영은 `yw-supervisor`가 맡는다.
 
