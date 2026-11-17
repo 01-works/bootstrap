@@ -74,7 +74,7 @@ mkdir '<lane 폴더>' &&
 
 > yw-supervisor 스킬로 <목표와 완료 조건>을 총괄해줘. 직접 구현하지 말고 작업자 배정·검증·완료를 관리해줘.
 
-`<lane 폴더>`는 위 경로 바로 아래 `<목표 slug>-<YYYYMMDD>-<임의 4자>`(총괄은 `-chief` 추가)로 정한다. 충돌 시 접미사를 새로 뽑는다. 그 폴더에 `tasks.md`를 두고 대화 시작 후 `감독:`에 ID를 쓴다. 이미 연 사용자 대화는 이동하지 않는다. 기록·인계·승인·종료는 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 목표 하나 = 소유 감독 하나 = workspace 하나다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다. 프로필만 골라도 스킬이 실행되지는 않는다. 도구가 없으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다.
+`<lane 폴더>`는 위 경로 바로 아래 고유한 `<목표 slug>-<날짜>-<짧은 임의값>`(총괄은 `-chief` 추가)으로 정한다. 그 폴더에 `tasks.md`를 두고 대화 시작 후 `감독:`에 ID를 쓴다. 이미 연 사용자 대화는 이동하지 않는다. 기록·인계·승인·종료는 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 목표 하나 = 소유 감독 하나 = workspace 하나다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다. 프로필만 골라도 스킬이 실행되지는 않는다. 도구가 없으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다.
 
 여러 감독 세션을 함께 감사할 때는 [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md)를 쓴다. 감독 1개 운영은 `yw-supervisor`가 맡는다.
 
