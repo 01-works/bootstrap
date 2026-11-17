@@ -64,17 +64,13 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 총괄 운영 스킬
 
-새 감독을 시작할 때는 담당 코드 프로젝트의 `projectId`를 확인하고 저장소 밖 기록 폴더에 local workspace를 먼저 만든 뒤, **그 workspace에서** Supervisor 프로필로 대화를 연다. 여러 프로젝트면 주 프로젝트를 쓴다.
+코드 프로젝트의 현재 대화에서 **`/supervise <목표>`**로 시작한다(완료 조건 포함). supervision이 저장소 밖 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor/<lane>/`에 기록·local workspace를 만들고 같은 프로젝트의 Supervisor 대화를 연다. 여러 프로젝트면 주 프로젝트를 쓴다. 기존 대화는 옮기지 않는다.
 
-```sh
-mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor"
-mkdir '<lane 폴더>' &&
-  paseo workspace create --isolation local --path '<lane 폴더>' --project '<코드 projectId>' --title '감독 · <목표>'
-```
+⌘K → **내 감독으로 이동** 또는 `/my-supervisor`로 감독 대화에 돌아간다.
 
-> yw-supervisor 스킬로 <목표와 완료 조건>을 총괄해줘. 직접 구현하지 말고 작업자 배정·검증·완료를 관리해줘.
+플러그인이 없으면 lane 폴더를 만들고 `paseo workspace create --isolation local --path '<lane 폴더>' --project '<코드 projectId>' --title '감독 · <목표>'`로 등록한다. 그 workspace에서 Supervisor 프로필로 `yw-supervisor 스킬로 <목표와 완료 조건>을 총괄해줘`라고 요청한다.
 
-`<lane 폴더>`는 위 경로 바로 아래 고유한 `<목표 slug>-<날짜>-<짧은 임의값>`(총괄은 `-chief` 추가)으로 정한다. 그 폴더에 `tasks.md`를 두고 대화 시작 후 `감독:`에 ID를 쓴다. 이미 연 사용자 대화는 이동하지 않는다. 기록·인계·승인·종료는 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 목표 하나 = 소유 감독 하나 = workspace 하나다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다. 프로필만 골라도 스킬이 실행되지는 않는다. 도구가 없으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다.
+lane 이름·`tasks.md`·감독 ID·인계·승인·종료는 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 목표 하나 = 소유 감독 하나 = workspace 하나다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다.
 
 여러 감독 세션을 함께 감사할 때는 [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md)를 쓴다. 감독 1개 운영은 `yw-supervisor`가 맡는다.
 
@@ -130,6 +126,7 @@ node scripts/paseo-profiles.mjs --update
 | 플러그인 | 기능 | 소스 | 버전 |
 |---|---|---|---|
 | mac-monitor | 시스템 지표·상위 앱·프로세스 종료·정리 검사 | `github:01-works/paseo-plugin:mac-monitor` | `ref` (커밋) |
+| supervision | `/supervise`로 감독 시작, ⌘K·`/my-supervisor`로 복귀 | `github:01-works/paseo-plugin:supervision` | `ref` (커밋) |
 | Better Paseo | 채팅 타임라인 재구성, 호스트 전체 에이전트 Tasks 보드 (RoundRedDot 배포) | `roundreddot/better-paseo` (Paseo 레지스트리) | `version` (검토 커밋) |
 | ZeroSub | Claude·ChatGPT 구독 계정 선택·한도 도달 시 전환 (Kapybara 배포) | `kapybara-org/zerosub` (Paseo 레지스트리) | `version` |
 

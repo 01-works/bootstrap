@@ -271,8 +271,32 @@ if (args[1] === 'ls') {
     assert.equal(run(['--check']).status, 0);
     assert.deepEqual(callList(), ['plugin ls --json', 'plugin ls --json']);
 
-    // 켜져 있던 데몬은 끄지 않는다. 명령이 성공해도 버전이 안 바뀌었으면 실패다.
+    // supervision만 빠졌거나 시험 설치 ref이면 그것만 맞춘다. 기존 플러그인·설정·데몬은 유지한다.
     writeFileSync(daemon, '');
+    const supervision = manifest.plugins.find(plugin => plugin.id === 'supervision');
+    assert.ok(supervision);
+    for (const state of ['missing', 'stale']) {
+      const before = JSON.parse(readFileSync(configPath, 'utf8'));
+      if (state === 'missing') delete before.plugins[supervision.id];
+      else before.plugins[supervision.id].installation.currentRevision = 'f11e0d37d41073d07faa7383cf39da2cb90f6d6f';
+      writeFileSync(configPath, JSON.stringify(before));
+      const beforeSettings = readFileSync(settingsFile, 'utf8');
+      rmSync(calls);
+      const result = run();
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.deepEqual(callList().filter(call => call !== 'plugin ls --json'), [state === 'missing'
+        ? `plugin install ${supervision.source} --id supervision --ref ${supervision.ref}`
+        : `plugin update supervision --ref ${supervision.ref}`]);
+      const after = JSON.parse(readFileSync(configPath, 'utf8'));
+      assert.equal(after.plugins.supervision.installation.currentRevision, supervision.ref);
+      delete before.plugins.supervision;
+      delete after.plugins.supervision;
+      assert.deepEqual(after, before);
+      assert.equal(readFileSync(settingsFile, 'utf8'), beforeSettings);
+      assert.equal(existsSync(daemon), true);
+    }
+
+    // 명령이 성공해도 버전이 안 바뀌었으면 실패다.
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     config.plugins[old.id].installation.currentRevision = '0'.repeat(40);
     writeFileSync(configPath, JSON.stringify(config));
