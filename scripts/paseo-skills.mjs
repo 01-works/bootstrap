@@ -59,12 +59,17 @@ function daemonRunning(home) {
 }
 
 // 앱의 CLI 런처(Resources/bin/paseo)와 같은 방식으로 Paseo 런타임에서 클라이언트 스크립트를 실행한다.
-function requestInstall(runtime, home) {
-  const result = spawnSync(runtime.helper, ['--disable-warning=DEP0040', runtime.runner, 'node-script', clientScript], {
+// 앱 내부 클라이언트 모듈을 쓰는 스크립트에 BOOTSTRAP_PASEO_HOME·BOOTSTRAP_PASEO_CLIENT와 extraEnv를 넘긴다.
+export function runAppScript(runtime, script, home, extraEnv = {}) {
+  return spawnSync(runtime.helper, ['--disable-warning=DEP0040', runtime.runner, 'node-script', script], {
     encoding: 'utf8',
     timeout: 120_000,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PASEO_NODE_ENV: 'production', BOOTSTRAP_PASEO_HOME: home, BOOTSTRAP_PASEO_CLIENT: runtime.client }
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PASEO_NODE_ENV: 'production', BOOTSTRAP_PASEO_HOME: home, BOOTSTRAP_PASEO_CLIENT: runtime.client, ...extraEnv }
   });
+}
+
+function requestInstall(runtime, home) {
+  const result = runAppScript(runtime, clientScript, home);
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
   if (result.status !== 0) throw new Error(`설치 요청 실패: ${(output || result.error?.message || '').slice(0, 300)}`);
   if (output) console.log(output);

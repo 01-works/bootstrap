@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { gitSource, planPlugins, reviewedTarget, settingsDrift, storedSettings, validate } from './paseo-plugins.mjs';
+import { gitSource, planPlugins, reviewedTarget, settingsDrift, settingsNotRunning, storedSettings, validate } from './paseo-plugins.mjs';
 
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-plugins.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-plugins.mjs', import.meta.url).pathname;
@@ -29,6 +29,8 @@ test('목록 검증: git은 커밋 전체 해시, 레지스트리는 version, �
   assert.throws(() => validate({ plugins: [], retired: {} }));
   assert.throws(() => validate({ plugins: [], retired: [{ id: 'a', source: 'npm:a' }] }));
   assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1' }], retired: [{ id: 'a', source: 'github:o/r:a' }] }));
+  assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1', ref: 'a'.repeat(40) }] }), /ref 대신 version/);
+  assert.throws(() => validate({ plugins: [{ id: 'a', source: 'github:o/r:a', ref: 'a'.repeat(40), version: '1' }] }), /version 대신 ref/);
   assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1', settings: [] }] }));
   assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1', settings: { Bad: { x: 1 } } }] }));
   assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1', settings: { ok: {} } }] }));
@@ -103,6 +105,12 @@ test('설정: 목록이 정한 키만 비교하고, 목록의 소스에서 설�
   ], read), [], '실행 안 됨·개발용 폴더 설치는 건드리지 않는다');
   stored['p/main'].model = 'm';
   assert.deepEqual(settingsDrift(fixture, [installed(p, '1')], read), []);
+  // 객체 값은 키 순서가 아니라 내용으로 비교한다.
+  const nested = { plugins: [{ id: 'p', source: 'o/p', version: '1', settings: { main: { obj: { a: 1, b: 2 } } } }] };
+  assert.deepEqual(settingsDrift(nested, [installed(p, '1')], () => ({ obj: { b: 2, a: 1 } })), []);
+  // 설정을 맞출 플러그인이 아직 실행 중이 아니면 확인하지 못한 것으로 본다(꺼진 것·다른 소스는 제외).
+  assert.deepEqual(settingsNotRunning(fixture, [installed(p, '1', { status: 'failed' }), installed(q, '1', { enabled: false, status: 'disabled' })]), ['p']);
+  assert.deepEqual(settingsNotRunning(fixture, [installed(p, '1'), installed(q, '1')]), []);
 
   const dir = mkdtempSync(join(tmpdir(), 'bootstrap-paseo-settings-test-'));
   try {
@@ -287,6 +295,15 @@ if (args[1] === 'ls') {
     const conflict = run([], { SETTINGS_CONFLICT: '1' });
     assert.equal(conflict.status, 1);
     assert.match(conflict.stderr, new RegExp(`${configured.id} 설정 ${settingsId}`));
+    assert.match(conflict.stdout, /설정 맞춤: .* → conflict/);
+    // 앱 CLI가 아니면(npm 설치) 설정을 맞추지 못한다고 알리기만 하고 실패로 치지 않는다. doctor는 계속 경고한다.
+    const runtimeHelper = readFileSync(helper);
+    rmSync(helper);
+    const noRuntime = run();
+    assert.equal(noRuntime.status, 0, noRuntime.stdout + noRuntime.stderr);
+    assert.match(noRuntime.stdout, /설정 맞춤 불가/);
+    assert.equal(run(['--check']).status, 1);
+    writeFileSync(helper, runtimeHelper, { mode: 0o755 });
     rmSync(calls);
     assert.equal(run().status, 0);
     assert.equal(existsSync(daemon), true);
