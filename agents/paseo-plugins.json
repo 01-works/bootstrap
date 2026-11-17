@@ -1,7 +1,10 @@
 {
   "plugins": [
     { "id": "mac-monitor", "source": "github:01-works/paseo-plugin:mac-monitor", "ref": "c9eb48e0a812aa5e6d70366075fa77cb6df16823" },
-    { "id": "agent-list", "source": "github:01-works/paseo-plugin:agent-list", "ref": "70f62ae06634a765d410e50e7a2180adb1c73132" },
+    { "id": "better-paseo", "source": "roundreddot/better-paseo", "version": "d4c85ccafe6d5dfc4abcef85667eca0b3cc3bb2e" },
     { "id": "zerosub", "source": "kapybara-org/zerosub", "version": "1.5.1" }
+  ],
+  "retired": [
+    { "id": "agent-list", "source": "github:01-works/paseo-plugin:agent-list" }
   ]
 }

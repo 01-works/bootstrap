@@ -1,4 +1,5 @@
-// Paseo 기본 플러그인을 목록의 버전으로 맞춘다. 개발용 폴더 설치와 다른 소스 설치는 건드리지 않는다.
+// Paseo 기본 플러그인을 목록의 버전으로 맞추고, 목록에서 은퇴시킨 플러그인은 지운다.
+// 개발용 폴더 설치와 다른 소스 설치는 건드리지 않는다.
 // 설치·갱신은 실행 중인 데몬이 한다. 데몬이 꺼져 있으면 마지막 동기화 이후 목록이 바뀐 경우에만 데몬을 켠다.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,8 +17,21 @@ export function gitSource(source) {
   return match ? { remote: `https://github.com/${match[1]}.git`, pluginPath: match[2] } : null;
 }
 
+const sourceForm = source => gitSource(source) || /^[^/:\s]+\/[^/:\s]+$/.test(source);
+
+// 설치 기록(identity)이 목록의 소스에서 온 것인지. 레지스트리는 npm·git 배포 모두 registry.id로 본다.
+function sameSource(identity, source) {
+  const git = gitSource(source);
+  return git ? identity?.kind === 'git' && !identity.registry && identity.remote === git.remote && identity.pluginPath === git.pluginPath
+    : identity?.registry?.id === source;
+}
+
+// 레지스트리 검토 버전: npm 배포는 version, git 배포는 commit.
+export const reviewedTarget = target => target?.version ?? target?.commit;
+
 export function validate(manifest) {
   if (!Array.isArray(manifest.plugins)) throw new Error('plugins는 배열이어야 합니다');
+  if (manifest.retired !== undefined && !Array.isArray(manifest.retired)) throw new Error('retired는 배열이어야 합니다');
   const ids = new Set();
   for (const plugin of manifest.plugins) {
     if (!plugin || typeof plugin.id !== 'string' || !plugin.id || typeof plugin.source !== 'string' || !plugin.source) {
@@ -27,11 +41,18 @@ export function validate(manifest) {
     ids.add(plugin.id);
     if (gitSource(plugin.source)) {
       if (!/^[0-9a-f]{40}$/.test(plugin.ref ?? '')) throw new Error(`${plugin.id}: git 소스는 ref에 커밋 전체 해시가 필요합니다`);
-    } else if (!/^[^/:\s]+\/[^/:\s]+$/.test(plugin.source)) {
+    } else if (!sourceForm(plugin.source)) {
       throw new Error(`${plugin.id}: 지원하지 않는 소스입니다 (github:owner/repo:path 또는 레지스트리 owner/slug)`);
     } else if (typeof plugin.version !== 'string' || !plugin.version) {
       throw new Error(`${plugin.id}: 레지스트리 소스는 version이 필요합니다`);
     }
+  }
+  for (const plugin of manifest.retired ?? []) {
+    if (!plugin || typeof plugin.id !== 'string' || !plugin.id || typeof plugin.source !== 'string' || !sourceForm(plugin.source)) {
+      throw new Error('retired 항목에 id와 지원하는 source가 필요합니다');
+    }
+    if (ids.has(plugin.id)) throw new Error(`플러그인 id가 중복됩니다: ${plugin.id}`);
+    ids.add(plugin.id);
   }
 }
 
@@ -41,7 +62,7 @@ export function planPlugins(config, manifest, listed) {
   const installed = new Map(listed
     ? listed.map(plugin => [plugin.id, plugin])
     : Object.entries(config.plugins ?? {}).map(([id, plugin]) => [id, { id, enabled: plugin?.enabled !== false }]));
-  const plan = { enable: config.pluginsEnabled !== true, install: [], update: [], dev: [], foreign: [], disabled: [], stopped: [] };
+  const plan = { enable: config.pluginsEnabled !== true, install: [], update: [], remove: [], dev: [], foreign: [], disabled: [], stopped: [], retiredKept: [] };
   for (const wanted of manifest.plugins) {
     const current = installed.get(wanted.id);
     if (!current) {
@@ -53,13 +74,19 @@ export function planPlugins(config, manifest, listed) {
     if (!listed) continue;
     const identity = current.installation?.identity;
     const revision = current.installation?.currentRevision;
-    const git = gitSource(wanted.source);
     if (identity?.kind === 'directory') plan.dev.push({ id: wanted.id, path: identity.path });
-    else if (git ? identity?.kind === 'git' && identity.remote === git.remote && identity.pluginPath === git.pluginPath
-      : identity?.registry?.id === wanted.source) {
-      const target = git ? wanted.ref : wanted.version;
+    else if (sameSource(identity, wanted.source)) {
+      const target = wanted.ref ?? wanted.version;
       if (revision !== target) plan.update.push({ plugin: wanted, from: revision ?? '?' });
     } else plan.foreign.push({ id: wanted.id, source: current.source ?? identity?.kind ?? '?' });
+  }
+  // 은퇴한 플러그인은 목록의 소스에서 설치된 것만 지운다. 데몬이 꺼져 있으면 소스를 알 수 없어 판단하지 않는다.
+  for (const retired of manifest.retired ?? []) {
+    const current = listed && installed.get(retired.id);
+    if (!current) continue;
+    const identity = current.installation?.identity;
+    if (sameSource(identity, retired.source)) plan.remove.push(retired);
+    else plan.retiredKept.push({ id: retired.id, source: identity?.kind === 'directory' ? identity.path : current.source ?? identity?.kind ?? '?' });
   }
   return plan;
 }
@@ -93,13 +120,15 @@ function report(plan) {
   if (plan.enable) console.log('켜기: 플러그인 사용 (pluginsEnabled)');
   for (const plugin of plan.install) console.log(`설치 필요: ${plugin.id} (${plugin.source})`);
   for (const { plugin, from } of plan.update) console.log(`버전 맞춤 필요: ${plugin.id} ${from} → ${plugin.ref ?? plugin.version}`);
+  for (const plugin of plan.remove) console.log(`제거 필요 (목록에서 은퇴): ${plugin.id}`);
+  for (const { id, source } of plan.retiredKept) console.log(`은퇴했지만 다른 소스 설치 (유지): ${id} ${source}`);
   for (const { id, path } of plan.dev) console.log(`개발 중 (폴더 설치, 유지): ${id} ${path}`);
   for (const { id, source } of plan.foreign) console.log(`다른 소스 설치 (유지): ${id} ${source}`);
   for (const id of plan.disabled) console.log(`꺼진 상태 (유지): ${id}`);
   for (const { id, status, error } of plan.stopped) console.log(`실행 안 됨: ${id} (${status}${error ? `: ${error}` : ''})`);
 }
 
-const pending = plan => plan.enable || plan.install.length || plan.update.length;
+const pending = plan => plan.enable || plan.install.length || plan.update.length || plan.remove.length;
 
 function syncedPath(home) {
   const state = process.env.XDG_STATE_HOME || join(homedir(), '.local/state');
@@ -115,7 +144,7 @@ function updateRegistry(home, plugin) {
     console.log(`레지스트리 확인 실패: ${plugin.id} ${preview?.error ?? (result.stderr || result.stdout).trim().slice(0, 200)}`);
     return 'failed';
   }
-  const target = preview.target?.version;
+  const target = reviewedTarget(preview.target);
   if (target !== plugin.version) {
     console.log(`유지: ${plugin.id} 레지스트리 검토 버전(${target ?? preview.outcome})이 목록의 ${plugin.version}과 다릅니다`);
     return 'kept';
@@ -139,6 +168,10 @@ function apply(home, config, manifest) {
     const ref = plugin.ref ? ['--ref', plugin.ref] : [];
     if (paseo(['plugin', 'install', plugin.source, '--id', plugin.id, ...ref, '--home', home], { stdio: 'inherit' }).status !== 0) failed.add(plugin.id);
   }
+  for (const plugin of plan.remove) {
+    console.log(`제거: ${plugin.id} (목록에서 은퇴)`);
+    if (paseo(['plugin', 'remove', plugin.id, '--home', home], { stdio: 'inherit' }).status !== 0) failed.add(plugin.id);
+  }
   // 레지스트리 설치는 그때의 검토 버전이 들어오므로 다시 보고 맞춘다.
   if (plan.install.length) plan = planPlugins({ ...config, pluginsEnabled: enabled }, manifest, requireList(home));
   for (const { plugin } of plan.update) {
@@ -156,6 +189,7 @@ function apply(home, config, manifest) {
   const after = planPlugins({ ...config, pluginsEnabled: enabled }, manifest, requireList(home));
   for (const plugin of after.install) failed.add(plugin.id);
   for (const { plugin } of after.update) if (!kept.has(plugin.id)) failed.add(plugin.id);
+  for (const plugin of after.remove) failed.add(plugin.id);
   for (const { id, status } of after.stopped) if (touched.has(id)) failed.add(`${id}(${status})`);
   if (failed.size) throw new Error(`실패: ${[...failed].join(', ')}. paseo plugin ls·paseo plugin logs <id> 로 원인을 확인하고 다시 실행하세요`);
 }
@@ -186,7 +220,7 @@ function bump(home, manifest) {
     } else {
       const result = paseo(['plugin', 'update', plugin.id, '--check', '--json', '--home', home]);
       const preview = json(result)?.[0];
-      target = preview?.target?.version ?? (preview?.outcome === 'current' ? preview?.current?.currentRevision : undefined);
+      target = reviewedTarget(preview?.target) ?? (preview?.outcome === 'current' ? preview?.current?.currentRevision : undefined);
       if (!target) {
         console.log(`건너뜀: ${plugin.id} 레지스트리 검토 버전 확인 실패 (데몬이 켜져 있고 이 기기에 레지스트리로 설치되어 있어야 함)`);
         continue;
@@ -199,7 +233,9 @@ function bump(home, manifest) {
   }
   if (!changed) return;
   const line = plugin => `{ ${Object.entries(plugin).map(([key, value]) => `${JSON.stringify(key)}: ${JSON.stringify(value)}`).join(', ')} }`;
-  writeFileSync(manifestPath, `{\n  "plugins": [\n${manifest.plugins.map(plugin => `    ${line(plugin)}`).join(',\n')}\n  ]\n}\n`);
+  const list = (key, items) => `  "${key}": [\n${items.map(plugin => `    ${line(plugin)}`).join(',\n')}\n  ]`;
+  const sections = [list('plugins', manifest.plugins), ...(manifest.retired?.length ? [list('retired', manifest.retired)] : [])];
+  writeFileSync(manifestPath, `{\n${sections.join(',\n')}\n}\n`);
   console.log('agents/paseo-plugins.json을 고쳤습니다. 커밋·push하면 자동 갱신으로 모든 기기에 적용됩니다.');
 }
 

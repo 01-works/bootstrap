@@ -126,20 +126,22 @@ node scripts/paseo-profiles.mjs --update
 | 플러그인 | 기능 | 소스 | 버전 |
 |---|---|---|---|
 | mac-monitor | 시스템 지표·상위 앱·프로세스 종료·정리 검사 | `github:01-works/paseo-plugin:mac-monitor` | `ref` (커밋) |
-| agent-list | 현재 워크스페이스의 에이전트 목록·검색·대화 이동·닫기, 이어진 대화 묶기·작업 이름 정리·오래된 대화 정리 | `github:01-works/paseo-plugin:agent-list` | `ref` (커밋) |
+| Better Paseo | 채팅 타임라인 재구성, 호스트 전체 에이전트 Tasks 보드 (RoundRedDot 배포) | `roundreddot/better-paseo` (Paseo 레지스트리) | `version` (검토 커밋) |
 | ZeroSub | Claude·ChatGPT 구독 계정 선택·한도 도달 시 전환 (Kapybara 배포) | `kapybara-org/zerosub` (Paseo 레지스트리) | `version` |
+
+agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의 설정·데이터 흐름(제목 생성 helper 등)은 [paseo-plugin의 안내](https://github.com/01-works/paseo-plugin/blob/main/docs/plugins/better-paseo.md).
 
 `paseo` 단계가 하는 일:
 
 - 플러그인 사용(`pluginsEnabled`, 앱의 Enable plugins)이 꺼져 있으면 켠다. bootstrap 기기는 이 목록의 플러그인을 쓰기로 이미 정한 기기로 본다.
 - 없는 플러그인을 설치하고, 자체 플러그인은 목록의 커밋으로 맞춘다(올리기·내리기 모두). 목록에 있는 플러그인을 기기에서 지우면 다음에 이 단계가 돌 때 다시 설치된다. 빼려면 목록에서 뺀다.
-- 레지스트리 플러그인은 레지스트리가 검토한 버전만 받을 수 있다. 그 버전이 목록의 `version`과 같을 때만 갱신하고, 다르면 유지하고 알린다. 내릴 수는 없어서, 새 기기에 목록보다 새 검토 버전이 들어오면 목록을 올릴 때까지 `doctor`가 경고한다.
-- 목록에서 뺀 플러그인은 기기에서 지우지 않는다. 필요하면 `paseo plugin remove <id>`.
+- 레지스트리 플러그인은 레지스트리가 검토한 버전만 받을 수 있다. `version`은 npm 배포면 패키지 버전, Git 배포면 커밋 전체 해시다. 그 버전이 목록의 `version`과 같을 때만 갱신하고, 다르면 유지하고 알린다. 내릴 수는 없어서, 새 기기에 목록보다 새 검토 버전이 들어오면 목록을 올릴 때까지 `doctor`가 경고한다.
+- 목록에서 빼기만 한 플러그인은 기기에서 지우지 않는다. 모든 기기에서 지우려면 `plugins`에서 빼고 `retired`에 `{ "id", "source" }`로 옮긴다. 그 소스에서 설치된 것만 `paseo plugin remove`로 지우고(플러그인 데이터도 함께 지워진다), 폴더·다른 소스 설치는 유지하고 알린다. 모든 기기가 갱신된 뒤에도 남겨 두면 나중에 맞추는 기기에서도 지운다.
 - 맞춘 뒤 목록을 다시 읽어, 버전이 맞지 않거나 이번에 설치·갱신한 플러그인이 실행되지 않으면 실패로 남긴다(자동 갱신 알림·재시도 대상).
 - 폴더에서 설치한 플러그인(개발 중)과 다른 소스에서 설치한 플러그인은 그대로 두고 알리기만 한다. 꺼 둔 플러그인도 켜지 않는다.
 - 설치·갱신은 실행 중인 데몬이 한다. 데몬이 꺼져 있으면 이 기기에서 마지막으로 맞춘 기록만 본다. 그 뒤 목록이 바뀌었으면 데몬을 잠시 켜서 맞추고 다시 끈다. 기록은 `~/.local/state/bootstrap/paseo-plugins/`.
 
-`doctor`는 설치 누락, 버전 차이, 꺼짐, 실행 안 됨, 다른 소스를 경고한다. 개발 중인 폴더 설치는 표시만 한다.
+`doctor`는 설치 누락, 버전 차이, 은퇴한 플러그인의 잔류, 꺼짐, 실행 안 됨, 다른 소스를 경고한다. 개발 중인 폴더 설치는 표시만 한다.
 
 ### 새 버전 배포
 
