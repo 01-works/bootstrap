@@ -129,7 +129,19 @@ node scripts/paseo-profiles.mjs --update
 | Better Paseo | 채팅 타임라인 재구성, 호스트 전체 에이전트 Tasks 보드 (RoundRedDot 배포) | `roundreddot/better-paseo` (Paseo 레지스트리) | `version` (검토 커밋) |
 | ZeroSub | Claude·ChatGPT 구독 계정 선택·한도 도달 시 전환 (Kapybara 배포) | `kapybara-org/zerosub` (Paseo 레지스트리) | `version` |
 
-agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의 설정·데이터 흐름(제목 생성 helper 등)은 [paseo-plugin의 안내](https://github.com/01-works/paseo-plugin/blob/main/docs/plugins/better-paseo.md).
+agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의 기능·데이터 흐름은 [paseo-plugin의 안내](https://github.com/01-works/paseo-plugin/blob/main/docs/plugins/better-paseo.md).
+
+### 플러그인 설정
+
+목록 항목의 `settings`에 플러그인의 설정 문서(`settings.<설정 ID>`)별로 맞출 키와 값을 적는다. 적은 키만 맞추고, 적지 않은 키는 앱에서 바꾼 값을 그대로 둔다. 설정은 기기(호스트)마다 데몬에 저장되므로(`~/.paseo/plugin-settings/<플러그인>/<설정 ID>.json`) 이 목록이 모든 기기의 기준이다. 바꾸려면 앱이 아니라 목록을 고친다. 앱에서 바꾼 값은 `doctor`가 경고하고 다음 `paseo` 단계가 되돌린다.
+
+| 플러그인 | 설정 | 값 | 이유 |
+|---|---|---|---|
+| Better Paseo | `title-generation` | `afterFirstReply: true`, `customModel: true`, `provider: codex`, `model: gpt-6-luna`, `disableThinking: true` | 이름 없이 시작한 대화의 제목을 첫 턴에 만든다. 첫 프롬프트 1000자만 보내는 짧은 작업이라 Codex의 빠르고 저렴한 모델(GPT-6-Luna)을 가장 낮은 추론 단계로 쓴다. 이미 이름이 있는 대화(감독이 만든 작업자 등)는 바꾸지 않는다 |
+
+- 목록의 소스에서 설치되어 실행 중인 플러그인만 맞춘다. 개발용 폴더 설치와 꺼진 플러그인은 건드리지 않는다.
+- 앱의 플러그인 설정 화면과 같은 설정 RPC(`settings.<ID>.read`/`write`)를 Paseo 앱의 Node 런타임과 앱 내부 클라이언트 모듈로 부른다(`scripts/paseo-plugins-settings-client.mjs`). 공개 CLI가 아니어서 Paseo 버전에 따라 깨질 수 있다. 실패하면 저장값을 다시 읽어 실패로 남기므로, 그때는 앱의 플러그인 설정에서 맞추고 스크립트를 고친다. PATH의 `paseo`가 앱 CLI가 아닌 기기(npm 설치)는 맞추지 못하고 알린다.
+- 모델 ID는 `paseo provider models codex`로 확인한다. 그 기기에 provider가 없거나 모델이 사라지면 설정은 저장되지만 제목 생성이 실패한다(Tasks 카드에 오류 표시).
 
 `paseo` 단계가 하는 일:
 
@@ -141,7 +153,7 @@ agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의
 - 폴더에서 설치한 플러그인(개발 중)과 다른 소스에서 설치한 플러그인은 그대로 두고 알리기만 한다. 꺼 둔 플러그인도 켜지 않는다.
 - 설치·갱신은 실행 중인 데몬이 한다. 데몬이 꺼져 있으면 이 기기에서 마지막으로 맞춘 기록만 본다. 그 뒤 목록이 바뀌었으면 데몬을 잠시 켜서 맞추고 다시 끈다. 기록은 `~/.local/state/bootstrap/paseo-plugins/`.
 
-`doctor`는 설치 누락, 버전 차이, 은퇴한 플러그인의 잔류, 꺼짐, 실행 안 됨, 다른 소스를 경고한다. 개발 중인 폴더 설치는 표시만 한다.
+`doctor`는 설치 누락, 버전 차이, 은퇴한 플러그인의 잔류, 설정 차이, 꺼짐, 실행 안 됨, 다른 소스를 경고한다. 개발 중인 폴더 설치는 표시만 한다.
 
 ### 새 버전 배포
 

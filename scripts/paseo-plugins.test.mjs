@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { gitSource, planPlugins, reviewedTarget, validate } from './paseo-plugins.mjs';
+import { gitSource, planPlugins, reviewedTarget, settingsDrift, storedSettings, validate } from './paseo-plugins.mjs';
 
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-plugins.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-plugins.mjs', import.meta.url).pathname;
@@ -29,6 +29,9 @@ test('목록 검증: git은 커밋 전체 해시, 레지스트리는 version, �
   assert.throws(() => validate({ plugins: [], retired: {} }));
   assert.throws(() => validate({ plugins: [], retired: [{ id: 'a', source: 'npm:a' }] }));
   assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1' }], retired: [{ id: 'a', source: 'github:o/r:a' }] }));
+  assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1', settings: [] }] }));
+  assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1', settings: { Bad: { x: 1 } } }] }));
+  assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1', settings: { ok: {} } }] }));
   assert.equal(reviewedTarget({ kind: 'npm', version: '1.0.0' }), '1.0.0');
   assert.equal(reviewedTarget({ kind: 'git', commit: 'c'.repeat(40) }), 'c'.repeat(40));
   assert.throws(() => validate({ plugins: [{ id: 'a', source: 'github:o/r:a', ref: 'main' }] }));
@@ -84,12 +87,71 @@ test('계획: 버전 차이만 맞추고 은퇴한 것은 지우며, 개발용 �
   assert.deepEqual(offline.remove, []);
 });
 
+test('설정: 목록이 정한 키만 비교하고, 목록의 소스에서 설치되어 실행 중인 플러그인만 맞춘다', () => {
+  const fixture = { plugins: [
+    { id: 'p', source: 'o/p', version: '1', settings: { main: { on: true, model: 'm' } } },
+    { id: 'q', source: 'o/q', version: '1', settings: { main: { on: true } } }
+  ] };
+  const [p, q] = fixture.plugins;
+  const stored = { 'p/main': { on: true, model: 'old', prompt: '내 값' }, 'q/main': {} };
+  const read = (plugin, id) => stored[`${plugin}/${id}`];
+  assert.deepEqual(settingsDrift(fixture, [installed(p, '1'), installed(q, '1')], read).map(({ plugin, keys }) => [plugin, keys]), [['p', ['model']], ['q', ['on']]]);
+  assert.deepEqual(settingsDrift(fixture, null, read), [], '데몬이 꺼져 있으면 보지 않는다');
+  assert.deepEqual(settingsDrift(fixture, [
+    installed(p, '1', { status: 'error' }),
+    { id: 'q', enabled: true, status: 'running', installation: { identity: { kind: 'directory', path: '/dev/q' } } }
+  ], read), [], '실행 안 됨·개발용 폴더 설치는 건드리지 않는다');
+  stored['p/main'].model = 'm';
+  assert.deepEqual(settingsDrift(fixture, [installed(p, '1')], read), []);
+
+  const dir = mkdtempSync(join(tmpdir(), 'bootstrap-paseo-settings-test-'));
+  try {
+    assert.deepEqual(storedSettings(dir, 'p', 'main'), {});
+    mkdirSync(join(dir, 'plugin-settings/p'), { recursive: true });
+    writeFileSync(join(dir, 'plugin-settings/p/main.json'), JSON.stringify({ version: 1, values: { on: true } }));
+    assert.deepEqual(storedSettings(dir, 'p', 'main'), { on: true });
+    writeFileSync(join(dir, 'plugin-settings/p/main.json'), '{');
+    assert.equal(storedSettings(dir, 'p', 'main'), null);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('CLI: 데몬 꺼짐이면 목록이 바뀐 경우에만 잠시 켜고, 결과를 다시 읽어 실패를 잡고, 재실행은 무변경', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bootstrap-paseo-plugins-test-'));
   try {
     const home = join(dir, 'paseo');
-    const bin = join(dir, 'bin');
-    mkdirSync(home); mkdirSync(bin);
+    // Paseo 앱 구조: PATH의 paseo가 앱 안의 CLI라야 설정을 앱의 Node 런타임(Helper)과 내부 클라이언트 모듈로 맞춘다.
+    const resources = join(dir, 'Paseo.app/Contents/Resources');
+    const bin = join(resources, 'bin');
+    const helper = join(resources, '../Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper');
+    const clientModule = join(resources, 'app.asar/node_modules/@getpaseo/cli/dist/utils/client.js');
+    mkdirSync(home); mkdirSync(bin, { recursive: true });
+    mkdirSync(dirname(helper), { recursive: true });
+    mkdirSync(dirname(clientModule), { recursive: true });
+    mkdirSync(join(resources, 'app.asar.unpacked/dist/daemon'), { recursive: true });
+    writeFileSync(join(resources, 'app.asar.unpacked/dist/daemon/node-entrypoint-runner.js'), '');
+    writeFileSync(helper, `#!/usr/bin/env node
+if (process.env.ELECTRON_RUN_AS_NODE !== '1' || process.argv.at(-2) !== 'node-script') process.exit(9);
+import(require('node:url').pathToFileURL(process.argv.at(-1)).href);
+`, { mode: 0o755 });
+    // 설정 RPC 대역: 저장 형식과 revision 충돌 검사는 Paseo의 PluginSettingsStore와 같다.
+    writeFileSync(clientModule, `const fs = require('node:fs');
+const path = require('node:path');
+const { createHash } = require('node:crypto');
+exports.connectToDaemon = async ({ target }) => ({
+  async invokePluginRpc(plugin, method, input) {
+    const [, id, op] = /^settings\\.(.+)\\.(read|write)$/.exec(method);
+    const file = path.join(target.home, 'plugin-settings', plugin, id + '.json');
+    const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+    const revision = raw === null ? 'missing' : createHash('sha256').update(raw).digest('hex');
+    if (op === 'read') return { status: 'ready', revision, values: raw === null ? {} : JSON.parse(raw).values };
+    if (process.env.SETTINGS_CONFLICT || input.revision !== revision) return { status: 'conflict', error: 'changed' };
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, values: input.values }));
+    return { status: 'saved', revision: 'next', values: input.values };
+  },
+  async close() {}
+});
+`);
     const configPath = join(home, 'config.json');
     const calls = join(dir, 'calls');
     const daemon = join(dir, 'daemon-running');
@@ -143,6 +205,12 @@ if (args[1] === 'ls') {
     const pins = JSON.stringify(Object.fromEntries(registryPlugins.map(plugin => [plugin.id, plugin.version])));
     const stalePins = JSON.stringify({ [registry.id]: '0.0.1', [missing.id]: missing.version });
     const old = gitPlugins[0];
+    const configured = manifest.plugins.find(plugin => plugin.settings);
+    const [[settingsId, wantedSettings]] = Object.entries(configured.settings);
+    const settingsFile = join(home, 'plugin-settings', configured.id, `${settingsId}.json`);
+    // 목록에 없는 키는 사용자가 앱에서 바꾼 값으로 남아야 한다.
+    mkdirSync(dirname(settingsFile), { recursive: true });
+    writeFileSync(settingsFile, JSON.stringify({ version: 1, values: { userOnly: '내 값' } }));
     writeFileSync(configPath, JSON.stringify({
       daemon: {},
       plugins: {
@@ -186,6 +254,7 @@ if (args[1] === 'ls') {
     const final = JSON.parse(readFileSync(configPath, 'utf8')).plugins;
     for (const plugin of manifest.plugins) assert.equal(final[plugin.id].installation.currentRevision, plugin.ref ?? plugin.version);
     assert.equal(final[retired.id], undefined);
+    assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')).values, { userOnly: '내 값', ...wantedSettings });
     assert.equal(synced(), true);
 
     // 동기화한 목록 그대로면 데몬이 꺼져 있어도 켜지 않고 끝난다.
@@ -207,6 +276,17 @@ if (args[1] === 'ls') {
     writeFileSync(configPath, JSON.stringify(again));
     assert.equal(run(['--check']).status, 1);
     assert.equal(run([], { SILENT_REMOVE: '1' }).status, 1);
+    // 목록이 정한 설정 키를 앱에서 바꾸면 doctor가 알리고, 다음 실행이 되돌린다. 저장이 거절되면 실패다.
+    const changed = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    const [firstKey] = Object.keys(wantedSettings);
+    changed.values[firstKey] = 'changed-in-app';
+    writeFileSync(settingsFile, JSON.stringify(changed));
+    const drifted = run(['--check']);
+    assert.equal(drifted.status, 1);
+    assert.match(drifted.stdout, new RegExp(`설정 맞춤 필요: ${configured.id} ${settingsId} \\(${firstKey}\\)`));
+    const conflict = run([], { SETTINGS_CONFLICT: '1' });
+    assert.equal(conflict.status, 1);
+    assert.match(conflict.stderr, new RegExp(`${configured.id} 설정 ${settingsId}`));
     rmSync(calls);
     assert.equal(run().status, 0);
     assert.equal(existsSync(daemon), true);

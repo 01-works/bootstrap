@@ -1,7 +1,7 @@
 {
   "plugins": [
     { "id": "mac-monitor", "source": "github:01-works/paseo-plugin:mac-monitor", "ref": "c9eb48e0a812aa5e6d70366075fa77cb6df16823" },
-    { "id": "better-paseo", "source": "roundreddot/better-paseo", "version": "d4c85ccafe6d5dfc4abcef85667eca0b3cc3bb2e" },
+    { "id": "better-paseo", "source": "roundreddot/better-paseo", "version": "d4c85ccafe6d5dfc4abcef85667eca0b3cc3bb2e", "settings": {"title-generation":{"afterFirstReply":true,"customModel":true,"provider":"codex","model":"gpt-6-luna","disableThinking":true}} },
     { "id": "zerosub", "source": "kapybara-org/zerosub", "version": "1.5.1" }
   ],
   "retired": [
