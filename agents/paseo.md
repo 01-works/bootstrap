@@ -137,11 +137,11 @@ agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의
 
 | 플러그인 | 설정 | 값 | 이유 |
 |---|---|---|---|
-| Better Paseo | `title-generation` | `afterFirstReply: true`, `customModel: true`, `provider: codex`, `model: gpt-6-luna`, `disableThinking: true` | 이름 없이 시작한 대화의 제목을 첫 턴에 만든다. 첫 프롬프트 1000자만 보내는 짧은 작업이라 Codex의 빠르고 저렴한 모델(GPT-6-Luna)을 가장 낮은 추론 단계로 쓴다. 이미 이름이 있는 대화(감독이 만든 작업자 등)는 바꾸지 않는다 |
+| Better Paseo | `title-generation` | `afterFirstReply: true`, `customModel: true`, `provider: claude`, `model: claude-haiku-5-5`, `disableThinking: true`, `prompt`: 기본 프롬프트에서 언어 문장만 "한국어 대화면 한국어로"로 바꾼 것 | 이름 없이 시작한 대화의 제목을 첫 턴에 만든다. 이미 이름이 있는 대화(감독이 만든 작업자 등)는 바꾸지 않는다. 2026-11-17 실측(대화 4개, 미리보기)에서 Haiku 5.5(추론 off)가 GPT-6-Luna보다 빠르고(평균 4.3초 대 5.3초) 대화 전체 목표를 더 잘 잡았다. 플러그인은 UI 언어를 영어·중국어로만 판정해 한국어 앱을 영어로 보고 기본 프롬프트를 "영어 우선"으로 바꾼다(실측에서 전부 영어 제목). 프롬프트를 바꾸면 그 지시가 언어를 정하므로 한국어를 명시한다 |
 
 - 목록의 소스에서 설치되어 실행 중인 플러그인만 맞춘다. 개발용 폴더 설치와 꺼진 플러그인은 건드리지 않는다.
 - 앱의 플러그인 설정 화면과 같은 설정 RPC(`settings.<ID>.read`/`write`)를 Paseo 앱의 Node 런타임과 앱 내부 클라이언트 모듈로 부른다(`scripts/paseo-plugins-settings-client.mjs`). 공개 CLI가 아니어서 Paseo 버전에 따라 깨질 수 있다. 실패하면 저장값을 다시 읽어 실패로 남기므로, 그때는 앱의 플러그인 설정에서 맞추고 스크립트를 고친다. PATH의 `paseo`가 앱 CLI가 아닌 기기(npm 설치)는 맞추지 못하고 알린다.
-- 모델 ID는 `paseo provider models codex`로 확인한다. 그 기기에 provider가 없거나 모델이 사라지면 설정은 저장되지만 제목 생성이 실패한다(Tasks 카드에 오류 표시).
+- 모델 ID는 `paseo provider models <provider>`로 확인한다. 그 기기에 provider가 없거나 모델이 사라지면 설정은 저장되지만 제목 생성이 실패한다(Tasks 카드에 오류 표시).
 
 `paseo` 단계가 하는 일:
 
