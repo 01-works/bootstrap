@@ -1,7 +1,7 @@
 # User Preferences
 
 - Respond in Korean by default.
-- 프로세스 목록은 `ps -axo pid=,ucomm=`로만 본다. 명령 인자에는 다른 세션의 토큰이 있다.
+- 프로세스는 PID와 실행 파일 이름만 출력한다(`ps -axo pid=,ucomm=`, `pgrep -f`는 `-l` 없이). 명령 인자에는 다른 세션의 토큰이 있다.
 
 ## Browser work
 

@@ -155,7 +155,7 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 
 경고가 있으면 사람이 다음 순서로 점검한다. 실행 중인 run이 있으면 끝날 때까지 기다린다.
 
-1. Paseo Verifier 화면이나 `pgrep -fl nightly-local-check`로 실행이 없는지 확인한다.
+1. Paseo Verifier 화면이나 `pgrep -f nightly-local-check`(PID만 출력)로 실행이 없는지 확인한다.
 2. 새 run이 시작되지 않도록 loop를 내린다: `launchctl bootout gui/$(id -u)/local.01-software.verifier-loop`. 내리는 사이 실행이 시작됐을 수 있으므로 프로세스 종료도 다시 확인한다.
 3. [01-software runbook의 termination-unconfirmed 복구 절차](https://github.com/01-office/01-software/blob/dev/docs/runbooks/verifier-machine.md#9-recover-a-termination-unconfirmed-marker)를 확인한다. marker가 있으면 lane·프로세스 종료 확인과 복구 조건을 따른다. 살아 있거나 소유자를 모르는 작업은 정리하지 않는다.
 4. `docker --host "unix://${COLIMA_HOME:-$HOME/.colima}/default/docker.sock" ps`로 남은 `console-<uuid>-*` lane 컨테이너를 확인하고, 종료된 run의 잔여물임을 확인한 이름만 같은 소켓의 `docker rm -f <확인한 컨테이너 이름...>`로 삭제한다.
