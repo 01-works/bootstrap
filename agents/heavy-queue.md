@@ -82,7 +82,7 @@ CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효�
 순서는 **호환 설치 → 호출자 갱신 → 기기별 활성화**다. 자동 갱신은 설치까지만 한다. 아래 명령은 운영 감독자가 전환할 때만 실행한다.
 
 1. 모든 감독 세션·소비자와 신규 제출 중지를 조율한다. `yw-heavy pause`로 새 구현의 신규 등록을 막는다. 이미 등록된 대기자는 계속 진행하고 기존 차례의 중첩 획득은 허용한다. 구버전 프로세스는 pause를 모르므로 제출 자체를 별도로 멈춰야 한다.
-2. `status`와 소유 세션을 대조해 실행·대기자를 drain한다. 끝난 v3 holder·대기자만 남아 있으면 `yw-heavy reclaim`으로 확정 사망 항목만 회수한다(pause 중에도 가능). 생성 중 종료돼 owner가 없거나 0바이트인 lock은 구형식 줄이 없고 기본 60초 유예가 지난 뒤 회수한다. 실제 삭제 시도가 실패하면 코드 1을 반환한다. 조회 실패 등으로 생존을 판단할 수 없거나 no-reclaim 표지가 있으면 보존한다. 이전 2줄 상한 밖에서 polling하던 v2 프로세스, 구형식 shell·Python 구현도 끝났는지 확인한다. 아직 줄을 쓰지 않은 구버전 프로세스는 상태 파일만으로 검출할 수 없다. `pgrep -fl 'yw-heavy|cc-yw-heavy|heavy.sh|R1-heavy'`는 후보 조사용이며 소유자와 확인한다. 살아 있거나 판단 불가한 항목을 지우지 않는다.
+2. `status`와 소유 세션을 대조해 실행·대기자를 drain한다. 끝난 v3 holder·대기자만 남아 있으면 `yw-heavy reclaim`으로 확정 사망 항목만 회수한다(pause 중에도 가능). 생성 중 종료돼 owner가 없거나 0바이트인 lock은 구형식 줄이 없고 기본 60초 유예가 지난 뒤 회수한다. 실제 삭제 시도가 실패하면 코드 1을 반환한다. 조회 실패 등으로 생존을 판단할 수 없거나 no-reclaim 표지가 있으면 보존한다. 이전 2줄 상한 밖에서 polling하던 v2 프로세스, 구형식 shell·Python 구현도 끝났는지 확인한다. 아직 줄을 쓰지 않은 구버전 프로세스는 상태 파일만으로 검출할 수 없다. `pgrep -f 'yw-heavy|cc-yw-heavy|heavy.sh|R1-heavy'`(PID만 출력, 이름은 `ps -o pid=,ucomm= -p <PID>`)는 후보 조사용이며 소유자와 확인한다. 살아 있거나 판단 불가한 항목을 지우지 않는다.
 3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다. v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
 4. `capabilities`·`status`에서 모드를 확인하고 `yw-heavy resume`으로 새 제출을 연다. 두 번의 인계와 이벤트 기록을 확인한다.
 
@@ -159,7 +159,7 @@ yw-heavy status                                              # 읽기 전용
 
 - 줄 상태: `alive`, `unknown`(판단 불가, 보존), `dead:…`(다음 대기자가 회수), `holder 없음`(차례를 얻은 뒤 holder 없이 실행 중, 자동 회수 안 함).
 - 관문이 닫혀 있으면 구버전 대기자가 남아 있다는 뜻이다. 그동안 v2 holder가 끝나면 `release <ID>`로 직접 푼다.
-- `실행 lock: … (owner 없음, N초 전 변경)`: 관문이 열려 있으면 60초 뒤 다음 대기자가 회수한다. 관문이 닫혀 있어 계속 남으면, 구버전 대기자 중 차례를 막 얻은 것이 없는지(`pgrep -fl 'cc-yw-heavy.sh|heavy.sh'`, 그 대기자의 출력) 확인한 뒤 flock 아래에서 지운다:
+- `실행 lock: … (owner 없음, N초 전 변경)`: 관문이 열려 있으면 60초 뒤 다음 대기자가 회수한다. 관문이 닫혀 있어 계속 남으면, 구버전 대기자 중 차례를 막 얻은 것이 없는지(`pgrep -f 'cc-yw-heavy.sh|heavy.sh'`, 그 대기자의 출력) 확인한 뒤 flock 아래에서 지운다:
 
   ```sh
   /usr/bin/lockf -k -t 30 /tmp/yw-heavy-queue.flock /bin/sh -c 'x=/tmp/yw-heavy-check.lock; [ -d "$x" ] && [ ! -s "$x/owner.txt" ] && rm -f "$x/owner.txt" && rmdir "$x"; true'
@@ -193,7 +193,7 @@ yw-heavy status                                              # 읽기 전용
    cat /tmp/yw-heavy-check.lock/owner.txt 2>/dev/null
    test ! -e /tmp/yw-heavy-queue.edit.lock
    cp /tmp/yw-heavy-queue /tmp/yw-heavy-queue.snapshot.$(date +%H%M%S)
-   pgrep -fl 'cc-yw-heavy.sh|heavy.sh'     # 구버전 대기자 목록 기록
+   pgrep -f 'cc-yw-heavy.sh|heavy.sh'      # 구버전 대기자 PID 기록
    ```
 
 2. 설치 단계를 실행한 뒤 확인한다: `cmp <저장소>/scripts/yw-heavy.sh ~/.local/bin/yw-heavy`, `./bootstrap.sh doctor`의 heavy 항목.
@@ -207,7 +207,7 @@ yw-heavy status                                              # 읽기 전용
    ```
 
 6. 확인: `readlink /tmp/cc-yw-heavy.sh`, `bash /tmp/cc-yw-heavy.sh status`, 대기열이 비어 있는지, 편집 lock이 없는지, 구버전 대기자가 새로 생기지 않았는지 확인한다.
-7. 구형식 줄마다 대기자가 살아 있는지 확인한다(`pgrep -fl` 결과의 ID와 대조). 대기자가 없는 고아 줄은 관문을 계속 닫아 두므로 `yw-heavy release <ID>`로 지운 뒤 소유 감독 세션에 알린다. 대기자가 살아 있거나 대조할 수 없으면 지우지 않는다.
+7. 구형식 줄마다 대기자가 살아 있는지 확인한다(`pgrep -f '<ID>' >/dev/null`의 종료 코드로 대조. ID의 정규식 문자는 이스케이프한다. 예: `R1+1` → `'R1\+1'`). 대기자가 없는 고아 줄은 관문을 계속 닫아 두므로 `yw-heavy release <ID>`로 지운 뒤 소유 감독 세션에 알린다. 대기자가 살아 있거나 대조할 수 없으면 지우지 않는다.
 8. `yw-heavy resume`과 호출자 쪽 제출 재개 후 관찰한다. 다음 두 번의 인계에서 release마다 다음 맨 앞 대기자가 차례를 얻는지, 회수 기록에 살아 있는 pid가 없는지 본다.
 
 즉시 롤백하는 경우: `status`·`acquire`·`release`가 종료 코드 1이나 bash 오류를 냄, 정상 release가 아닌데 줄이 사라지거나 순서가 바뀜, 편집 lock이 2분 넘게 남음, 살아 있는 pid(시작 시각 일치)를 회수한 기록, 실행 lock owner와 실제 실행 중인 작업이 다름.
