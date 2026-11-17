@@ -103,7 +103,7 @@ test('chief 순찰·재개: 공통 결정 계약·새 권한 금지·만료 안�
   assert.match(handoff, /같은 lane 폴더[^\n]*`상태: 진행`[^\n]*`감독:`만 후임으로 교체/);
   assert.match(handoff, /이전 감독 ID는 이력/);
   assert.match(handoff, /`상태: 완료`는 누적 목표 완료만/);
-  assert.match(handoff, /사용자 대화는 계약 3번의 기존 승인 또는 새 결정 없이 자동 교체·중단·archive하지 않는다/);
+  assert.match(handoff, /누적 목표 완료 전 사용자 대화는 계약 3번의 기존 승인 또는 새 결정 없이 자동 교체·중단·archive하지 않는다/);
   assert.match(chief, /안전 조건으로 지정된 도구[^\n]*보류하고 보고하며, 보호 수준이 낮은 경로로 바꾸지 않는다/);
   assert.match(chief, /진행 중인 작업자를 직접 재개·중단하거나 lane을 인수하지 않는다/);
   assert.match(chief, /사용자 승인이 필요한 조치는 합의만으로 실행하지 않는다/);
@@ -132,7 +132,7 @@ test('감독 계약: 권한·소유·범위 축소는 닫힌 목록에 두고 �
   for (const required of ['작업자 권한 모드 상향', '분류기 거부 우회']) {
     assert.ok(decisions[3][2].includes(required), `권한 상향 승인 경계 누락: ${required}`);
   }
-  for (const required of ['정체 claim 인수', '풀리지 않은 소유 충돌', '소유 세션 동의를 얻지 못한 종료·정리·detach', '다른 lane detach의 총괄 직접 실행', '사용자 대화 중인 감독의 교체·중단·archive']) {
+  for (const required of ['정체 claim 인수', '풀리지 않은 소유 충돌', '소유 세션 동의를 얻지 못한 종료·정리·detach', '다른 lane detach의 총괄 직접 실행', '사용자 대화 중인 감독의 누적 목표 완료 전의 교체·중단·archive']) {
     assert.ok(decisions[2][2].includes(required), `소유·동의 승인 경계 누락: ${required}`);
   }
   assert.ok(decisions[3][2].includes('고정 핵심 안전 규칙·스킬 정책의 삭제·완화'), '고정 핵심 삭제·완화 승인 경계 누락');
@@ -142,6 +142,8 @@ test('감독 계약: 권한·소유·범위 축소는 닫힌 목록에 두고 �
   assert.match(irreversible, /공유 브랜치·force-push는 다른 lane·사람이 쓰는 브랜치에 한정/);
   assert.match(irreversible, /자기 lane 작업 브랜치 rebase 후 force-push 제외/);
   assert.match(supervisor, /작업자 권한 요청은 `승인` 배열이 비어도 목표 항목·브리프 범위와 기존 승인 안이면 처리하고 그 밖은 계약으로 분류/);
+  assert.match(decisions[2][2], /완료 합의 뒤 정리는 완료 판정 절차를 따른다/);
+  assert.match(supervisor, /단 2~4번 행위는 범위 안이어도 계약으로 분류한다/);
   assert.match(supervisor, /계약에 따른 공유 사본·claim·인계 코멘트는 2번의 공개 코멘트에서 제외/);
   assert.match(supervisor, /모든 관리 작업[^\n]*호스트·브랜치·모든 담당 `\{serverId, agentId\}`/);
   assert.match(supervisor, /커밋·병합·배포·외부 전송은 사용자 요청 범위와 저장소 규칙/);
@@ -165,7 +167,7 @@ test('목표 원장: 고정 JSON 예시와 누적 목표·연기·알 수 없음
   assert.match(record, /빈 항목 목록·형식 누락·오류는 \*\*알 수 없음\*\*/);
   assert.match(record, /철회·범위 변경 전까지 유효/);
   assert.match(record, /사용자 원문이 \*\*저장소 단위·상시 위임\*\*을 명시할 때만[^\n]*_approvals\.md/);
-  assert.match(record, /_approvals\.md[^\n]*원문 요지·출처·기록 시각·기록한 감독 ID·lane·유효\/철회[^\n]*lane 간 재사용/);
+  assert.match(record, /_approvals\.md[^\n]*사용자 원문 그대로·출처·기록 시각·기록한 감독 ID·lane·유효\/철회[^\n]*lane 간 재사용/);
   assert.match(record, /일회성 “이 PR 머지해”는 lane의 `승인`에만/);
   assert.match(record, /철회를 들은 감독이 해당 항목을 철회로 표시/);
   assert.match(record, /재사용 직전 원장을 다시 읽고 다른 lane의 첫 재사용은 `결정함`으로 보고/);
