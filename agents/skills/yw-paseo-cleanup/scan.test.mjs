@@ -141,9 +141,15 @@ test('chief log.md references do not create supervisor scope; tasks.md reference
     writeFileSync(join(target, 'tasks.md'), `감독: claude/fake ${owner} @ srv_fake\n| lane | 44444444 |`);
     assert.ok(!collectSupervisors(dir, []).at(0).agentIds.includes('44444444'), '짧은 ID는 보호 근거가 되지 않으므로 기록은 전체 ID를 써야 한다');
     const successor = '55555555-5555-4555-8555-555555555555', handedGaps = [];
-    writeFileSync(join(target, 'tasks.md'), `감독: claude/fake ${owner} @ srv_fake\n상태: 완료\n후임: ${successor} ~/.local/state/yw-supervisor/${successor}-chief/`);
-    const handed = collectSupervisors(dir, handedGaps).at(0);
-    assert.equal(handedGaps.length, 0, '인계 뒤 옛 기록도 감독 머리말을 남겨 범위 없는 보호 gap을 만들지 않는다'); assert.deepEqual(handed.agentIds.sort(), [owner, successor].sort());
+    for (const block of ['', '\n```json\n{broken\n```']) {
+      writeFileSync(join(target, 'tasks.md'), `감독: claude/fake ${successor} @ srv_fake\n상태: 진행${block}\n이력: ${owner} → ${successor}`);
+      const handed = collectSupervisors(dir, handedGaps).at(0);
+      assert.equal(handedGaps.length, 0, '같은 lane의 인계 기록은 후임 머리말로 소유를 보존한다');
+      assert.deepEqual(handed.ownerIds, [successor]);
+      assert.deepEqual(handed.agentIds.sort(), [owner, successor].sort());
+      const ongoing = classify({ ...structuredClone(base), agents: [agent(owner), agent(successor)], supervisors: [handed] });
+      for (const record of ongoing.agents) assert.ok(record.hold.includes('supervisor_scope'), '인계·기존/깨진 목표 블록만으로 이전 감독이나 후임의 완료를 상속하지 않는다');
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('P1 terminal observation coverage and definitions are distinct from runtime checks', async () => {

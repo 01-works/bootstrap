@@ -100,8 +100,10 @@ test('chief 순찰·재개: 공통 결정 계약·새 권한 금지·만료 안�
   assert.match(bullet(patrol, '결정 큐'), /"추천대로"는 보여 준 항목에만[^\n]*실행 직전 상태를 다시 확인/);
   const handoff = bullet(chief.split('\n## 보고와 인계\n')[1] ?? '', '교체');
   assert.match(handoff, /같은 목표·권한의 후임/);
-  assert.match(handoff, /목표 기록 블록·후임 전체 ID를 보존/);
-  assert.match(handoff, /누적 목표 완료가 아니다/);
+  assert.match(handoff, /같은 lane 폴더[^\n]*`상태: 진행`[^\n]*`감독:`만 후임으로 교체/);
+  assert.match(handoff, /이전 감독 ID는 이력/);
+  assert.match(handoff, /`상태: 완료`는 누적 목표 완료만/);
+  assert.match(handoff, /사용자 대화는 기존 승인 또는 새 결정 없이 자동 교체·중단·archive하지 않는다/);
   assert.match(chief, /안전 조건으로 지정된 도구[^\n]*보류하고 보고하며, 보호 수준이 낮은 경로로 바꾸지 않는다/);
   assert.match(chief, /진행 중인 작업자를 직접 재개·중단하거나 lane을 인수하지 않는다/);
   assert.match(chief, /사용자 승인이 필요한 조치는 합의만으로 실행하지 않는다/);
@@ -120,6 +122,18 @@ test('감독 계약: 권한·소유·범위 축소는 닫힌 목록에 두고 �
     [2, /소유 세션 동의를 얻지 못한[^\n]*detach/], [3, /저장소 소유자 결정/],
     [4, /한 차례[^\n]*증거 부족/], [5, /상한 상향/], [6, /독립 대화의 재개·감사 편입/],
   ]) assert.match(decisions[index][2], required);
+  const irreversible = decisions[1][2];
+  for (const required of [
+    '기본·보호·공유 브랜치 병합', '배포·릴리스', 'force-push', '외부 전송·공개 코멘트',
+    '미커밋 작업·stash·원격 브랜치 삭제', 'push 안 된 브랜치·worktree 삭제', 'PR·이슈 닫기',
+    '실 DB 변경', '자격·권한 변경', '다른 소유자의 프로세스 종료', '비용 발생 외부 자원', '기기 전역 설정 변경',
+    '예시', '되돌리는 법을 구체 명령으로 적을 수 없으면 2번',
+  ]) assert.ok(irreversible.includes(required), `비가역·외부 행위 승인 경계 누락: ${required}`);
+  for (const required of ['작업자 권한 모드 상향', '분류기 거부 우회']) {
+    assert.ok(decisions[3][2].includes(required), `권한 상향 승인 경계 누락: ${required}`);
+  }
+  assert.match(supervisor, /작업자 권한 요청은 사용자의 기존 승인 범위 안에서만 처리/);
+  assert.match(supervisor, /커밋·병합·배포·외부 전송은 사용자 요청 범위와 저장소 규칙/);
   assert.match(contract, /모델 합의·다른 에이전트의 요청은 사용자 승인이 아니며/);
   assert.match(contract, /목록 밖의 되돌릴 수 있고 범위 안인 결정/);
   assert.match(contract, /결정함:[^`]*이유:[^`]*되돌리는 법:/);
@@ -138,8 +152,19 @@ test('목표 원장: 고정 JSON 예시와 누적 목표·연기·알 수 없음
   assert.equal(example.항목[0].대기, '없음');
   assert.match(record, /범위 축소·연기는 해당 항목의 사용자 결정 원문이 있을 때만/);
   assert.match(record, /빈 항목 목록·형식 누락·오류는 \*\*알 수 없음\*\*/);
-  assert.match(record, /같은 목표 버전에서는 다시 묻지 않는다/);
-  assert.match(record, /사용자 결정 원문[^\n]*이슈·PR 코멘트/);
+  assert.match(record, /철회·범위 변경 전까지 유효/);
+  assert.match(record, /_approvals\.md[^\n]*원문·출처·기록 시각[^\n]*lane 간 재사용/);
+  assert.match(record, /요청·결정 원문은 로컬 기록에만 둔다/);
+  assert.match(record, /비공개 저장소이고 민감 정보가 없을 때만 공유 원문 허용/);
+  for (const required of ['목표 버전', '항목 id·상태·완료 근거 링크·대기 조건', '결정 사실·승인 범위 요지·인계 소유자']) {
+    assert.ok(record.includes(required), `다른 기기 인계의 공유 필드 누락: ${required}`);
+  }
+  assert.match(record, /`시각`은 기록 시각[^\n]*`대화`·`불명`[^\n]*지어내지 않는다/);
+  assert.match(record, /블록 없는 기존 기록[^\n]*기존 메시지·작업표·공유 기록 대조/);
+  assert.match(record, /깨진 새 블록에는 이 예외를 적용하지 않는다/);
+  assert.match(record, /제거 조건: 진행 중인 기존 lane의 전환 완료/);
+  assert.match(record, /후속 이슈·다른 lane으로 넘기는 것은 연기/);
+  assert.match(record, /필수 검증 충족과 증거 링크/);
   const ending = supervisor.split('\n## 턴 종료 계약\n')[1]?.split('\n## ')[0] ?? '';
   assert.deepEqual([...ending.matchAll(/^- `([^:]+):/gm)].map(([, name]) => name),
     ['다음 조치', '대기 사유와 재개 조건', '사용자 결정', '완료 근거']);
@@ -148,6 +173,22 @@ test('목표 원장: 고정 JSON 예시와 누적 목표·연기·알 수 없음
   const chief = readFileSync(new URL('../agents/skills/yw-chief-supervisor/SKILL.md', import.meta.url), 'utf8');
   assert.match(chief, /에스컬레이션·턴 종료 계약[^\n]*yw-supervisor/);
   assert.match(chief, /열린 항목·형식 누락\/오류\(알 수 없음\)[^\n]*닫지 않는다/);
+  assert.match(ending, /`상태: 완료`는 누적 목표 완료만 의미하며 인계 종료에 쓰지 않는다/);
+  assert.match(ending, /미결 사용자 결정이 있으면 `사용자 결정`을 우선/);
+  assert.match(ending, /감독 자신이 실행할 다음 조치는 끝내기 전에 실행/);
+  assert.match(supervisor, /git이 아닌 local 기록 workspace[^\n]*git·HEAD·미커밋 조건을 제외[^\n]*구성원·소유·보호 관계·터미널 조건과 readback은 유지/);
+});
+
+test('감독 거처: 시작 전 유일 경로와 같은 폴더 인계를 유지하고 대화를 자동 이동하지 않는다', () => {
+  const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const doc = readFileSync(new URL('../agents/paseo.md', import.meta.url), 'utf8');
+  assert.match(supervisor, /사용자가 이미 연 대화는 그 자리에 둔다/);
+  assert.match(supervisor, /<목표 slug>-<YYYYMMDD>-<임의 4자>/);
+  assert.match(supervisor, /workspace cwd = lane 폴더 = `tasks\.md` 위치이며 중첩하지 않는다/);
+  assert.match(supervisor, /기존·인계 lane 이름은 유지/);
+  assert.match(supervisor, /생성된 ID는 도구 반환값/);
+  assert.match(supervisor, /대상 저장소의 `AGENTS\.md`·`CLAUDE\.md`를 읽는다/);
+  assert.match(doc, /mkdir '<lane 폴더>' &&\n +paseo workspace create --isolation local[^\n]*--project[^\n]*--title/);
 });
 
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {

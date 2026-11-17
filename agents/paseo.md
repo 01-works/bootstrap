@@ -64,13 +64,17 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 총괄 운영 스킬
 
-Paseo에서 Supervisor 프로필로 새 대화를 열고 다음처럼 요청한다.
+새 감독을 시작할 때는 담당 코드 프로젝트의 `projectId`를 확인하고 저장소 밖 기록 폴더에 local workspace를 먼저 만든 뒤, **그 workspace에서** Supervisor 프로필로 대화를 연다. 여러 프로젝트면 주 프로젝트를 쓴다.
 
-> yw-supervisor 스킬로 다음 작업들을 총괄해줘: A 프로젝트의 새 화면, B 프로젝트의 API 수정, C 프로젝트의 회귀 조사. 직접 구현하지 말고 적절한 작업자에게 할당하고 진행·검증·완료를 관리해줘.
+```sh
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor"
+mkdir '<lane 폴더>' &&
+  paseo workspace create --isolation local --path '<lane 폴더>' --project '<코드 projectId>' --title '감독 · <목표>'
+```
 
-프로필 선택만으로 스킬이 실행되지는 않는다. 스킬이 실제 작업 지시를 작업자의 `initialPrompt`에 전달한다. Paseo 도구가 보이지 않으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다. CLI로도 운영할 수 있다.
+> yw-supervisor 스킬로 <목표와 완료 조건>을 총괄해줘. 직접 구현하지 말고 작업자 배정·검증·완료를 관리해줘.
 
-스킬은 여러 사람·기기가 함께 작업한다고 가정한다. 소유·진행·인계의 원장은 이슈·PR이며 다른 기기 상태도 공유 기록으로 판단한다. 새 감독·총괄은 담당 코드 프로젝트의 `projectId` 아래 저장소 밖 `${XDG_STATE_HOME:-$HOME/.local/state}/yw-supervisor/<lane>/`(총괄은 `<lane>-chief/`)의 local workspace에 둔다. 제목은 `감독 · <목표>`, 목표 하나 = 감독 하나 = workspace 하나다. 여러 프로젝트면 주 프로젝트를 쓰며 기존 감독은 강제로 옮기지 않는다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다. `tasks.md`의 목표·승인 원문·항목별 상태·대기, 닫힌 에스컬레이션과 턴 종료 형식은 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 실행 중인 작업을 반복 조회하거나 요청하지 않은 상시 감시를 만들지 않는다.
+`<lane 폴더>`는 위 경로 바로 아래 `<목표 slug>-<YYYYMMDD>-<임의 4자>`(총괄은 `-chief` 추가)로 정한다. 충돌 시 접미사를 새로 뽑는다. 그 폴더에 `tasks.md`를 두고 대화 시작 후 `감독:`에 ID를 쓴다. 이미 연 사용자 대화는 이동하지 않는다. 기록·인계·승인·종료는 [감독 계약](skills/yw-supervisor/SKILL.md#시작과-기록)을 따른다. 목표 하나 = 소유 감독 하나 = workspace 하나다. 작업자·리뷰어는 코드 worktree의 `workspaceId`를 명시한다. 프로필만 골라도 스킬이 실행되지는 않는다. 도구가 없으면 `./bootstrap.sh --only paseo` 후 새 에이전트를 연다.
 
 여러 감독 세션을 함께 감사할 때는 [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md)를 쓴다. 감독 1개 운영은 `yw-supervisor`가 맡는다.
 
