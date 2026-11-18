@@ -192,7 +192,7 @@ test('감독 위임: 소유·지정 저장소의 기본 브랜치에 병합된 �
     assert.ok(delegation.includes(required), `위임 경계 누락: ${required}`);
   }
   const turnEnd = skill.split('\n## 턴 종료 계약\n')[1]?.split('\n## ')[0] ?? '';
-  assert.match(turnEnd, /`supervision_report`[^\n]*그 도구로 추가로 남긴다\(없으면 기존 방식\)/);
-  assert.match(turnEnd, /매 턴은 상태·대기에 맞는 다음/);
-  assert.match(turnEnd, /완료 근거: <요청별 증거·사용자 연기 결정·공유 기록>/);
+  assert.match(skill, /대화 제목을 `감독: <목표>`로 바꾼다\(`update_agent`의 `name`\)/);
+  assert.match(turnEnd, /응답 첫 줄에 지금 상태\(무엇을 하는 중인지·무엇을 기다리는지·사용자 결정이 필요한지·완료인지\)를 쓴다/);
+  assert.match(turnEnd, /완료를 말할 때는 요청별 증거·사용자 연기 결정·공유 기록을 댄다/);
 });
