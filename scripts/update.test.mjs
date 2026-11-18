@@ -27,7 +27,7 @@ function fixture(t) {
     XDG_CONFIG_HOME: join(root, 'config'), PATH: `${bin}:${process.env.PATH}`, MOCK: mock, DRY_RUN: '0', ASSUME_YES: '0',
     // lib.sh가 Homebrew 경로를 대역보다 앞에 넣지 않게 한다. Homebrew에 설치된 실제 CLI를 부르면 안 된다.
     BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'), BOOTSTRAP_CLI_UPDATE_TIMEOUT: '3' };
-  for (const key of ['BOOTSTRAP_ROOT', 'BOOTSTRAP_LOCKED', 'BOOTSTRAP_UNATTENDED', 'BOOTSTRAP_RESULTS']) delete env[key];
+  for (const key of ['BOOTSTRAP_ROOT', 'BOOTSTRAP_LOCKED', 'BOOTSTRAP_UNATTENDED', 'BOOTSTRAP_RESULTS', 'BOOTSTRAP_CLIS_CHECKED']) delete env[key];
   const git = (cwd, ...args) => {
     const result = spawnSync('git', args, { cwd, env, encoding: 'utf8' });
     assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
@@ -683,4 +683,31 @@ test('멈춘 에이전트 CLI 업데이트는 시간 제한 뒤 끝내고 저장
   const pid = Number(readFileSync(join(f.mock, 'hang-pid'), 'utf8'));
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, '멈춘 업데이트 프로세스를 남기지 않음');
   assert.deepEqual(readdirSync(f.state).filter(name => name.startsWith('cli-update.')), ['cli-update.keep'], '자기 임시 파일만 지움');
+});
+
+test('새 커밋을 받아 다시 시작해도 에이전트 CLI는 한 번만, 단계보다 먼저 올린다', t => {
+  const f = fixture(t);
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  f.cli();
+
+  // 터미널: 받기 전에 올렸으면 다시 시작한 실행은 건너뛴다.
+  f.push({ 'home/zsh/.zshrc': '# changed\n' });
+  let result = f.update();
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.deepEqual(f.calls(), ['dotfiles 0']);
+
+  // 이 함수가 없던 update.sh가 받아서 다시 시작한 경우: 다시 시작한 실행이 단계보다 먼저 올린다.
+  rmSync(join(f.state, 'cli-updated'));
+  f.push({ 'home/zsh/.zshrc': '# again\n' });
+  const env = { ...process.env, ...gitEnv, HOME: join(f.root, 'home'), XDG_STATE_HOME: join(f.root, 'state'),
+    XDG_CONFIG_HOME: join(f.root, 'config'), PATH: `${join(f.root, 'bin')}:${process.env.PATH}`, MOCK: f.mock,
+    DRY_RUN: '0', ASSUME_YES: '0', BOOTSTRAP_BREW_PREFIX: join(f.root, 'no-brew'), BOOTSTRAP_UPDATE_REEXEC: '1' };
+  for (const key of ['BOOTSTRAP_ROOT', 'BOOTSTRAP_LOCKED', 'BOOTSTRAP_UNATTENDED', 'BOOTSTRAP_RESULTS', 'BOOTSTRAP_CLIS_CHECKED']) delete env[key];
+  f.git(f.work, 'merge', '-q', '--ff-only', '@{u}');
+  result = spawnSync('/bin/bash', [join(f.work, 'scripts/update.sh'), '--auto'], { env, encoding: 'utf8' });
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.deepEqual(f.calls(), ['dotfiles 1']);
 });

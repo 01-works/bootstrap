@@ -8,7 +8,7 @@
 #      터미널에서 ./bootstrap.sh update를 실행하면 대기로 남은 단계까지 다시 실행한다.
 #   4. 결과를 상태 파일에 남기고, --auto는 결과가 바뀔 때만 알린다 (macOS 알림, 설정했으면 휴대폰).
 #   5. 실패해도 적용 기록은 앞으로 옮기고, 실패한 단계만 이어서 다시 시도한다 (같은 커밋은 한 시간 뒤).
-#   6. 저장소와 별개로 에이전트 CLI(Claude Code·Codex)를 올린다. --auto는 하루에 한 번, 터미널에서는 매번 확인한다.
+#   6. 저장소와 별개로 에이전트 CLI(Claude Code·Codex)를 단계보다 먼저 올린다. --auto는 하루에 한 번, 터미널에서는 매번 확인한다.
 # pull로 이 파일이 바뀌어도 읽던 내용이 섞이지 않도록 전체를 함수로 정의한 뒤 맨 끝에서 부른다.
 
 BOOTSTRAP_ROOT="${BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -166,8 +166,10 @@ limited() {
 }
 
 update_clis() {
-  # 받은 커밋의 update.sh로 다시 시작했으면 이미 확인했다.
-  [[ "${BOOTSTRAP_UPDATE_REEXEC:-0}" != 1 ]] || return 0
+  # 받은 커밋의 update.sh로 다시 시작하기 전에 이미 확인했으면 건너뛴다. 다시 시작했다는 것만으로 건너뛰면 안 된다.
+  # 이 함수가 없던 update.sh가 새 커밋을 받아 다시 시작할 때는 확인한 적이 없다. 그 실행이 바로 이어서
+  # 새 CLI가 필요한 프로필(paseo-profiles)을 적용할 수 있으므로 단계보다 먼저 올린다.
+  [[ "${BOOTSTRAP_CLIS_CHECKED:-0}" != 1 ]] || return 0
   if [[ "$AUTO" == 1 && -n "$(find "$STATE/cli-updated" -mmin -$((CLI_UPDATE_HOURS * 60)) 2>/dev/null)" ]]; then
     return 0
   fi
@@ -204,6 +206,7 @@ update_clis() {
   done
   [[ -z "$out" ]] || rm -f "$out"
   [[ "$DRY_RUN" == 1 ]] || touch "$STATE/cli-updated"
+  export BOOTSTRAP_CLIS_CHECKED=1
 }
 
 main() {
