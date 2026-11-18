@@ -2,7 +2,7 @@
 
 ## 설치
 
-`agents` 단계가 공식 설치 스크립트로 설치한다. `~/.local/bin/claude`에 설치되고 스스로 업데이트된다. Homebrew cask(`claude-code`)는 자동 업데이트가 안 되고 최신보다 한 주쯤 늦어서 쓰지 않는다 ([TOOLS.md](../TOOLS.md)).
+`agents` 단계가 공식 설치 스크립트로 설치한다. `~/.local/bin/claude`에 설치되고 스스로 업데이트된다. 자체 업데이트가 늦을 수 있어 Codex와 함께 자동 갱신이 하루에 한 번 `claude update`도 실행한다 ([변경 전파](../README.md#변경-전파)). Homebrew cask(`claude-code`)는 자동 업데이트가 안 되고 최신보다 한 주쯤 늦어서 쓰지 않는다 ([TOOLS.md](../TOOLS.md)).
 
 설치 상태 점검: `claude doctor`
 

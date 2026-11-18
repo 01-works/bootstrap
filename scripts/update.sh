@@ -8,6 +8,7 @@
 #      터미널에서 ./bootstrap.sh update를 실행하면 대기로 남은 단계까지 다시 실행한다.
 #   4. 결과를 상태 파일에 남기고, --auto는 결과가 바뀔 때만 알린다 (macOS 알림, 설정했으면 휴대폰).
 #   5. 실패해도 적용 기록은 앞으로 옮기고, 실패한 단계만 이어서 다시 시도한다 (같은 커밋은 한 시간 뒤).
+#   6. 저장소와 별개로 에이전트 CLI(Claude Code·Codex)를 올린다. --auto는 하루에 한 번, 터미널에서는 매번 확인한다.
 # pull로 이 파일이 바뀌어도 읽던 내용이 섞이지 않도록 전체를 함수로 정의한 뒤 맨 끝에서 부른다.
 
 BOOTSTRAP_ROOT="${BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -127,6 +128,40 @@ header() {
   printf '\n[%s]\n' "$(date '+%F %T')"
 }
 
+# 에이전트 CLI를 공식 업데이트 명령으로 올린다. 공식 설치 스크립트의 자체 업데이트는 CLI를 직접 실행할 때 돌아서,
+# Paseo·exec로만 쓰는 기기에서는 오래 멈춰 있을 수 있다. 새 모델은 최신 CLI에서만 열리기도 한다 (agents/codex.md).
+# 새 버전은 따로 설치하고 링크만 바꾸므로 실행 중인 세션은 그대로 둔다. 실패해도 저장소 반영은 계속하고 기록만 남긴다.
+CLI_UPDATE_HOURS=24
+update_clis() {
+  # 받은 커밋의 update.sh로 다시 시작했으면 이미 확인했다.
+  [[ "${BOOTSTRAP_UPDATE_REEXEC:-0}" != 1 ]] || return 0
+  if [[ "$AUTO" == 1 && -n "$(find "$STATE/cli-updated" -mmin -$((CLI_UPDATE_HOURS * 60)) 2>/dev/null)" ]]; then
+    return 0
+  fi
+  local cli before after out
+  for cli in claude codex; do
+    has "$cli" || continue
+    if [[ "$DRY_RUN" == 1 ]]; then
+      info "[dry-run] $cli update"
+      continue
+    fi
+    before="$("$cli" --version 2>/dev/null | head -1)"
+    if out="$("$cli" update </dev/null 2>&1)"; then
+      after="$("$cli" --version 2>/dev/null | head -1)"
+      if [[ "$after" != "$before" ]]; then
+        header
+        info "$cli 업데이트: $before → $after"
+      elif [[ "$AUTO" != 1 ]]; then
+        ok "$cli 최신 ($after)"
+      fi
+    else
+      header
+      warn "$cli update 실패: $(printf '%s\n' "$out" | tail -1)"
+    fi
+  done
+  [[ "$DRY_RUN" == 1 ]] || touch "$STATE/cli-updated"
+}
+
 main() {
   set -uo pipefail
   # shellcheck source=scripts/lib.sh
@@ -177,6 +212,8 @@ main() {
     return 1
   fi
   [[ "$DRY_RUN" == 1 ]] || touch "$STATE/checked"
+  # 저장소 상태(보류 등)와 관계없이 올린다. 네트워크가 있을 때만 여기까지 온다.
+  update_clis
 
   branch="$(git_ symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
   upstream="$(git_ rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
