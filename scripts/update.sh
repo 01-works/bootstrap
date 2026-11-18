@@ -132,22 +132,51 @@ header() {
 # Paseo·exec로만 쓰는 기기에서는 오래 멈춰 있을 수 있다. 새 모델은 최신 CLI에서만 열리기도 한다 (agents/codex.md).
 # 새 버전은 따로 설치하고 링크만 바꾸므로 실행 중인 세션은 그대로 둔다. 실패해도 저장소 반영은 계속하고 기록만 남긴다.
 CLI_UPDATE_HOURS=24
+# 한 CLI를 올리는 데 쓰는 최대 시간(초). 멈추면 잠금을 계속 잡아 저장소 반영까지 막히므로 끝내고 넘어간다.
+CLI_UPDATE_TIMEOUT="${BOOTSTRAP_CLI_UPDATE_TIMEOUT:-600}"
+
+# 시간 제한 실행: limited <초> <출력 파일> <명령...>. 넘기면 끝내고 124를 돌려준다.
+# macOS 기본 환경에는 timeout 명령이 없어 감시 프로세스로 대신한다. 출력은 파일로 받는다.
+# 명령 치환으로 받으면 끝내지 못한 자식 프로세스가 출력을 열어 둔 동안 기다리게 된다.
+limited() {
+  local seconds="$1" out="$2" pid watcher st
+  shift 2
+  "$@" </dev/null >"$out" 2>&1 &
+  pid=$!
+  ( sleep "$seconds"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  watcher=$!
+  wait "$pid" 2>/dev/null  # 시간 초과로 끝낸 작업의 "Terminated" 알림을 기록에 남기지 않는다
+  st=$?
+  if kill -0 "$watcher" 2>/dev/null; then
+    pkill -P "$watcher" 2>/dev/null
+    kill "$watcher" 2>/dev/null
+    wait "$watcher" 2>/dev/null
+  else
+    st=124
+  fi
+  return "$st"
+}
+
 update_clis() {
   # 받은 커밋의 update.sh로 다시 시작했으면 이미 확인했다.
   [[ "${BOOTSTRAP_UPDATE_REEXEC:-0}" != 1 ]] || return 0
   if [[ "$AUTO" == 1 && -n "$(find "$STATE/cli-updated" -mmin -$((CLI_UPDATE_HOURS * 60)) 2>/dev/null)" ]]; then
     return 0
   fi
-  local cli before after out
+  local cli before after st out="$STATE/cli-update.out"
   for cli in claude codex; do
     has "$cli" || continue
     if [[ "$DRY_RUN" == 1 ]]; then
       info "[dry-run] $cli update"
       continue
     fi
-    before="$("$cli" --version 2>/dev/null | head -1)"
-    if out="$("$cli" update </dev/null 2>&1)"; then
-      after="$("$cli" --version 2>/dev/null | head -1)"
+    limited 30 "$out" "$cli" --version
+    before="$(head -1 "$out")"
+    limited "$CLI_UPDATE_TIMEOUT" "$out" "$cli" update
+    st=$?
+    if [[ "$st" == 0 ]]; then
+      limited 30 "$out" "$cli" --version
+      after="$(head -1 "$out")"
       if [[ "$after" != "$before" ]]; then
         header
         info "$cli 업데이트: $before → $after"
@@ -156,9 +185,14 @@ update_clis() {
       fi
     else
       header
-      warn "$cli update 실패: $(printf '%s\n' "$out" | tail -1)"
+      if [[ "$st" == 124 ]]; then
+        warn "$cli update 시간 초과(${CLI_UPDATE_TIMEOUT}초): 끝내고 넘어갑니다"
+      else
+        warn "$cli update 실패: $(tail -1 "$out")"
+      fi
     fi
   done
+  rm -f "$out"
   [[ "$DRY_RUN" == 1 ]] || touch "$STATE/cli-updated"
 }
 

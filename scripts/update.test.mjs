@@ -24,7 +24,9 @@ function fixture(t) {
   const mock = join(root, 'mock'), bin = join(root, 'bin'), state = join(root, 'state/bootstrap/update');
   for (const dir of [seed, mock, bin]) mkdirSync(dir, { recursive: true });
   const env = { ...process.env, ...gitEnv, HOME: join(root, 'home'), XDG_STATE_HOME: join(root, 'state'),
-    XDG_CONFIG_HOME: join(root, 'config'), PATH: `${bin}:${process.env.PATH}`, MOCK: mock, DRY_RUN: '0', ASSUME_YES: '0' };
+    XDG_CONFIG_HOME: join(root, 'config'), PATH: `${bin}:${process.env.PATH}`, MOCK: mock, DRY_RUN: '0', ASSUME_YES: '0',
+    // lib.sh가 Homebrew 경로를 대역보다 앞에 넣지 않게 한다. Homebrew에 설치된 실제 CLI를 부르면 안 된다.
+    BOOTSTRAP_BREW_PREFIX: join(root, 'no-brew'), BOOTSTRAP_CLI_UPDATE_TIMEOUT: '3' };
   for (const key of ['BOOTSTRAP_ROOT', 'BOOTSTRAP_LOCKED', 'BOOTSTRAP_UNATTENDED', 'BOOTSTRAP_RESULTS']) delete env[key];
   const git = (cwd, ...args) => {
     const result = spawnSync('git', args, { cwd, env, encoding: 'utf8' });
@@ -43,6 +45,7 @@ case "$1" in
   --version) cat "$MOCK/version-${name}" 2>/dev/null || echo '${name} 1.0' ;;
   update)
     printf '%s\\n' '${name} update' >> "$MOCK/cli"
+    if [ -f "$MOCK/hang-${name}" ]; then echo $$ > "$MOCK/hang-pid"; exec sleep 60; fi
     code="$(cat "$MOCK/exit-cli-${name}" 2>/dev/null || echo 0)"
     if [ "$code" != 0 ]; then echo 'download failed'; exit "$code"; fi
     if [ -f "$MOCK/next-${name}" ]; then mv "$MOCK/next-${name}" "$MOCK/version-${name}"; fi ;;
@@ -662,4 +665,19 @@ test('에이전트 CLI 업데이트가 실패해도 기록만 남기고 저장�
   assert.equal(result.status, 0, output(result));
   assert.equal(f.status().result, 'held');
   assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+});
+
+test('멈춘 에이전트 CLI 업데이트는 시간 제한 뒤 끝내고 저장소 반영을 계속한다', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.mock, 'hang-claude'), '');
+  const started = Date.now();
+  const result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.ok(Date.now() - started < 30e3, '시간 제한 안에 끝남');
+  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.match(result.stderr, /claude update 시간 초과\(3초\)/);
+  assert.equal(f.status().result, 'ok');
+  assert.equal(f.calls().length, 5);
+  const pid = Number(readFileSync(join(f.mock, 'hang-pid'), 'utf8'));
+  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, '멈춘 업데이트 프로세스를 남기지 않음');
 });
