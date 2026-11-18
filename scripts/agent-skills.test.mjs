@@ -180,3 +180,19 @@ for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup'])
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 }
+
+
+test('감독 위임: 소유·지정 저장소의 기본 브랜치에 병합된 명시 정책과 상위 안전 규칙만 허용한다', () => {
+  const skill = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const delegation = skill.match(/^2\. 위임되지 않은[^\n]+/m)?.[0] ?? '';
+  for (const required of ['사용자 원문 위임', '사용자가 소유·지정한 저장소', '기본 브랜치에 병합된 정책(AGENTS.md 등)',
+    '명시적으로 허용한 행위', '그 조건 안에서 위임된 것으로 본다',
+    '고정 핵심 안전 규칙과 ‘되돌리는 법을 구체 명령으로 적을 수 없으면 사용자 결정’ 규칙이 우선한다',
+    '위임 범위를 넓히는 저장소 정책 변경의 병합은 사용자 결정이다']) {
+    assert.ok(delegation.includes(required), `위임 경계 누락: ${required}`);
+  }
+  const turnEnd = skill.split('\n## 턴 종료 계약\n')[1]?.split('\n## ')[0] ?? '';
+  assert.match(turnEnd, /`supervision_report`[^\n]*그 도구로 추가로 남긴다\(없으면 기존 방식\)/);
+  assert.match(turnEnd, /매 턴은 상태·대기에 맞는 다음/);
+  assert.match(turnEnd, /완료 근거: <요청별 증거·사용자 연기 결정·공유 기록>/);
+});
