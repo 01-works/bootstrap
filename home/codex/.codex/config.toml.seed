@@ -2,7 +2,7 @@
 # Codex가 이 파일에 신뢰 폴더([projects.*]), 플러그인, 앱 내부 경로를 계속 써넣기 때문에 링크하지 않는다.
 # 여기 있는 값을 바꿨으면 각 기기의 ~/.codex/config.toml에도 직접 반영할 것.
 
-model = "gpt-6.1-sol"
+model = "gpt-6.2-sol"
 model_context_window = 250000
 model_auto_compact_token_limit = 200000
 model_reasoning_effort = "medium"
