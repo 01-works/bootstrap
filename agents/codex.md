@@ -2,7 +2,7 @@
 
 ## 설치
 
-`agents` 단계가 공식 문서의 기본 설치 스크립트로 설치한다. `~/.local/bin/codex`에 설치되고 스스로 업데이트된다. Claude Code와 같은 방식이다. npm 전역 설치는 Node 버전별로 따로 깔려서 fnm 기본 버전을 바꾸면 사라지고, Homebrew cask는 `brew upgrade`를 해야 올라가서 쓰지 않는다 ([TOOLS.md](../TOOLS.md)).
+`agents` 단계가 공식 문서의 기본 설치 스크립트로 설치한다. `~/.local/bin/codex`에 설치된다. Claude Code와 같은 방식이다. 자체 업데이트는 CLI를 직접 실행할 때만 돌아서 Paseo·`codex exec`로만 쓰는 기기에서는 한 달 넘게 멈춘 적이 있다. 새 모델은 최신 CLI에서만 열리기도 한다(구버전은 "not supported when using Codex with a ChatGPT account"로 거절된다). 그래서 자동 갱신이 하루에 한 번 `codex update`를 실행한다 ([변경 전파](../README.md#변경-전파)). npm 전역 설치는 Node 버전별로 따로 깔려서 fnm 기본 버전을 바꾸면 사라지고, Homebrew cask는 `brew upgrade`를 해야 올라가서 쓰지 않는다 ([TOOLS.md](../TOOLS.md)).
 
 npm이나 Homebrew로 설치한 Codex가 이미 있으면, 설치 스크립트가 `~/.zprofile`에 `# >>> Codex installer >>>` PATH 줄을 추가한다. `.zprofile`은 이 저장소 파일에 링크되므로, 기존 설치를 지운 뒤 그 줄은 빼면 된다(우리 `.zprofile`에 `~/.local/bin`이 이미 있다).
 

@@ -94,7 +94,7 @@ flowchart LR
 ## 설치 방법을 고르는 기준
 
 1. **공식 문서에 있는 방법만 쓴다.** 비공식 경로로 설치한 것은 중복되거나 흔적이 남기 쉽다.
-2. 그중 **스스로 업데이트되는 방법을 우선한다.** Claude Code, Codex CLI가 여기에 해당한다(공식 설치 스크립트).
+2. 그중 **스스로 업데이트되는 방법을 우선한다.** Claude Code, Codex CLI가 여기에 해당한다(공식 설치 스크립트). 자체 업데이트가 늦거나 돌지 않을 때가 있어 자동 갱신이 하루에 한 번 공식 업데이트 명령도 실행한다.
 3. 업데이트 방식에 차이가 없으면 **Homebrew**를 쓴다. 목록 하나(Brewfile)로 재현되고 지우기도 쉽다. 앱도 Homebrew cask로 설치한다. cask는 개발사가 올린 같은 파일을 받아 설치만 자동으로 해 주고, 설치 후에는 앱이 스스로 업데이트한다.
 4. **Node는 버전 관리 도구(fnm)로** 설치한다. 프로젝트마다 다른 버전을 쓰기 때문이다.
 
@@ -134,9 +134,9 @@ flowchart LR
 
 | 도구 | 우리 설치 방법 | 공식 문서 | 비고 | 확인일 |
 |---|---|---|---|---|
-| Claude Code | `agents` 단계 (공식 설치 스크립트) | [code.claude.com](https://code.claude.com/docs/en/setup) | 공식 권장. 스스로 업데이트된다 | 2026-10-07 |
+| Claude Code | `agents` 단계 (공식 설치 스크립트) | [code.claude.com](https://code.claude.com/docs/en/setup) | 공식 권장. 스스로 업데이트되고, 자동 갱신이 하루에 한 번 `claude update`도 실행한다 | 2026-11-18 |
 | Claude 앱 | `cask "claude"` | [claude.com](https://claude.com/download) | | 2026-10-07 |
-| Codex CLI | `agents` 단계 (공식 설치 스크립트) | [learn.chatgpt.com](https://learn.chatgpt.com/docs/codex/cli) | 공식 기본 방법. `~/.local/bin`에 설치되고 스스로 업데이트된다 | 2026-10-07 |
+| Codex CLI | `agents` 단계 (공식 설치 스크립트) | [learn.chatgpt.com](https://learn.chatgpt.com/docs/codex/cli) | 공식 기본 방법. `~/.local/bin`에 설치된다. 자체 업데이트는 직접 실행할 때만 돌아서 자동 갱신이 하루에 한 번 `codex update`를 실행한다 ([agents/codex.md](agents/codex.md)) | 2026-11-18 |
 | ChatGPT 앱 | `cask "chatgpt"` | [learn.chatgpt.com](https://learn.chatgpt.com/docs/app) | 2026-07부터 Codex 앱이 ChatGPT 앱에 합쳐졌다 ([changelog](https://learn.chatgpt.com/docs/changelog)). 업데이트가 잦아 Homebrew가 OpenAI보다 먼저 새 버전으로 올라가 설치가 실패할 때가 있다. 하루쯤 뒤 다시 하거나 공식 페이지에서 받는다 | 2026-10-07 |
 | Paseo | `cask "paseo"` | [paseo.sh/download](https://paseo.sh/download), [paseo.sh/docs](https://paseo.sh/docs) | cask가 앱 안의 `paseo` CLI도 연결한다 | 2026-10-07 |
 
