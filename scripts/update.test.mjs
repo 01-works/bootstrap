@@ -664,6 +664,8 @@ test('에이전트 CLI 업데이트가 실패해도 기록만 남기고 저장�
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.cli(), [], '한 시간 안에는 다시 시도하지 않음');
   const stamp = join(f.state, 'cli-updated');
+  const age = (Date.now() - lstatSync(stamp).mtimeMs) / 3600e3;
+  assert.ok(age > 22.9 && age < 23.1, `실패하면 확인 시각을 23시간 앞당겨 기록함: ${age}`);
   const hourAgo = (Date.now() - 23 * 3600e3 - 61 * 60e3) / 1000;
   utimesSync(stamp, hourAgo, hourAgo);
   assert.equal(f.update('--auto').status, 0);

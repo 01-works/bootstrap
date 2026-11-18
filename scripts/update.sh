@@ -210,7 +210,8 @@ update_clis() {
     touch "$STATE/cli-updated"
     # 실패했으면 하루가 아니라 한 시간 뒤에 다시 시도한다. 확인 시각을 23시간 앞당겨 기록한다.
     # 구버전 CLI로는 새 모델을 쓰는 프로필이 실패하므로 오래 두지 않는다.
-    [[ "$failed" == 0 ]] || touch -t "$(date -v-$((CLI_UPDATE_HOURS - 1))H '+%Y%m%d%H%M.%S')" "$STATE/cli-updated"
+    # 현지 시각 문자열 대신 상대 조정(-A)을 쓴다. 일광절약시간이 끝나는 구간에서도 어긋나지 않는다.
+    [[ "$failed" == 0 ]] || touch -A "-$((CLI_UPDATE_HOURS - 1))0000" "$STATE/cli-updated"
   fi
   export BOOTSTRAP_CLIS_CHECKED=1
 }
