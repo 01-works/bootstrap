@@ -659,6 +659,18 @@ test('에이전트 CLI 업데이트가 실패해도 기록만 남기고 저장�
   assert.equal(f.status().result, 'ok');
   assert.equal(f.calls().length, 5);
 
+  // 실패했으면 하루가 아니라 한 시간 뒤에 다시 시도한다.
+  f.exitWith('cli-claude', null);
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.cli(), [], '한 시간 안에는 다시 시도하지 않음');
+  const stamp = join(f.state, 'cli-updated');
+  const hourAgo = (Date.now() - 23 * 3600e3 - 61 * 60e3) / 1000;
+  utimesSync(stamp, hourAgo, hourAgo);
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.cli(), ['claude update', 'codex update'], '한 시간 뒤 다시 시도');
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.cli(), [], '성공하면 다시 하루 간격');
+
   f.git(f.work, 'switch', '-q', '-c', 'side');
   rmSync(join(f.state, 'cli-updated'));
   result = f.update('--auto');

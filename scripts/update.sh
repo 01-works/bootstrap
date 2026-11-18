@@ -173,7 +173,7 @@ update_clis() {
   if [[ "$AUTO" == 1 && -n "$(find "$STATE/cli-updated" -mmin -$((CLI_UPDATE_HOURS * 60)) 2>/dev/null)" ]]; then
     return 0
   fi
-  local cli before after st out=''
+  local cli before after st out='' failed=0
   for cli in claude codex; do
     has "$cli" || continue
     if [[ "$DRY_RUN" == 1 ]]; then
@@ -196,6 +196,7 @@ update_clis() {
         ok "$cli 최신 ($after)"
       fi
     else
+      failed=1
       header
       if [[ "$st" == 124 ]]; then
         warn "$cli update 시간 초과(${CLI_UPDATE_TIMEOUT}초): 끝내고 넘어갑니다"
@@ -205,7 +206,12 @@ update_clis() {
     fi
   done
   [[ -z "$out" ]] || rm -f "$out"
-  [[ "$DRY_RUN" == 1 ]] || touch "$STATE/cli-updated"
+  if [[ "$DRY_RUN" != 1 ]]; then
+    touch "$STATE/cli-updated"
+    # 실패했으면 하루가 아니라 한 시간 뒤에 다시 시도한다. 확인 시각을 23시간 앞당겨 기록한다.
+    # 구버전 CLI로는 새 모델을 쓰는 프로필이 실패하므로 오래 두지 않는다.
+    [[ "$failed" == 0 ]] || touch -t "$(date -v-$((CLI_UPDATE_HOURS - 1))H '+%Y%m%d%H%M.%S')" "$STATE/cli-updated"
+  fi
   export BOOTSTRAP_CLIS_CHECKED=1
 }
 
