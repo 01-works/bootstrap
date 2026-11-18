@@ -45,7 +45,7 @@ case "$1" in
   --version) cat "$MOCK/version-${name}" 2>/dev/null || echo '${name} 1.0' ;;
   update)
     printf '%s\\n' '${name} update' >> "$MOCK/cli"
-    if [ -f "$MOCK/hang-${name}" ]; then echo $$ > "$MOCK/hang-pid"; exec sleep 60; fi
+    if [ -f "$MOCK/hang-${name}" ]; then echo $$ > "$MOCK/hang-pid"; trap '' TERM; while :; do sleep 1; done; fi
     code="$(cat "$MOCK/exit-cli-${name}" 2>/dev/null || echo 0)"
     if [ "$code" != 0 ]; then echo 'download failed'; exit "$code"; fi
     if [ -f "$MOCK/next-${name}" ]; then mv "$MOCK/next-${name}" "$MOCK/version-${name}"; fi ;;
@@ -670,14 +670,17 @@ test('에이전트 CLI 업데이트가 실패해도 기록만 남기고 저장�
 test('멈춘 에이전트 CLI 업데이트는 시간 제한 뒤 끝내고 저장소 반영을 계속한다', t => {
   const f = fixture(t);
   writeFileSync(join(f.mock, 'hang-claude'), '');
+  mkdirSync(f.state, { recursive: true });
+  writeFileSync(join(f.state, 'cli-update.keep'), 'other run');
   const started = Date.now();
   const result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
-  assert.ok(Date.now() - started < 30e3, '시간 제한 안에 끝남');
+  assert.ok(Date.now() - started < 30e3, 'TERM을 무시해도 시간 제한 안에 끝남');
   assert.deepEqual(f.cli(), ['claude update', 'codex update']);
   assert.match(result.stderr, /claude update 시간 초과\(3초\)/);
   assert.equal(f.status().result, 'ok');
   assert.equal(f.calls().length, 5);
   const pid = Number(readFileSync(join(f.mock, 'hang-pid'), 'utf8'));
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, '멈춘 업데이트 프로세스를 남기지 않음');
+  assert.deepEqual(readdirSync(f.state).filter(name => name.startsWith('cli-update.')), ['cli-update.keep'], '자기 임시 파일만 지움');
 });

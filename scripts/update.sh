@@ -138,20 +138,28 @@ CLI_UPDATE_TIMEOUT="${BOOTSTRAP_CLI_UPDATE_TIMEOUT:-600}"
 # 시간 제한 실행: limited <초> <출력 파일> <명령...>. 넘기면 끝내고 124를 돌려준다.
 # macOS 기본 환경에는 timeout 명령이 없어 감시 프로세스로 대신한다. 출력은 파일로 받는다.
 # 명령 치환으로 받으면 끝내지 못한 자식 프로세스가 출력을 열어 둔 동안 기다리게 된다.
+# 감시 프로세스는 끝내기 전에 표시 파일을 남긴다. 종료 코드나 감시 프로세스 생존 여부로 판정하면 경합이 생긴다.
+# TERM을 무시하면 5초 뒤 KILL로 끝낸다.
 limited() {
-  local seconds="$1" out="$2" pid watcher st
+  local seconds="$1" out="$2" flag="$2.timeout" pid watcher st
   shift 2
+  rm -f "$flag"
   "$@" </dev/null >"$out" 2>&1 &
   pid=$!
-  ( sleep "$seconds"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  # 감시 프로세스는 TERM을 받으면 기다리던 sleep과 함께 바로 끝난다. sleep만 끝내면 다음 줄로 넘어가 표시를 남긴다.
+  # shellcheck disable=SC2016
+  ( trap 'kill $! 2>/dev/null; exit 0' TERM
+    sleep "$seconds" & wait $!
+    : >"$flag"; kill "$pid"
+    sleep 5 & wait $!
+    kill -9 "$pid" ) >/dev/null 2>&1 &
   watcher=$!
   wait "$pid" 2>/dev/null  # 시간 초과로 끝낸 작업의 "Terminated" 알림을 기록에 남기지 않는다
   st=$?
-  if kill -0 "$watcher" 2>/dev/null; then
-    pkill -P "$watcher" 2>/dev/null
-    kill "$watcher" 2>/dev/null
-    wait "$watcher" 2>/dev/null
-  else
+  kill "$watcher" 2>/dev/null
+  wait "$watcher" 2>/dev/null
+  if [[ -e "$flag" ]]; then
+    rm -f "$flag"
     st=124
   fi
   return "$st"
@@ -163,13 +171,15 @@ update_clis() {
   if [[ "$AUTO" == 1 && -n "$(find "$STATE/cli-updated" -mmin -$((CLI_UPDATE_HOURS * 60)) 2>/dev/null)" ]]; then
     return 0
   fi
-  local cli before after st out="$STATE/cli-update.out"
+  local cli before after st out=''
   for cli in claude codex; do
     has "$cli" || continue
     if [[ "$DRY_RUN" == 1 ]]; then
       info "[dry-run] $cli update"
       continue
     fi
+    # dry-run은 잠금 없이 돌므로 실행마다 따로 만든 파일을 쓴다.
+    [[ -n "$out" ]] || out="$(mktemp "$STATE/cli-update.XXXXXX")" || return 0
     limited 30 "$out" "$cli" --version
     before="$(head -1 "$out")"
     limited "$CLI_UPDATE_TIMEOUT" "$out" "$cli" update
@@ -192,7 +202,7 @@ update_clis() {
       fi
     fi
   done
-  rm -f "$out"
+  [[ -z "$out" ]] || rm -f "$out"
   [[ "$DRY_RUN" == 1 ]] || touch "$STATE/cli-updated"
 }
 
