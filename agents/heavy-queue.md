@@ -86,7 +86,9 @@ CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효�
 3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다. v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
 4. `capabilities`·`status`에서 모드를 확인하고 `yw-heavy resume`으로 새 제출을 연다. 두 번의 인계와 이벤트 기록을 확인한다.
 
-모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다. 테스트는 큐·실행 lock·편집 lock·기록을 모두 임시 경로로 격리한다.
+모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다.
+
+macOS `com.apple.tmp_cleaner`는 매일 로컬 0시에 atime·mtime·ctime이 모두 3일 넘은 `/tmp` 파일을 지운다. APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않으므로, 읽기만 하는 모드 파일과 `.flock`이 재시동 없이 지워진다(#114). 그래서 편집 잠금을 잡은 프로세스가 한 시간에 한 번 `.flock`·`.mode`·`.paused`·`.rotation`·`.no-reclaim`의 mtime을 갱신한다(없는 파일은 만들지 않는다). 모드 파일이 없어도 v3 대기 줄이나 v3 실행 owner가 남아 있으면 round-robin으로 읽고, 다음 잠금 보유자가 파일을 되살리며 `mode-restore`를 기록한다. compat 전환은 빈 대기열에서만 가능하므로 이 상태는 파일 유실뿐이다. 3일 넘게 잠금을 잡는 호출이 없으면 여전히 지워질 수 있고, 그때는 대기·실행이 없으므로 재시동처럼 compat로 돌아간다. `mode` 전환은 이전·다음 모드와 호출한 부모 프로세스(PID·실행 파일 이름)를 `.log`에 `mode-change`로 남기며 `status`의 최근 기록에서 보인다. 테스트는 큐·실행 lock·편집 lock·기록을 모두 임시 경로로 격리한다.
 
 롤백은 먼저 새 구현의 compat로 한다. 신규 제출 조율 → `pause` → v3 세대·대기자 drain → `mode compat` → `capabilities` 확인 → `resume`. 바이너리까지 구버전으로 내릴 때는 compat 전환 후 다시 제출을 중지하고, 실행 lock·대기열이 비어 있고 v3 실행 프로세스가 남지 않았으며 구버전이 읽을 상태 형식인지 확인한 뒤 원자적으로 교체한다. 활성 상태에서 파일만 되돌리거나 실행 lock을 지우지 않는다.
 

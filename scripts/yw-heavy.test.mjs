@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, lstatSync, readdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, lstatSync, readdirSync, symlinkSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -861,6 +861,25 @@ test('v3 실제 v2 참여자·구형식 fixture가 남으면 전환 거절, FIFO
   assert.equal(read(f.q), ''); assert.equal(existsSync(f.x), false);
 });
 
+// #114: macOS tmp_cleaner는 매일 0시에 atime·mtime·ctime이 모두 3일 넘은 /tmp 파일을 지운다.
+// APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않으므로, 읽기만 하는 상태 파일은 3일 뒤 지워진다.
+test('v3 상태 파일은 잠금을 잡을 때 mtime을 갱신해 /tmp 정리 대상이 되지 않는다', async t => {
+  const f = fixture(t); enable(f);
+  assert.equal(f.sync('pause').status, 0);
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  const kept = [`${f.q}.mode`, `${f.q}.paused`, f.env.YW_HEAVY_FLOCK, f.env.YW_HEAVY_NO_RECLAIM];
+  const old = new Date(Date.now() - 5 * 86400e3);
+  for (const p of kept) utimesSync(p, old, old);
+  assert.equal(f.sync('reclaim').status, 0);
+  for (const p of kept) assert.ok(Date.now() - statSync(p).mtimeMs < 3600e3, `${p} mtime 갱신`);
+  assert.equal(read(`${f.q}.mode`).trim(), 'round-robin');
+});
+
+test('모드 전환은 이전·다음 모드와 주체를 기록에 남긴다', t => {
+  const f = fixture(t); enable(f);
+  assert.match(read(f.env.YW_HEAVY_LOG), /mode-change from=compat to=round-robin parent=\d+:\S+ by=\d+:-/);
+});
+
 test('v3 조상 재진입·token 재진입은 새 줄이 없고 중첩·중복·지연 해제는 바깥/다음 세대를 보존', async t => {
   const f = fixture(t); enable(f);
   const root = await acquireLease(f);
@@ -913,6 +932,31 @@ async function holding(f, id = 'H', sup = 'H', extra = {}) {
   await f.wait(() => p.out.includes('ready'), 'holder ready');
   return p;
 }
+
+test('v3 모드 파일이 사라져도 v3 대기·실행이 있으면 round-robin을 유지하고 대기자가 복원한다', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const root = JSON.parse(f.ownerText());
+  const waiter = f.cli('acquire', 'W', 'w', 'S', '--json');
+  await f.wait(() => read(f.q).includes('W '), 'W enqueued');
+  rmSync(`${f.q}.mode`);
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'round-robin');
+  const nested = await acquireLease(f, 'NESTED', 'T', { YW_HEAVY_GENERATION: root.generation, YW_HEAVY_TOKEN: root.token });
+  assert.equal(nested.borrowed, true);
+  assert.equal(releaseLease(f, nested).status, 0);
+  await f.wait(() => read(`${f.q}.mode`).trim() === 'round-robin', 'mode restored');
+  assert.match(read(f.env.YW_HEAVY_LOG), /mode-restore from=missing to=round-robin/);
+  assert.equal(waiter.result, undefined, `대기자는 계속 기다린다: ${waiter.err}`);
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+  assert.equal(await f.finish(waiter), 0, waiter.err);
+  const lease = JSON.parse(waiter.out);
+  assert.equal(lease.requestId, 'W');
+  assert.equal(releaseLease(f, lease).status, 0);
+  // v3 대기·실행이 없으면 모드 파일이 없을 때 기존처럼 compat이다.
+  rmSync(`${f.q}.mode`);
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
+  assert.equal(f.sync('acquire', 'X', 'w', 's', '--json').status, 4);
+});
 
 test('v3 무관한 프로세스는 빌리지 않고 대기, TERM 취소와 만료 token 거절', async t => {
   const f = fixture(t); enable(f);
