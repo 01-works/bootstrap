@@ -88,7 +88,12 @@ CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효�
 
 모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다.
 
-macOS `com.apple.tmp_cleaner`는 매일 로컬 0시에 atime·mtime·ctime이 모두 3일 넘은 `/tmp` 파일을 지운다. APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않으므로, 읽기만 하는 모드 파일과 `.flock`이 재시동 없이 지워진다(#114). 그래서 편집 잠금을 잡은 프로세스가 한 시간에 한 번 `.flock`·`.mode`·`.paused`·`.rotation`·`.no-reclaim`의 mtime을 갱신한다(없는 파일은 만들지 않는다). 모드 파일이 없어도 v3 대기 줄이나 v3 실행 owner가 남아 있으면 round-robin으로 읽고, 다음 잠금 보유자가 파일을 되살리며 `mode-restore`를 기록한다. compat 전환은 빈 대기열에서만 가능하므로 이 상태는 파일 유실뿐이다. 3일 넘게 잠금을 잡는 호출이 없으면 여전히 지워질 수 있고, 그때는 대기·실행이 없으므로 재시동처럼 compat로 돌아간다. `mode` 전환은 이전·다음 모드와 호출한 부모 프로세스(PID·실행 파일 이름)를 `.log`에 `mode-change`로 남기며 `status`의 최근 기록에서 보인다. 테스트는 큐·실행 lock·편집 lock·기록을 모두 임시 경로로 격리한다.
+macOS `com.apple.tmp_cleaner`는 매일 로컬 0시에 atime·mtime·ctime이 모두 3일 넘은 `/tmp` 파일을 지운다. APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않으므로, 읽기만 하는 모드 파일과 `.flock`이 재시동 없이 지워진다(#114). 그래서 편집 잠금을 잡은 프로세스는 `YW_HEAVY_KEEP_EVERY`(기본 3600초)마다 한 번, `run`은 명령이 실행되는 동안 같은 주기로 큐 본문·실행 lock `owner.txt`·`.flock`·`.mode`·`.paused`·`.rotation`·`.no-reclaim`·`.log`·`.events`의 mtime을 갱신한다(없는 파일은 만들지 않는다). 모드 파일이 없거나 읽을 수 없어도 v3 대기 줄이나 v3 실행 owner가 남아 있으면 round-robin으로 읽고, 다음 잠금 보유자가 파일을 되살리며 `mode-restore`를 기록한다. compat 전환은 빈 대기열에서만 가능하므로 이 상태는 파일 유실뿐이다. `mode` 전환은 이전·다음 모드와 호출한 부모 프로세스(PID·실행 파일 이름)를 `.log`에 `mode-change`로 남긴다. `status`는 로그 tail과 별개로 `마지막 모드 변경:` 한 줄을 보인다(기록이 없으면 `기록 없음`). 테스트는 큐·실행 lock·편집 lock·기록을 모두 임시 경로로 격리한다.
+
+남은 위험:
+
+- 갱신은 잠금을 잡는 호출과 실행 중인 `run`만 한다. holder로 `acquire`한 차례(도구 호출을 넘기는 수동 차례·nightly)가 대기자 없이 3일 넘게 이어지고 그동안 다른 호출이 없으면 `owner.txt`와 모드 파일이 지워질 수 있다.
+- 잠금을 기다리던 프로세스는 잠금을 얻은 뒤 `.flock` 경로의 inode가 자기 FD와 같은지 확인하고, 다르면 다시 연다. 그래도 확인을 마친 직후 정리 작업이 오래된 `.flock`을 지우면 다음 프로세스가 새 inode에서 잠가 편집이 겹칠 수 있다. 이 설치본에서는 3일 동안 아무도 잠그지 않은 `.flock`만 정리 대상이므로, 이 구간은 갱신이 없는 이전 설치본에서 바꾼 직후의 첫 0시 정도다. 이전 설치본은 inode 확인도 하지 않는다.
 
 롤백은 먼저 새 구현의 compat로 한다. 신규 제출 조율 → `pause` → v3 세대·대기자 drain → `mode compat` → `capabilities` 확인 → `resume`. 바이너리까지 구버전으로 내릴 때는 compat 전환 후 다시 제출을 중지하고, 실행 lock·대기열이 비어 있고 v3 실행 프로세스가 남지 않았으며 구버전이 읽을 상태 형식인지 확인한 뒤 원자적으로 교체한다. 활성 상태에서 파일만 되돌리거나 실행 lock을 지우지 않는다.
 

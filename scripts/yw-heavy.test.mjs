@@ -22,9 +22,11 @@ function snapshot(paths) {
 }
 function assertLiveUntouched(before) {
   assert.deepEqual(snapshot(strictLivePaths), before, '실제 heavy 경로의 inode/mtime은 바꾸지 않는다');
-  assert.doesNotMatch(read('/tmp/yw-heavy-queue'), / worker=wk? /, '실제 대기열에 테스트 줄이 없다');
-  assert.doesNotMatch(read('/tmp/yw-heavy-check.lock/owner.txt'), /"worker":"wk?"/, '실제 실행 lock이 테스트 것이 아니다');
-  // 실제 참여자도 v2 표지를 쓸 수 있다. 활동 중 대기열의 표지·로그·flock 변화는 테스트의 쓰기 증거가 아니다.
+}
+// 실제 대기열·owner는 다른 세션이 쓰므로 읽지 않는다. 대신 모든 상태 경로가 임시 디렉터리를 가리키는지 확인한다.
+const statePaths = ['YW_HEAVY_QUEUE', 'YW_HEAVY_EXEC_LOCK', 'YW_HEAVY_EDIT_LOCK', 'YW_HEAVY_FLOCK', 'YW_HEAVY_LOG', 'YW_HEAVY_NO_RECLAIM', 'YW_HEAVY_EVENTS'];
+function assertIsolated(env, dir) {
+  for (const k of statePaths) assert.ok(env[k]?.startsWith(dir + '/'), `${k}는 임시 경로다: ${env[k]}`);
 }
 // 디렉터리 아래 모든 항목의 inode·mtime·크기 (status 읽기 전용 확인용).
 function tree(dir) {
@@ -74,7 +76,9 @@ function fixture(t, { waitTimeout = 60000 } = {}) {
     while (!fn()) { if (Date.now() >= end) assert.fail(`timeout: ${message}`); await pause(20); }
   };
   const finish = async (p, timeout) => { await wait(() => p.result, `exit: ${p.out} ${p.err}`, timeout); return p.result.code; };
+  assertIsolated(env, dir);
   t.after(async () => {
+    assertIsolated(env, dir);
     for (const p of children) { try { process.kill(-p.pid, 'SIGKILL'); } catch {} }
     await Promise.all(children.map(p => p.done));
     rmSync(dir, { recursive: true, force: true });
@@ -863,18 +867,6 @@ test('v3 실제 v2 참여자·구형식 fixture가 남으면 전환 거절, FIFO
 
 // #114: macOS tmp_cleaner는 매일 0시에 atime·mtime·ctime이 모두 3일 넘은 /tmp 파일을 지운다.
 // APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않으므로, 읽기만 하는 상태 파일은 3일 뒤 지워진다.
-test('v3 상태 파일은 잠금을 잡을 때 mtime을 갱신해 /tmp 정리 대상이 되지 않는다', async t => {
-  const f = fixture(t); enable(f);
-  assert.equal(f.sync('pause').status, 0);
-  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
-  const kept = [`${f.q}.mode`, `${f.q}.paused`, f.env.YW_HEAVY_FLOCK, f.env.YW_HEAVY_NO_RECLAIM];
-  const old = new Date(Date.now() - 5 * 86400e3);
-  for (const p of kept) utimesSync(p, old, old);
-  assert.equal(f.sync('reclaim').status, 0);
-  for (const p of kept) assert.ok(Date.now() - statSync(p).mtimeMs < 3600e3, `${p} mtime 갱신`);
-  assert.equal(read(`${f.q}.mode`).trim(), 'round-robin');
-});
-
 test('모드 전환은 이전·다음 모드와 주체를 기록에 남긴다', t => {
   const f = fixture(t); enable(f);
   assert.match(read(f.env.YW_HEAVY_LOG), /mode-change from=compat to=round-robin parent=\d+:\S+ by=\d+:-/);
@@ -956,6 +948,85 @@ test('v3 모드 파일이 사라져도 v3 대기·실행이 있으면 round-robi
   rmSync(`${f.q}.mode`);
   assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
   assert.equal(f.sync('acquire', 'X', 'w', 's', '--json').status, 4);
+});
+
+const old5d = () => new Date(Date.now() - 5 * 86400e3);
+const fresh = p => Date.now() - statSync(p).mtimeMs < 3600e3;
+test('v3 상태 파일·큐 본문·owner는 잠금을 잡을 때 mtime을 갱신해 /tmp 정리 대상이 되지 않는다', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const waiter = f.cli('acquire', 'W', 'w', 'S', '--json');
+  await f.wait(() => read(f.q).includes('W '), 'W enqueued');
+  assert.equal(f.sync('pause').status, 0);
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  const kept = [f.q, join(f.x, 'owner.txt'), `${f.q}.mode`, `${f.q}.paused`, `${f.q}.rotation`, f.env.YW_HEAVY_FLOCK,
+    f.env.YW_HEAVY_NO_RECLAIM, f.env.YW_HEAVY_EVENTS];
+  for (const p of kept) utimesSync(p, old5d(), old5d());
+  assert.equal(f.sync('reclaim').status, 0);
+  for (const p of kept) assert.ok(fresh(p), `${p} mtime 갱신`);
+  assert.equal(read(`${f.q}.mode`).trim(), 'round-robin');
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+  assert.equal(await f.finish(waiter), 0, waiter.err);
+});
+
+test('대기자 없는 장기 run도 실행 중에 큐 본문·owner·모드 파일의 mtime을 갱신한다', async t => {
+  const f = fixture(t); enable(f);
+  f.env.YW_HEAVY_KEEP_EVERY = '.2';
+  const h = await holding(f);
+  const kept = [f.q, join(f.x, 'owner.txt'), `${f.q}.mode`, f.env.YW_HEAVY_FLOCK];
+  for (const p of kept) utimesSync(p, old5d(), old5d());
+  await f.wait(() => kept.every(fresh), 'run 중 갱신', 5000);
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+});
+
+test('모드 파일이 있어도 읽지 못하면 없는 것과 같이 v3 흔적으로 판단하고 되살린다', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const waiter = f.cli('acquire', 'W', 'w', 'S', '--json');
+  await f.wait(() => read(f.q).includes('W '), 'W enqueued');
+  const mode = `${f.q}.mode`;
+  spawnSync('/bin/chmod', ['000', mode]);
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'round-robin');
+  await f.wait(() => { try { return readFileSync(mode, 'utf8').trim() === 'round-robin'; } catch { return false; } }, 'mode restored');
+  assert.equal(waiter.result, undefined, `대기자는 계속 기다린다: ${waiter.err}`);
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+  assert.equal(await f.finish(waiter), 0, waiter.err);
+});
+
+test('모드 전환에서 순환 파일을 지우지 못하면 실패 코드를 그대로 돌려준다', t => {
+  const f = fixture(t);
+  mkdirSync(`${f.q}.rotation`); writeFileSync(join(`${f.q}.rotation`, 'x'), '');
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 1);
+});
+
+test('status는 로그 tail과 상관없이 마지막 모드 변경을 항상 보인다', t => {
+  const f = fixture(t);
+  assert.match(f.sync('status').stdout, /^마지막 모드 변경: 기록 없음$/m);
+  enable(f);
+  for (let i = 0; i < 10; i++) writeFileSync(f.env.YW_HEAVY_LOG, `2026-01-01T00:00:0${i % 10}Z reclaim kind=line task=T${i}\n`, { flag: 'a' });
+  assert.match(f.sync('status').stdout, /^마지막 모드 변경: \S+Z compat→round-robin 주체 parent=\d+:\S+ \(mode-change\)$/m);
+  rmSync(`${f.q}.mode`);
+  const h = f.sync('pause'); assert.equal(h.status, 0);
+  assert.match(f.sync('status').stdout, /^마지막 모드 변경: \S+Z compat→round-robin /m);
+});
+
+test('잠금을 기다리는 동안 flock 경로가 다시 만들어지면 새 inode에서 다시 잠근다', async t => {
+  const f = fixture(t);
+  const order = join(f.dir, 'order'), fl = f.env.YW_HEAVY_FLOCK;
+  const h1 = f.start(['-c', `exec /usr/bin/lockf -k ${quote(fl)} /bin/sh -c 'echo held; read _'`]);
+  await f.wait(() => h1.out.includes('held'), 'old inode held');
+  const p = f.cli('run', 'A', 'w', 's', '--', '/bin/sh', '-c', `echo A >> ${quote(order)}`);
+  await pause(400);
+  rmSync(fl);
+  const h2 = f.start(['-c', `exec /usr/bin/lockf -k ${quote(fl)} /bin/sh -c 'echo H2start >> ${quote(order)}; echo held; read _; echo H2end >> ${quote(order)}'`]);
+  await f.wait(() => h2.out.includes('held'), 'new inode held');
+  h1.stdin.end('\n'); assert.equal(await f.finish(h1), 0);
+  await pause(1500);
+  assert.doesNotMatch(read(order), /A/, '새 inode를 쥔 쪽과 겹치지 않는다');
+  h2.stdin.end('\n'); assert.equal(await f.finish(h2), 0);
+  assert.equal(await f.finish(p), 0, p.err);
+  assert.equal(read(order), 'H2start\nH2end\nA\n');
 });
 
 test('v3 무관한 프로세스는 빌리지 않고 대기, TERM 취소와 만료 token 거절', async t => {
