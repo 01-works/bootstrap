@@ -11,7 +11,7 @@
 #   v3 모드 $Q.mode (없으면 compat, 단 v3 대기·실행이 남아 있으면 round-robin), 신규 제출 중지 $Q.paused, 감독자 순환 $Q.rotation
 #   v3 작업 이벤트 YW_HEAVY_EVENTS ($Q.events), 내부 재확인 YW_HEAVY_FAST_POLL (.2초)
 #   v3 pending 한도 YW_HEAVY_MAX_PENDING_SUPERVISOR (128), YW_HEAVY_MAX_PENDING (1024)
-#   /tmp 정리 방지 mtime 갱신 주기 YW_HEAVY_KEEP_EVERY (3600초)
+#   /tmp 정리 방지 mtime 갱신 주기 YW_HEAVY_KEEP_EVERY (3600초), run 갱신 프로세스의 부모 확인 YW_HEAVY_KEEP_CHECK (20초)
 #   owner 없는 실행 lock 회수까지 YW_HEAVY_OWNERLESS_AGE (60초), 구형식 편집 lock 경고까지 YW_HEAVY_EDIT_WARN (120초)
 
 usage() {
@@ -59,6 +59,7 @@ init() {
   OWNERLESS_AGE="${YW_HEAVY_OWNERLESS_AGE:-60}"
   KEEP_EVERY="${YW_HEAVY_KEEP_EVERY:-3600}"
   KEEP_SECS="${KEEP_EVERY%.*}"
+  KEEP_CHECK="${YW_HEAVY_KEEP_CHECK:-20}"
   # 구버전 편집 lock이 풀리기를 기다리는 주기. 1초보다 짧은 대기 주기(테스트)면 그것을 쓴다.
   case "$POLL" in 0* | .*) EDIT_POLL="$POLL" ;; *) EDIT_POLL=1 ;; esac
   LOCKF=/usr/bin/lockf
@@ -281,16 +282,18 @@ state_keep() {
   keep_paths
 }
 # 대기자가 없으면 run 동안 아무도 잠금을 잡지 않는다. 명령이 끝날 때까지 별도 프로세스가 갱신한다.
-# run이 SIGKILL되면 다음 주기에 부모가 없는 것을 보고 끝난다.
+# 부모 확인은 YW_HEAVY_KEEP_CHECK(20초)마다 따로 한다. run이 SIGKILL되면 그 안에 끝난다.
 keeper_start() {
-  local parent="$$"
+  local parent="$$" last="$SECONDS"
   (
     trap 'kill "$s" 2>/dev/null; exit 0' TERM
     trap - INT HUP EXIT
     while :; do
-      /bin/sleep "$KEEP_EVERY" & s=$!
+      /bin/sleep "$KEEP_CHECK" & s=$!
       wait "$s"
       kill -0 "$parent" 2>/dev/null || exit 0
+      [ $((SECONDS - last)) -ge "${KEEP_SECS:-0}" ] || continue
+      last="$SECONDS"
       keep_paths
     done
   ) </dev/null >/dev/null 2>&1 9>&- &
@@ -732,7 +735,8 @@ v3_active() {
   q_lines | awk '{for (i = 2; i <= NF; i++) if ($i == "v=3") f = 1} END {exit !f}'
 }
 # 파일이 있어도 읽지 못하거나 비어 있으면 없는 것과 같이 판단한다.
-mode_file() { local m; m="$(cat "$MODE" 2>/dev/null)" && [ -n "$m" ] && printf '%s' "$m"; }
+# 일반 파일이 아니면(FIFO 등) 읽다가 멈추지 않도록 읽지 않는다.
+mode_file() { local m; [ -f "$MODE" ] && m="$(cat "$MODE" 2>/dev/null)" && [ -n "$m" ] && printf '%s' "$m"; }
 mode_read() {
   mode_file || if v3_active; then printf round-robin; else printf compat; fi
 }
@@ -768,8 +772,9 @@ control() {
         unlock_queue; say "전환 거절: pause 후 실행·대기자(구버전 포함)를 모두 drain해야 합니다"; return 4
       fi
       prev="$(mode_read)"
-      mode_write "$target" || { unlock_queue; return 1; }
+      # 순환 파일을 먼저 지운다. 실패하면 기존 모드를 유지한다.
       rm -f "$RING" || { unlock_queue; return 1; }
+      mode_write "$target" || { unlock_queue; return 1; }
       note "mode-change from=$prev to=$target parent=$PPID:$(ps -o ucomm= -p "$PPID" 2>/dev/null | tr -d ' ')"
       ;;
   esac

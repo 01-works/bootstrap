@@ -971,7 +971,7 @@ test('v3 상태 파일·큐 본문·owner는 잠금을 잡을 때 mtime을 갱�
 
 test('대기자 없는 장기 run도 실행 중에 큐 본문·owner·모드 파일의 mtime을 갱신한다', async t => {
   const f = fixture(t); enable(f);
-  f.env.YW_HEAVY_KEEP_EVERY = '.2';
+  f.env.YW_HEAVY_KEEP_EVERY = '.2'; f.env.YW_HEAVY_KEEP_CHECK = '.2';
   const h = await holding(f);
   const kept = [f.q, join(f.x, 'owner.txt'), `${f.q}.mode`, f.env.YW_HEAVY_FLOCK];
   for (const p of kept) utimesSync(p, old5d(), old5d());
@@ -998,6 +998,38 @@ test('모드 전환에서 순환 파일을 지우지 못하면 실패 코드를 
   mkdirSync(`${f.q}.rotation`); writeFileSync(join(`${f.q}.rotation`, 'x'), '');
   assert.equal(f.sync('pause').status, 0);
   assert.equal(f.sync('mode', 'round-robin').status, 1);
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat', '기존 모드 유지');
+  assert.equal(existsSync(`${f.q}.mode`), false);
+  assert.doesNotMatch(read(f.env.YW_HEAVY_LOG), /mode-change/);
+});
+
+test('run 갱신 프로세스는 run이 SIGKILL되면 갱신 주기와 상관없이 곧 끝난다', async t => {
+  const f = fixture(t);
+  f.env.YW_HEAVY_KEEP_CHECK = '.2'; // 갱신 주기는 기본 3600초 그대로
+  const h = await holding(f, 'H', 'H');
+  const kids = pid => spawnSync('/usr/bin/pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean).map(Number);
+  const comm = pid => spawnSync('ps', ['-o', 'ucomm=', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim();
+  let keeper = [];
+  // 명령 /bin/sh도 bash로 보이므로 sleep 자식이 있는 bash가 갱신 프로세스다.
+  await f.wait(() => { keeper = kids(h.pid).filter(p => comm(p) === 'bash' && kids(p).some(c => comm(c) === 'sleep')); return keeper.length === 1; }, 'keeper와 sleep', 5000);
+  const procs = [keeper[0], ...kids(keeper[0])];
+  process.kill(h.pid, 'SIGKILL');
+  const gone = p => { try { process.kill(p, 0); return false; } catch (e) { return e.code === 'ESRCH'; } };
+  await f.wait(() => procs.every(gone), `갱신 셸·sleep 종료 ${procs}`, 3000);
+});
+
+test('모드 경로가 FIFO여도 읽다가 멈추지 않고 v3 흔적으로 판단해 되살린다', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const mode = `${f.q}.mode`;
+  rmSync(mode); spawnSync('/usr/bin/mkfifo', [mode]);
+  const cap = spawnSync('/bin/bash', [script, 'capabilities'], { env: f.env, encoding: 'utf8', timeout: 5000 });
+  assert.equal(cap.status, 0, 'capabilities가 멈추지 않는다');
+  assert.equal(JSON.parse(cap.stdout).mode, 'round-robin');
+  const waiter = f.cli('acquire', 'W', 'w', 'S', '--json');
+  await f.wait(() => statSync(mode).isFile() && read(mode).trim() === 'round-robin', 'mode restored', 5000);
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+  assert.equal(await f.finish(waiter, 5000), 0, waiter.err);
 });
 
 test('status는 로그 tail과 상관없이 마지막 모드 변경을 항상 보인다', t => {
