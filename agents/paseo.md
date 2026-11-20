@@ -23,15 +23,17 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 
 **Paseo API 대체 프로필**은 Infisical의 직접 API 키로 실행하는 Claude·GPT 프로필을 통칭한다. “Paseo API 대체 프로필 가져와 줘”는 Paseo 호스트에 아래 명령으로 이 프로필들을 등록해 달라는 뜻이다.
 
-Paseo 데몬이 실행되는 Mac에서 초기 Paseo 설정을 마친 뒤, Claude Code와 Codex CLI가 PATH에 있는 터미널에서 실행한다.
+bootstrap의 `paseo` 단계는 Infisical CLI, Claude Code, Codex CLI가 있으면 로그인과 프로젝트 접근을 확인한 뒤 프로필을 자동 등록한다. 준비되지 않은 기기는 이 등록만 건너뛴다. 자동 갱신을 쓰는 기기에도 같은 조건이 적용된다.
+
+처음 연결할 Mac에서 Infisical CLI를 설치하고 로그인한다. 초기 Paseo 설정을 마친 뒤 bootstrap 저장소 루트에서 다음 명령을 실행한다.
 
 ```sh
 brew install infisical/get-cli/infisical
 infisical login
-python3 scripts/paseo-api-key.py --infisical
+./bootstrap.sh --only paseo
 ```
 
-마지막 명령은 bootstrap 저장소 루트에서 실행한다. 이미 Infisical CLI를 설치하고 로그인했다면 마지막 명령만 실행하면 된다. Infisical Cloud 로그인에는 `default` 프로젝트의 `prod` 환경 `/ai` 경로 읽기 권한이 필요하다.
+프로필만 직접 가져오려면 `python3 scripts/paseo-api-key.py --infisical`을 실행한다. Infisical Cloud 로그인에는 `default` 프로젝트의 `prod` 환경 `/ai` 경로 읽기 권한이 필요하다.
 
 | 새 에이전트 모델 선택기의 **Profiles** | Infisical 키 이름 |
 | --- | --- |

@@ -13,6 +13,8 @@ import tempfile
 import warnings
 
 
+INFISICAL_DOMAIN = "https://app.infisical.com/api"
+INFISICAL_PROJECT_ID = "7cc30bec-94ce-45b0-b1c7-e1613de839fd"
 INFISICAL_PROFILES = (
     ('claude-api-office', 'Claude API (Office)', 'claude', 'ANTHROPIC_API_KEY_OFFICE'),
     ('claude-api-k', 'Claude API (K)', 'claude', 'ANTHROPIC_API_KEY_K'),
@@ -87,20 +89,39 @@ def save_config(config_path, original, config):
     replace_file(config_path, original, data)
 
 
-def install_infisical_profiles(config_path, original, config):
+def active_infisical_project(cli, profile_name):
+    options = ['--profile', profile_name, '--domain', INFISICAL_DOMAIN, '--silent']
+    env = os.environ.copy()
+    env.pop('INFISICAL_TOKEN', None)
+    for command in (['login', 'status'], ['secrets-manager', 'projects', 'get', INFISICAL_PROJECT_ID]):
+        result = subprocess.run([cli, *command, *options], cwd='/', stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=10)
+        if result.returncode:
+            return False
+    return True
+
+
+def install_infisical_profiles(config_path, original, config, if_ready=False):
     binaries = {}
     for name in ('infisical', 'claude', 'codex'):
         binary = shutil.which(name)
         if not binary:
+            if if_ready:
+                return False
             raise ValueError(f'{name} 실행 파일을 PATH에서 찾을 수 없습니다.')
         binaries[name] = str(Path(binary).absolute())
     try:
         login = subprocess.run([binaries['infisical'], 'profile', 'current', '--plain', '--silent'],
-                               capture_output=True, text=True, timeout=15)
+                               cwd='/', stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+        profile_name = login.stdout.strip()
+        has_profile = not login.returncode and bool(profile_name) and '\n' not in profile_name
+        if if_ready and (not has_profile or not active_infisical_project(binaries['infisical'], profile_name)):
+            return False
     except subprocess.TimeoutExpired:
+        if if_ready:
+            return False
         raise ValueError('Infisical 로그인 프로필 조회 시간이 초과되었습니다.') from None
-    profile_name = login.stdout.strip()
-    if login.returncode or not profile_name or '\n' in profile_name:
+    if not has_profile:
         raise ValueError('Infisical 로그인 프로필이 없습니다. infisical login을 실행하세요.')
 
     runner = config_path.with_name('paseo-infisical-provider')
@@ -137,18 +158,23 @@ def install_infisical_profiles(config_path, original, config):
 
     if previous_runner != runner_source or runner.stat().st_mode & 0o777 != 0o700:
         replace_file(runner, previous_runner, runner_source, mode=0o700)
-    save_config(config_path, original, config)
+    if config != json.loads(original):
+        save_config(config_path, original, config)
+    return True
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--infisical', action='store_true', help='Infisical의 Claude·GPT API 프로필 6개 설치')
+    parser.add_argument('--if-ready', action='store_true', help='Infisical 인증·프로젝트 접근이 준비된 경우에만 설치')
     parser.add_argument('--provider', help='대상 provider ID (기본: claude-api)')
     parser.add_argument('--create', action='store_true', help='새 Claude API provider와 선택용 프로필 생성')
     parser.add_argument('--profile-name', help='선택용 프로필 이름 (기존 프로필의 모델·모드는 보존)')
     parser.add_argument('--home', type=Path, default=Path(os.environ.get('PASEO_HOME') or '~/.paseo').expanduser(), help='로컬 Paseo home')
     parser.add_argument('--no-reload', action='store_true', help='파일만 저장하고 데몬 반영은 생략')
     args = parser.parse_args()
+    if args.if_ready and not args.infisical:
+        parser.error('--if-ready는 --infisical과 함께 사용하세요.')
     if args.infisical and (args.create or args.provider is not None or args.profile_name is not None):
         parser.error('--infisical과 개별 provider 옵션은 함께 사용할 수 없습니다.')
     provider_id = 'claude-api' if args.provider is None else args.provider
@@ -172,7 +198,9 @@ def main():
         return 1
 
     if args.infisical:
-        install_infisical_profiles(config_path, original, config)
+        if not install_infisical_profiles(config_path, original, config, args.if_ready):
+            print('Infisical API 프로필 건너뜀 (CLI·로그인·프로젝트 접근 상태 확인).')
+            return 0
         print('Infisical API 프로필 6개 저장 완료.')
     else:
         print(f'대상: {provider_id} ({config_path})')
