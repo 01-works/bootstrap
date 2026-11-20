@@ -1,4 +1,4 @@
-// Paseo 기본 플러그인을 목록의 버전으로 맞추고, 목록에서 은퇴시킨 플러그인은 지우며, 목록이 정한 설정 키를 맞춘다.
+// Paseo 기본 플러그인의 버전·설정을 맞추고 목록에서 은퇴시킨 플러그인은 지운다.
 // 개발용 폴더 설치와 다른 소스 설치는 건드리지 않는다.
 // 설치·갱신은 실행 중인 데몬이 한다. 데몬이 꺼져 있으면 마지막 동기화 이후 목록이 바뀐 경우에만 데몬을 켠다.
 import { createHash } from 'node:crypto';
@@ -32,6 +32,7 @@ function sameSource(identity, source) {
 
 // 레지스트리 검토 버전: npm 배포는 version, git 배포는 commit.
 export const reviewedTarget = target => target?.version ?? target?.commit;
+const followsLatest = plugin => plugin.ref === 'latest' || plugin.version === 'latest';
 
 export function validate(manifest) {
   if (!Array.isArray(manifest.plugins)) throw new Error('plugins는 배열이어야 합니다');
@@ -44,7 +45,7 @@ export function validate(manifest) {
     if (ids.has(plugin.id)) throw new Error(`플러그인 id가 중복됩니다: ${plugin.id}`);
     ids.add(plugin.id);
     if (gitSource(plugin.source)) {
-      if (!/^[0-9a-f]{40}$/.test(plugin.ref ?? '')) throw new Error(`${plugin.id}: git 소스는 ref에 커밋 전체 해시가 필요합니다`);
+      if (plugin.ref !== 'latest' && !/^[0-9a-f]{40}$/.test(plugin.ref ?? '')) throw new Error(`${plugin.id}: git 소스는 ref에 latest 또는 커밋 전체 해시가 필요합니다`);
       if (plugin.version !== undefined) throw new Error(`${plugin.id}: git 소스에는 version 대신 ref를 씁니다`);
     } else if (plugin.ref !== undefined) {
       throw new Error(`${plugin.id}: 레지스트리 소스에는 ref 대신 version을 씁니다`);
@@ -127,7 +128,7 @@ export function planPlugins(config, manifest, listed) {
     if (identity?.kind === 'directory') plan.dev.push({ id: wanted.id, path: identity.path });
     else if (sameSource(identity, wanted.source)) {
       const target = wanted.ref ?? wanted.version;
-      if (revision !== target) plan.update.push({ plugin: wanted, from: revision ?? '?' });
+      if (!followsLatest(wanted) && revision !== target) plan.update.push({ plugin: wanted, from: revision ?? '?' });
     } else plan.foreign.push({ id: wanted.id, source: current.source ?? identity?.kind ?? '?' });
   }
   // 은퇴한 플러그인은 목록의 소스에서 설치된 것만 지운다. 데몬이 꺼져 있으면 소스를 알 수 없어 판단하지 않는다.
@@ -143,7 +144,7 @@ export function planPlugins(config, manifest, listed) {
 
 function paseo(args, options = {}) {
   const result = spawnSync('paseo', args, { encoding: 'utf8', ...options });
-  if (result.error) throw result.error;
+  if (result.error && result.error.code !== 'ETIMEDOUT') throw result.error;
   return result;
 }
 
@@ -152,8 +153,9 @@ function json(result) {
 }
 
 // 실행 중인 데몬의 플러그인 목록. 데몬이 꺼져 있으면 null.
-function listPlugins(home) {
-  const result = paseo(['plugin', 'ls', '--json', '--home', home]);
+function listPlugins(home, options) {
+  const result = paseo(['plugin', 'ls', '--json', '--home', home], options);
+  if (result.error) throw result.error;
   if (result.status !== 0 && /DAEMON_NOT_RUNNING/.test(result.stdout + result.stderr)) return null;
   const list = result.status === 0 ? json(result) : null;
   if (!Array.isArray(list)) throw new Error(`플러그인 목록 확인 실패: ${(result.stderr || result.stdout).trim().slice(0, 300)}`);
@@ -164,6 +166,26 @@ function requireList(home) {
   const list = listPlugins(home);
   if (!list) throw new Error('Paseo 데몬에 연결할 수 없습니다');
   return list;
+}
+
+function refreshLatest(home, manifest, listed) {
+  const failed = [];
+  for (const plugin of manifest.plugins.filter(followsLatest)) {
+    const current = listed.find(item => item.id === plugin.id);
+    if (!current || current.enabled === false || !sameSource(current.installation?.identity, plugin.source)) continue;
+    const result = paseo(['plugin', 'update', plugin.id, '--yes', '--json', '--home', home], { timeout: 120_000 });
+    const updates = json(result);
+    const update = Array.isArray(updates) && updates.find(item => item.id === plugin.id);
+    if (result.status !== 0 || !['updated', 'current', 'installed-newer'].includes(update?.outcome)) {
+      failed.push(plugin.id);
+      const detail = update?.error || result.error?.message || (result.stderr || result.stdout || '').trim();
+      console.log(`최신 버전 확인·갱신 실패: ${plugin.id} ${detail.slice(0, 200)}`);
+    } else if (update.outcome === 'updated') {
+      console.log(`최신 버전 적용: ${plugin.id} → ${update.plugin?.installation?.currentRevision ?? '?'}`);
+      if (update.plugin?.status !== 'running') failed.push(plugin.id);
+    }
+  }
+  if (failed.length) throw new Error(`플러그인 갱신 확인 실패: ${failed.join(', ')}`);
 }
 
 function report(plan) {
@@ -233,7 +255,7 @@ function apply(home, config, manifest) {
   for (const plugin of plan.install) {
     console.log(`설치: ${plugin.id}`);
     touched.add(plugin.id);
-    const ref = plugin.ref ? ['--ref', plugin.ref] : [];
+    const ref = plugin.ref && !followsLatest(plugin) ? ['--ref', plugin.ref] : [];
     if (paseo(['plugin', 'install', plugin.source, '--id', plugin.id, ...ref, '--home', home], { stdio: 'inherit' }).status !== 0) failed.add(plugin.id);
   }
   for (const plugin of plan.remove) {
@@ -282,6 +304,7 @@ function bump(home, manifest) {
   let changed = false;
   const gh = args => spawnSync('gh', ['api', ...args], { encoding: 'utf8' });
   for (const plugin of manifest.plugins) {
+    if (followsLatest(plugin)) continue;
     const git = gitSource(plugin.source);
     let target;
     if (git) {
@@ -326,7 +349,7 @@ function main() {
   let home = process.env.PASEO_HOME || join(homedir(), '.paseo');
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--home' && args[i + 1] && !args[i + 1].startsWith('--')) home = args[++i];
-    else if (!['--check', '--dry-run', '--bump'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
+    else if (!['--check', '--dry-run', '--bump', '--refresh'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
   }
   home = resolve(home);
   const check = args.includes('--check');
@@ -336,6 +359,14 @@ function main() {
   validate(manifest);
   if (args.includes('--bump')) return bump(home, manifest);
   const configPath = join(home, 'config.json');
+  if (args.includes('--refresh')) {
+    if (!check && !dryRun && existsSync(configPath) && manifest.plugins.some(followsLatest) &&
+        JSON.parse(readFileSync(configPath, 'utf8')).pluginsEnabled === true) {
+      const listed = listPlugins(home, { timeout: 30_000 });
+      if (listed) refreshLatest(home, manifest, listed);
+    }
+    return;
+  }
   if (!existsSync(configPath)) {
     console.log('Paseo 설정 없음: ./bootstrap.sh --only paseo 가 첫 설정을 합니다.');
     if (!dryRun) process.exitCode = 2;

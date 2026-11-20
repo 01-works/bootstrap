@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -8,8 +8,6 @@ import { gitSource, planPlugins, reviewedTarget, settingsDrift, settingsNotRunni
 
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-plugins.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-plugins.mjs', import.meta.url).pathname;
-const gitPlugins = manifest.plugins.filter(plugin => gitSource(plugin.source));
-const registryPlugins = manifest.plugins.filter(plugin => !gitSource(plugin.source));
 
 const sha = /^[0-9a-f]{40}$/;
 
@@ -25,7 +23,8 @@ function installed(plugin, revision, extra = {}) {
 
 test('목록 검증: git은 커밋 전체 해시, 레지스트리는 version, 은퇴 목록은 id·소스', () => {
   validate(manifest);
-  assert.ok(gitPlugins.length && registryPlugins.length);
+  assert.ok(manifest.plugins.some(plugin => plugin.ref === 'latest'));
+  assert.ok(manifest.plugins.some(plugin => plugin.version === 'latest'));
   assert.throws(() => validate({ plugins: [], retired: {} }));
   assert.throws(() => validate({ plugins: [], retired: [{ id: 'a', source: 'npm:a' }] }));
   assert.throws(() => validate({ plugins: [{ id: 'a', source: 'o/a', version: '1' }], retired: [{ id: 'a', source: 'github:o/r:a' }] }));
@@ -203,12 +202,29 @@ if (args[1] === 'ls') {
   console.log(JSON.stringify([{ id: args[2], outcome: 'update', target: reviewed(args[2]) }]));
 } else if (args[1] === 'update') {
   if (process.env.SILENT_UPDATE) process.exit(0);
-  plugins[args[2]].installation.currentRevision = opt('--ref') ?? pin(args[2]);
+  const plugin = plugins[args[2]];
+  if (!plugin) process.exit(8);
+  const revision = opt('--ref') ?? pin(args[2]);
+  const outcome = plugin.installation.currentRevision === revision ? 'current' : 'updated';
+  plugin.installation.currentRevision = revision;
+  if (args.includes('--json')) console.log(JSON.stringify([{ id: args[2], outcome, plugin: { ...plugin, status: 'running' } }]));
   save();
 } else process.exit(9);
 `, { mode: 0o755 });
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, PASEO_HOME: home, XDG_STATE_HOME: join(dir, 'state'), DRY_RUN: '0' };
-    const run = (args = [], extra = {}) => spawnSync(process.execPath, [script, ...args], { env: { ...env, ...extra }, encoding: 'utf8' });
+    const pinnedRoot = join(dir, 'pinned');
+    mkdirSync(join(pinnedRoot, 'agents'), { recursive: true });
+    mkdirSync(join(pinnedRoot, 'scripts'));
+    for (const name of ['paseo-plugins.mjs', 'paseo-skills.mjs', 'paseo-plugins-settings-client.mjs']) {
+      copyFileSync(new URL(name, import.meta.url), join(pinnedRoot, 'scripts', name));
+    }
+    const pinned = structuredClone(manifest);
+    const revisions = { 'mac-monitor': 'a'.repeat(40), 'better-paseo': 'b'.repeat(40), zerosub: '1.5.1' };
+    for (const plugin of pinned.plugins) plugin[plugin.ref ? 'ref' : 'version'] = revisions[plugin.id];
+    writeFileSync(join(pinnedRoot, 'agents/paseo-plugins.json'), JSON.stringify(pinned));
+    const pinnedScript = realpathSync(join(pinnedRoot, 'scripts/paseo-plugins.mjs'));
+    const run = (args = [], extra = {}) => spawnSync(process.execPath, [pinnedScript, ...args], { env: { ...env, ...extra }, encoding: 'utf8' });
+    const registryPlugins = pinned.plugins.filter(plugin => !gitSource(plugin.source));
     // 실제 목록이 레지스트리 git 배포·npm 배포·은퇴 항목을 모두 가져야 이 시나리오가 성립한다.
     const missing = registryPlugins.find(plugin => sha.test(plugin.version));
     const registry = registryPlugins.find(plugin => !sha.test(plugin.version));
@@ -216,7 +232,7 @@ if (args[1] === 'ls') {
     assert.ok(missing && registry && retired);
     const pins = JSON.stringify(Object.fromEntries(registryPlugins.map(plugin => [plugin.id, plugin.version])));
     const stalePins = JSON.stringify({ [registry.id]: '0.0.1', [missing.id]: missing.version });
-    const old = gitPlugins[0];
+    const old = pinned.plugins.find(plugin => gitSource(plugin.source));
     const configured = manifest.plugins.find(plugin => plugin.settings);
     const [[settingsId, wantedSettings]] = Object.entries(configured.settings);
     const settingsFile = join(home, 'plugin-settings', configured.id, `${settingsId}.json`);
@@ -264,7 +280,7 @@ if (args[1] === 'ls') {
     const applied = run([], { REGISTRY_PINS: pins });
     assert.equal(applied.status, 0, applied.stdout + applied.stderr);
     const final = JSON.parse(readFileSync(configPath, 'utf8')).plugins;
-    for (const plugin of manifest.plugins) assert.equal(final[plugin.id].installation.currentRevision, plugin.ref ?? plugin.version);
+    for (const plugin of pinned.plugins) assert.equal(final[plugin.id].installation.currentRevision, plugin.ref ?? plugin.version);
     assert.equal(final[retired.id], undefined);
     assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')).values, { userOnly: '내 값', ...wantedSettings });
     assert.equal(synced(), true);
@@ -316,5 +332,19 @@ if (args[1] === 'ls') {
     // 다른 Paseo 홈은 따로 기록한다.
     assert.equal(run(['--home', join(dir, 'missing')]).status, 2);
     assert.equal(existsSync(join(dir, 'missing')), false);
+
+    // 최신 정책은 설치된 같은 소스만 Paseo의 일반 갱신에 넘긴다.
+    const latest = { ...revisions, [registry.id]: '2.0.0' };
+    const runRefresh = () => spawnSync(process.execPath, [script, '--refresh'], {
+      env: { ...env, REGISTRY_PINS: JSON.stringify(latest) }, encoding: 'utf8'
+    });
+    const refresh = runRefresh();
+    assert.equal(refresh.status, 0, refresh.stdout + refresh.stderr);
+    assert.match(refresh.stdout, /최신 버전 적용: zerosub → 2\.0\.0/);
+    assert.equal(runRefresh().stdout, '');
+    rmSync(daemon);
+    rmSync(calls);
+    assert.equal(runRefresh().status, 0);
+    assert.deepEqual(callList(), ['plugin ls --json']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

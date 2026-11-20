@@ -65,6 +65,8 @@ esac
   }
   write(seed, {
     'scripts/doctor.sh': 'exit 0\n',
+    'scripts/paseo-plugins.mjs': "import { appendFileSync } from 'node:fs';\n" +
+      "appendFileSync(process.env.MOCK + '/plugins', process.argv.slice(2).join(' ') + '\\n');\n",
     'scripts/paseo-profiles.mjs': "import { appendFileSync } from 'node:fs';\n" +
       "appendFileSync(process.env.MOCK + '/calls', `paseo-profiles ${process.argv.slice(2).join(' ')}\\n`);\n",
     'README.md': 'readme\n', 'Brewfile': 'brew "git"\n', 'home/zsh/.zshrc': '# zsh\n', 'agents/paseo-profiles.json': '[]\n',
@@ -106,6 +108,20 @@ esac
   };
 }
 const output = result => result.stdout + result.stderr;
+
+test('새 bootstrap 커밋 없이도 Paseo 플러그인 갱신을 확인한다', t => {
+  const f = fixture(t);
+  const bin = join(f.root, 'bin', 'paseo');
+  writeFileSync(bin, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const calls = join(f.mock, 'plugins');
+  assert.equal(f.update('--auto').status, 0);
+  rmSync(calls);
+  assert.equal(f.update('--auto', '--dry-run').status, 0);
+  assert.equal(existsSync(calls), false);
+  assert.equal(f.update('--auto').status, 0);
+  assert.equal(readFileSync(calls, 'utf8'), '--refresh\n');
+  assert.equal(f.applied(), f.head());
+});
 
 test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 해당하는 단계만 무인으로 실행한다', t => {
   const f = fixture(t);
