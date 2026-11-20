@@ -46,13 +46,17 @@ infisical login
 
 ### Claude API 키를 ZeroSub에 한 번 가져오기
 
-이 기기에서 Paseo 앱과 ZeroSub를 켜고 Infisical에 로그인한 상태에서 실행한다.
+**ZeroSub Claude API 가져오기**는 Infisical의 Office·K·Y·HI 키를 한 번 읽어 이 Mac의 ZeroSub 계정으로 등록하는 작업이다.
+
+> 이 Mac에 ZeroSub Claude API 키 가져와 줘.
+
+이 기기에서 Paseo 앱과 ZeroSub를 켜고 Infisical에 로그인한 뒤 bootstrap 저장소 루트에서 실행한다.
 
 ```sh
 python3 scripts/paseo-api-key.py --zerosub
 ```
 
-Infisical의 Claude 키 네 개를 ZeroSub의 계정 추가 기능으로 이 기기에 저장한다. **Accounts (ZeroSub) → Claude**에서 `office api`, `k api`, `y api`, `hi api`를 선택할 수 있다. 동일 키가 이미 등록돼 있으면 기존 계정을 사용한다. **GPT API (Office/K)**는 Paseo **Profiles**에서 사용한다.
+**Accounts (ZeroSub) → Claude**에서 `office api`, `k api`, `y api`, `hi api`를 선택할 수 있다. 동일 키가 이미 등록돼 있으면 기존 계정을 사용한다. **GPT API (Office/K)**는 Paseo **Profiles**에서 사용한다.
 
 가져오기가 끝나면 해당 Claude 계정과 중복되는 bootstrap 프로필을 제거한다. 이후에도 ZeroSub 계정이 활성 상태인 동안 `paseo` 단계는 해당 프로필의 자동 등록을 건너뛴다. 이 기기의 Paseo home에 있는 `bootstrap-zerosub-claude.json`은 계정 연결만 기록한다. 프로필로 돌아가려면 그 파일을 지운 뒤 `python3 scripts/paseo-api-key.py --infisical`을 실행한다.
 
