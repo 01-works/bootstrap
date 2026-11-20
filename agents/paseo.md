@@ -19,6 +19,29 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 
 ## Claude API 키와 프로필
 
+### Infisical에서 직접 API 프로필 가져오기
+
+Paseo 데몬이 실행되는 Mac에서 초기 Paseo 설정을 마친 뒤, Claude Code와 Codex CLI가 PATH에 있는 터미널에서 실행한다.
+
+```sh
+brew install infisical/get-cli/infisical
+infisical login
+python3 scripts/paseo-api-key.py --infisical
+```
+
+마지막 명령은 bootstrap 저장소 루트에서 실행한다. 이미 Infisical CLI를 설치하고 로그인했다면 마지막 명령만 실행하면 된다. Infisical Cloud 로그인에는 `default` 프로젝트의 `prod` 환경 `/ai` 경로 읽기 권한이 필요하다.
+
+| 새 에이전트 모델 선택기의 **Profiles** | Infisical 키 이름 |
+| --- | --- |
+| Claude API (Office), (K), (Y), (HI) | `ANTHROPIC_API_KEY_OFFICE`, `ANTHROPIC_API_KEY_K`, `ANTHROPIC_API_KEY_Y`, `ANTHROPIC_API_KEY_HI` |
+| GPT API (Office), (K) | `GPT_API_KEY_OFFICE`, `GPT_API_KEY_K` |
+
+명령은 Paseo home에 실행 스크립트를 복사하고 여섯 프로필을 병합한 뒤 데몬에 다시 로드한다. 각 프로필로 새 에이전트를 시작하면 해당 키 하나를 Infisical에서 읽어 Anthropic 또는 OpenAI 공식 API에 연결한다. 저장소와 Paseo 설정에는 키 이름만 들어간다. 키를 교체하면 다음 실행부터 반영된다. 로그인이 만료되면 `infisical login`을 다시 실행하고, 다른 로그인 프로필로 바꿨다면 가져오기 명령도 다시 실행한다.
+
+등록과 API 호출은 별개다. Claude Console에 사용 가능한 잔액이 필요하다. ChatGPT에 연결된 월간 API 크레딧 혜택을 이용하는 조직은 일반 OpenAI Responses API가 성공해도 Codex의 API 키 요청이 거절될 수 있다. [OpenAI의 API 크레딧 혜택 안내](https://help.openai.com/en/articles/20001626-api-credits-benefit-for-eligible-chatgpt-subscriptions)
+
+### 로컬에 키를 입력하는 방식
+
 기존 `claude-api` provider의 키를 바꾸려면 터미널에서 실행한다.
 
 ```sh

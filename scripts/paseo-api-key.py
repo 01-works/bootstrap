@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""기존 Claude API provider의 키를 숨김 입력으로 교체하고 설정을 reload한다."""
+"""Paseo에 로컬 Claude 키 또는 Infisical API 프로필을 설정한다."""
 import argparse
 import getpass
 import json
@@ -11,6 +11,16 @@ import subprocess
 import sys
 import tempfile
 import warnings
+
+
+INFISICAL_PROFILES = (
+    ('claude-api-office', 'Claude API (Office)', 'claude', 'ANTHROPIC_API_KEY_OFFICE'),
+    ('claude-api-k', 'Claude API (K)', 'claude', 'ANTHROPIC_API_KEY_K'),
+    ('claude-api-y', 'Claude API (Y)', 'claude', 'ANTHROPIC_API_KEY_Y'),
+    ('claude-api-hi', 'Claude API (HI)', 'claude', 'ANTHROPIC_API_KEY_HI'),
+    ('codex-api-office', 'GPT API (Office)', 'codex', 'GPT_API_KEY_OFFICE'),
+    ('codex-api-k', 'GPT API (K)', 'codex', 'GPT_API_KEY_K'),
+)
 
 
 def prepare_provider(config, provider_id, create=False, profile_name=None):
@@ -31,6 +41,8 @@ def prepare_provider(config, provider_id, create=False, profile_name=None):
     env = provider.setdefault('env', {})
     if not isinstance(env, dict):
         raise ValueError('provider env 설정이 객체가 아닙니다.')
+    if 'PASEO_INFISICAL_API_SECRET' in env:
+        raise ValueError('Infisical에 연결된 provider입니다. 키 교체는 Infisical에서 하세요.')
     if create or profile_name is not None:
         add_profile(config, provider_id, profile_name or provider_id)
     return env
@@ -48,38 +60,104 @@ def add_profile(config, provider_id, name):
         if len(matches) != 1 or matches[0].get('provider') != provider_id:
             raise ValueError('다른 프로필과 이름 또는 ID가 충돌합니다.')
         return  # 사용자가 지정한 모델·모드 등 기존 프로필 설정은 보존한다.
-    profiles.append({'id': profile_id, 'name': name, 'provider': provider_id})
+    profile = {'id': profile_id, 'name': name, 'provider': provider_id}
+    profiles.append(profile)
+    return profile
 
 
-def save_config(config_path, original, config):
-    data = (json.dumps(config, ensure_ascii=False, indent=2) + '\n').encode()
-    fd, temporary = tempfile.mkstemp(prefix='.config-api-key-', dir=config_path.parent)
+def replace_file(path, original, data, mode=0o600):
+    fd, temporary = tempfile.mkstemp(prefix='.config-api-key-', dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as output:
+            os.fchmod(output.fileno(), mode)
             output.write(data)
             output.flush()
             os.fsync(output.fileno())
-        if config_path.read_bytes() != original:
-            raise ValueError('입력 중 설정이 변경되었습니다. 다시 실행하세요.')
-        os.replace(temporary, config_path)  # 임시 파일과 최종 파일 모두 권한 600
+        current = path.read_bytes() if path.exists() else None
+        if current != original:
+            raise ValueError('설정 중 파일이 변경되었습니다. 다시 실행하세요.')
+        os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
 
 
+def save_config(config_path, original, config):
+    data = (json.dumps(config, ensure_ascii=False, indent=2) + '\n').encode()
+    replace_file(config_path, original, data)
+
+
+def install_infisical_profiles(config_path, original, config):
+    binaries = {}
+    for name in ('infisical', 'claude', 'codex'):
+        binary = shutil.which(name)
+        if not binary:
+            raise ValueError(f'{name} 실행 파일을 PATH에서 찾을 수 없습니다.')
+        binaries[name] = str(Path(binary).absolute())
+    try:
+        login = subprocess.run([binaries['infisical'], 'profile', 'current', '--plain', '--silent'],
+                               capture_output=True, text=True, timeout=15)
+    except subprocess.TimeoutExpired:
+        raise ValueError('Infisical 로그인 프로필 조회 시간이 초과되었습니다.') from None
+    profile_name = login.stdout.strip()
+    if login.returncode or not profile_name or '\n' in profile_name:
+        raise ValueError('Infisical 로그인 프로필이 없습니다. infisical login을 실행하세요.')
+
+    runner = config_path.with_name('paseo-infisical-provider')
+    legacy_runner = config_path.with_name('infisical-api-provider')
+    runner_source = Path(__file__).with_name('paseo-infisical-provider.sh').read_bytes()
+    previous_runner = runner.read_bytes() if runner.is_file() and not runner.is_symlink() else None
+    if runner.is_symlink() or (runner.exists() and (
+            not previous_runner or b'Fetch only the key assigned to the selected Paseo provider.' not in previous_runner)):
+        raise ValueError('기존 Infisical 실행 파일이 있어 덮어쓸 수 없습니다.')
+
+    providers = config.setdefault('agents', {}).setdefault('providers', {})
+    for provider_id, label, backend, secret in INFISICAL_PROFILES:
+        if provider_id in providers:
+            provider = providers[provider_id]
+            if (provider.get('extends') != backend or provider.get('command') not in
+                    ([str(runner)], [str(legacy_runner)]) or
+                    provider.get('env', {}).get('PASEO_INFISICAL_API_SECRET') != secret):
+                raise ValueError(f'다른 설정과 provider ID가 충돌합니다. ({provider_id})')
+        else:
+            provider = providers[provider_id] = {'extends': backend, 'label': label, 'env': {}}
+        env = provider.get('env', {})
+        if env.get('ANTHROPIC_API_KEY') or env.get('OPENAI_API_KEY') or env.get('ANTHROPIC_AUTH_TOKEN'):
+            raise ValueError(f'기존 API 키가 설정 파일에 있습니다. ({provider_id})')
+        provider['command'] = [str(runner)]
+        env.update(PASEO_INFISICAL_API_SECRET=secret, PASEO_INFISICAL_PROFILE=profile_name,
+                   PASEO_INFISICAL_CLI=binaries['infisical'], PASEO_API_BACKEND=binaries[backend])
+        provider['env'] = env
+        model = 'claude-sonnet-5-5' if backend == 'claude' else 'gpt-6.2-sol'
+        if backend == 'codex':
+            provider.setdefault('models', [{'id': model, 'label': 'GPT-6.2 Sol', 'isDefault': True}])
+        profile = add_profile(config, provider_id, label)
+        if profile is not None:
+            profile['model'] = model
+
+    if previous_runner != runner_source or runner.stat().st_mode & 0o777 != 0o700:
+        replace_file(runner, previous_runner, runner_source, mode=0o700)
+    save_config(config_path, original, config)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--provider', default='claude-api', help='대상 provider ID (기본: claude-api)')
+    parser.add_argument('--infisical', action='store_true', help='Infisical의 Claude·GPT API 프로필 6개 설치')
+    parser.add_argument('--provider', help='대상 provider ID (기본: claude-api)')
     parser.add_argument('--create', action='store_true', help='새 Claude API provider와 선택용 프로필 생성')
     parser.add_argument('--profile-name', help='선택용 프로필 이름 (기존 프로필의 모델·모드는 보존)')
     parser.add_argument('--home', type=Path, default=Path(os.environ.get('PASEO_HOME') or '~/.paseo').expanduser(), help='로컬 Paseo home')
     parser.add_argument('--no-reload', action='store_true', help='파일만 저장하고 데몬 반영은 생략')
     args = parser.parse_args()
+    if args.infisical and (args.create or args.provider is not None or args.profile_name is not None):
+        parser.error('--infisical과 개별 provider 옵션은 함께 사용할 수 없습니다.')
+    provider_id = 'claude-api' if args.provider is None else args.provider
     config_path = (args.home.expanduser() / 'config.json').resolve(strict=True)
     original = config_path.read_bytes()
     try:
         config = json.loads(original)
-        env = prepare_provider(config, args.provider, args.create, args.profile_name)
+        if not args.infisical:
+            env = prepare_provider(config, provider_id, args.create, args.profile_name)
     except (KeyError, TypeError, AttributeError, json.JSONDecodeError):
         print('기존 Claude provider 설정을 확인할 수 없습니다. 파일은 변경하지 않았습니다.', file=sys.stderr)
         return 1
@@ -93,19 +171,23 @@ def main():
         print('Paseo CLI를 찾지 못했습니다. 파일만 바꾸려면 --no-reload를 사용하세요.', file=sys.stderr)
         return 1
 
-    print(f'대상: {args.provider} ({config_path})')
-    # 터미널이 없을 때 getpass가 평문 입력으로 전환하지 않게 한다.
-    with warnings.catch_warnings():
-        warnings.simplefilter('error', getpass.GetPassWarning)
-        key = getpass.getpass('새 API 키 (화면에 표시되지 않음): ')
-    if not key or any(char.isspace() for char in key):
-        print('빈 키 또는 공백이 포함된 키는 저장하지 않습니다.', file=sys.stderr)
-        return 1
-    env['ANTHROPIC_API_KEY'] = key
-    save_config(config_path, original, config)
-    print('API 키 저장 완료 (파일 권한 600).')
-    if args.create or args.profile_name is not None:
-        print('선택용 API 프로필 저장 완료.')
+    if args.infisical:
+        install_infisical_profiles(config_path, original, config)
+        print('Infisical API 프로필 6개 저장 완료.')
+    else:
+        print(f'대상: {provider_id} ({config_path})')
+        # 터미널이 없을 때 getpass가 평문 입력으로 전환하지 않게 한다.
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', getpass.GetPassWarning)
+            key = getpass.getpass('새 API 키 (화면에 표시되지 않음): ')
+        if not key or any(char.isspace() for char in key):
+            print('빈 키 또는 공백이 포함된 키는 저장하지 않습니다.', file=sys.stderr)
+            return 1
+        env['ANTHROPIC_API_KEY'] = key
+        save_config(config_path, original, config)
+        print('API 키 저장 완료 (파일 권한 600).')
+        if args.create or args.profile_name is not None:
+            print('선택용 API 프로필 저장 완료.')
     if args.no_reload:
         print('데몬에는 아직 반영하지 않았습니다 (--no-reload).')
         return 0
@@ -117,9 +199,9 @@ def main():
     except (OSError, subprocess.TimeoutExpired):
         result = None
     if result is None or result.returncode != 0:
-        print('키는 저장됐지만 Paseo reload를 확인하지 못했습니다. 해당 호스트의 설정을 다시 로드하세요.', file=sys.stderr)
+        print('파일은 저장됐지만 Paseo reload를 확인하지 못했습니다. 해당 호스트의 설정을 다시 로드하세요.', file=sys.stderr)
         return 1
-    print('Paseo reload 완료. 새 키를 쓰려면 해당 API provider로 새 에이전트를 시작하세요.')
+    print('Paseo reload 완료. 해당 API provider로 새 에이전트를 시작하세요.')
     return 0
 
 

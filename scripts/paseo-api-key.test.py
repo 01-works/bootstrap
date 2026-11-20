@@ -32,12 +32,17 @@ class ApiKeyTests(unittest.TestCase):
         }
         self.path.write_text(json.dumps(self.config))
 
-    def run_script(self, key='new-fixture-value', args=(), reload_code=0):
+    def run_script(self, key='new-fixture-value', args=(), reload_code=0, login='fixture-profile'):
         output = io.StringIO()
+        def run(command, **kwargs):
+            if command[1:3] == ['profile', 'current']:
+                return subprocess.CompletedProcess(command, 0, stdout=login)
+            return subprocess.CompletedProcess(command, reload_code)
+
         with patch('sys.argv', ['script', '--home', str(self.home), *args]), \
              patch.object(api_key.getpass, 'getpass', return_value=key), \
-             patch.object(api_key.shutil, 'which', return_value='/fake/paseo'), \
-             patch.object(api_key.subprocess, 'run', return_value=subprocess.CompletedProcess([], reload_code)) as reload, \
+             patch.object(api_key.shutil, 'which', side_effect=lambda name: f'/fake/{name}'), \
+             patch.object(api_key.subprocess, 'run', side_effect=run) as reload, \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             result = api_key.main()
         if key:
@@ -103,6 +108,46 @@ class ApiKeyTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertTrue(reload.called)
         self.assertEqual(json.loads(self.path.read_text())['agents']['providers']['claude-api']['env']['ANTHROPIC_API_KEY'], 'new-fixture-value')
+
+    def test_infisical_install_and_reinstall(self):
+        self.assertEqual(self.run_script(args=('--infisical',))[0], 0)
+        config = json.loads(self.path.read_text())
+        runner = self.home / 'paseo-infisical-provider'
+        self.assertEqual(runner.stat().st_mode & 0o777, 0o700)
+        providers = config['agents']['providers']
+        self.assertEqual(providers['claude-api'], self.config['agents']['providers']['claude-api'])
+        expected = {'claude-api-office': 'ANTHROPIC_API_KEY_OFFICE', 'claude-api-k': 'ANTHROPIC_API_KEY_K',
+                    'claude-api-y': 'ANTHROPIC_API_KEY_Y', 'claude-api-hi': 'ANTHROPIC_API_KEY_HI',
+                    'codex-api-office': 'GPT_API_KEY_OFFICE', 'codex-api-k': 'GPT_API_KEY_K'}
+        self.assertEqual(len(config['daemon']['agentProfiles']), 7)
+        for provider_id, secret in expected.items():
+            provider = providers[provider_id]
+            self.assertEqual(provider['command'], [str(runner)])
+            self.assertEqual(provider['env']['PASEO_INFISICAL_API_SECRET'], secret)
+            self.assertNotIn('ANTHROPIC_API_KEY', provider['env'])
+            self.assertNotIn('OPENAI_API_KEY', provider['env'])
+        config['daemon']['agentProfiles'][-1]['modeId'] = 'read-only'
+        self.path.write_text(json.dumps(config))
+        self.assertEqual(self.run_script(args=('--infisical', '--no-reload'))[0], 0)
+        self.assertEqual(json.loads(self.path.read_text()), config)
+
+        old_config = copy.deepcopy(config)
+        old_config['agents']['providers']['claude-api-hi']['command'] = [str(self.home / 'infisical-api-provider')]
+        self.path.write_text(json.dumps(old_config))
+        self.assertEqual(self.run_script(args=('--infisical', '--no-reload'))[0], 0)
+        self.assertEqual(json.loads(self.path.read_text()), config)
+
+    def test_infisical_install_stops_on_missing_login_or_manual_provider(self):
+        original = self.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'infisical login'):
+            self.run_script(args=('--infisical',), login='')
+        self.assertEqual(self.path.read_bytes(), original)
+        self.config['agents']['providers']['claude-api-hi'] = {'extends': 'claude'}
+        self.path.write_text(json.dumps(self.config))
+        with self.assertRaisesRegex(ValueError, 'provider ID'):
+            self.run_script(args=('--infisical',))
+        self.assertFalse((self.home / 'paseo-infisical-provider').exists())
+        self.assertEqual(json.loads(self.path.read_text()), self.config)
 
 
 if __name__ == '__main__':
