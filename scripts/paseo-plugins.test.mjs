@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, realpathSync, utimesSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -335,16 +335,29 @@ if (args[1] === 'ls') {
 
     // 최신 정책은 설치된 같은 소스만 Paseo의 일반 갱신에 넘긴다.
     const latest = { ...revisions, [registry.id]: '2.0.0' };
-    const runRefresh = () => spawnSync(process.execPath, [script, '--refresh'], {
+    const runRefresh = (...args) => spawnSync(process.execPath, [script, '--refresh', ...args], {
       env: { ...env, REGISTRY_PINS: JSON.stringify(latest) }, encoding: 'utf8'
     });
-    const refresh = runRefresh();
+    const refresh = runRefresh('--auto');
     assert.equal(refresh.status, 0, refresh.stdout + refresh.stderr);
     assert.match(refresh.stdout, /최신 버전 적용: zerosub → 2\.0\.0/);
-    assert.equal(runRefresh().stdout, '');
+    rmSync(calls);
+    assert.equal(runRefresh('--auto').status, 0);
+    assert.equal(existsSync(calls), false, '최근 확인했으면 데몬에도 접속하지 않는다');
+    assert.equal(runRefresh().status, 0);
+    assert.ok(callList().includes('plugin update zerosub --yes --json'), '수동 확인은 바로 실행한다');
+
+    const stateDir = join(dir, 'state/bootstrap/paseo-plugins');
+    const stamp = join(stateDir, readdirSync(stateDir).find(name => name.endsWith('.refresh')));
+    const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    utimesSync(stamp, yesterday, yesterday);
     rmSync(daemon);
     rmSync(calls);
-    assert.equal(runRefresh().status, 0);
+    assert.equal(runRefresh('--auto').status, 0);
     assert.deepEqual(callList(), ['plugin ls --json']);
+    writeFileSync(daemon, '');
+    rmSync(calls);
+    assert.equal(runRefresh('--auto').status, 0);
+    assert.ok(callList().includes('plugin update zerosub --yes --json'), '데몬이 켜지면 확인한다');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

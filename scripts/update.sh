@@ -9,7 +9,7 @@
 #   4. 결과를 상태 파일에 남기고, --auto는 결과가 바뀔 때만 알린다 (macOS 알림, 설정했으면 휴대폰).
 #   5. 실패해도 적용 기록은 앞으로 옮기고, 실패한 단계만 이어서 다시 시도한다 (같은 커밋은 한 시간 뒤).
 #   6. 저장소와 별개로 에이전트 CLI(Claude Code·Codex)를 단계보다 먼저 올린다. --auto는 하루에 한 번, 터미널에서는 매번 확인한다.
-#   7. 실행 중인 Paseo의 최신 플러그인은 새 커밋이 없어도 확인한다.
+#   7. 실행 중인 Paseo의 최신 플러그인은 자동으로 하루에 한 번, 터미널에서는 매번 확인한다.
 # pull로 이 파일이 바뀌어도 읽던 내용이 섞이지 않도록 전체를 함수로 정의한 뒤 맨 끝에서 부른다.
 
 BOOTSTRAP_ROOT="${BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -345,11 +345,13 @@ main() {
 
   if [[ "$DRY_RUN" != 1 ]] && has node && has paseo; then
     local plugin_output plugin_status=0
-    plugin_output="$(node "$BOOTSTRAP_ROOT/scripts/paseo-plugins.mjs" --refresh 2>&1)" || plugin_status=$?
+    local plugin_args=(--refresh)
+    [[ "$AUTO" != 1 ]] || plugin_args+=(--auto)
+    plugin_output="$(node "$BOOTSTRAP_ROOT/scripts/paseo-plugins.mjs" "${plugin_args[@]}" 2>&1)" || plugin_status=$?
     if [[ -n "$plugin_output" || "$plugin_status" != 0 ]]; then
       header
       [[ -z "$plugin_output" ]] || printf '%s\n' "$plugin_output"
-      [[ "$plugin_status" == 0 ]] || warn 'Paseo 플러그인 갱신은 다음 실행에서 다시 확인합니다'
+      [[ "$plugin_status" == 0 ]] || warn 'Paseo 플러그인 갱신 실패. 터미널에서 ./bootstrap.sh update로 바로 재시도할 수 있습니다'
     fi
   fi
 

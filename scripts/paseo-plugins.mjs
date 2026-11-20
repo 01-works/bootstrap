@@ -2,7 +2,7 @@
 // 개발용 폴더 설치와 다른 소스 설치는 건드리지 않는다.
 // 설치·갱신은 실행 중인 데몬이 한다. 데몬이 꺼져 있으면 마지막 동기화 이후 목록이 바뀐 경우에만 데몬을 켠다.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifestPath = join(root, 'agents/paseo-plugins.json');
 const settingsClient = fileURLToPath(new URL('./paseo-plugins-settings-client.mjs', import.meta.url));
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const refreshIntervalMs = 24 * 60 * 60 * 1000;
 
 // github:owner/repo:path → Paseo가 기록하는 git 원격과 플러그인 경로. 레지스트리(owner/slug)는 null.
 export function gitSource(source) {
@@ -349,7 +350,7 @@ function main() {
   let home = process.env.PASEO_HOME || join(homedir(), '.paseo');
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--home' && args[i + 1] && !args[i + 1].startsWith('--')) home = args[++i];
-    else if (!['--check', '--dry-run', '--bump', '--refresh'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
+    else if (!['--check', '--dry-run', '--bump', '--refresh', '--auto'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
   }
   home = resolve(home);
   const check = args.includes('--check');
@@ -360,11 +361,14 @@ function main() {
   if (args.includes('--bump')) return bump(home, manifest);
   const configPath = join(home, 'config.json');
   if (args.includes('--refresh')) {
-    if (!check && !dryRun && existsSync(configPath) && manifest.plugins.some(followsLatest) &&
-        JSON.parse(readFileSync(configPath, 'utf8')).pluginsEnabled === true) {
-      const listed = listPlugins(home, { timeout: 30_000 });
-      if (listed) refreshLatest(home, manifest, listed);
-    }
+    if (check || dryRun || !existsSync(configPath) || !manifest.plugins.some(followsLatest) ||
+        JSON.parse(readFileSync(configPath, 'utf8')).pluginsEnabled !== true) return;
+    const refreshStamp = `${syncedPath(home)}.refresh`;
+    if (args.includes('--auto') && Date.now() - (statSync(refreshStamp, { throwIfNoEntry: false })?.mtimeMs ?? 0) < refreshIntervalMs) return;
+    const listed = listPlugins(home, { timeout: 30_000 });
+    if (!listed) return;
+    writeSynced(refreshStamp, '');
+    refreshLatest(home, manifest, listed);
     return;
   }
   if (!existsSync(configPath)) {
