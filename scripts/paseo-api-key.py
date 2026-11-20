@@ -23,6 +23,11 @@ INFISICAL_PROFILES = (
     ('codex-api-office', 'GPT API (Office)', 'codex', 'GPT_API_KEY_OFFICE'),
     ('codex-api-k', 'GPT API (K)', 'codex', 'GPT_API_KEY_K'),
 )
+CLAUDE_PROFILES = {
+    provider: (provider.removeprefix('claude-api-') + ' api', secret)
+    for provider, _, backend, secret in INFISICAL_PROFILES if backend == 'claude'
+}
+ZEROSUB_SELECTION = 'bootstrap-zerosub-claude.json'
 
 
 def prepare_provider(config, provider_id, create=False, profile_name=None):
@@ -101,27 +106,112 @@ def active_infisical_project(cli, profile_name):
     return True
 
 
+def infisical_profile(cli):
+    login = subprocess.run([cli, 'profile', 'current', '--plain', '--silent'],
+                           cwd='/', stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+    profile = login.stdout.strip()
+    return profile if not login.returncode and profile and '\n' not in profile else None
+
+
+def zerosub_enabled(config):
+    plugin = config.get('plugins', {}).get('zerosub')
+    return config.get('pluginsEnabled') is True and isinstance(plugin, dict) and plugin.get('enabled') is not False
+
+
+def covered_by_zerosub(home, config, selection=None):
+    if not zerosub_enabled(config):
+        return set()
+    try:
+        if selection is None:
+            selection = json.loads((home / ZEROSUB_SELECTION).read_bytes())
+        accounts = json.loads((home / 'zerosub' / 'state.json').read_bytes())['accounts']
+        active = {a['id'] for a in accounts if a.get('family') == 'claude'
+                  and a.get('auth') == 'api' and a.get('signedIn') is True and not a.get('disabled')}
+        return {provider for provider in CLAUDE_PROFILES if selection.get(provider) in active}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return set()
+
+
+def remove_covered_profiles(config, covered):
+    profiles = config.get('daemon', {}).get('agentProfiles', [])
+    profiles[:] = [p for p in profiles
+                   if not (p.get('provider') in covered and p.get('id') == f"local-api-{p['provider']}")]
+
+
+def import_zerosub_claude(config_path):
+    infisical, node = shutil.which('infisical'), shutil.which('node')
+    if not infisical or not node:
+        raise ValueError('ZeroSub로 가져오려면 Infisical CLI와 Node가 필요합니다.')
+    home = config_path.parent
+    config = json.loads(config_path.read_bytes())
+    if not zerosub_enabled(config):
+        raise ValueError('이 기기의 Paseo에서 ZeroSub를 먼저 설치해 켜세요.')
+    env = os.environ.copy()
+    env.pop('INFISICAL_TOKEN', None)
+    env.pop('PASEO_HOST', None)
+    try:
+        profile = infisical_profile(infisical)
+        if not profile:
+            raise ValueError('Infisical 로그인 프로필이 없습니다. infisical login을 실행하세요.')
+        wanted = []
+        for provider, (label, secret) in CLAUDE_PROFILES.items():
+            result = subprocess.run([infisical, 'secrets', 'get', secret, '--profile', profile,
+                                     '--domain', INFISICAL_DOMAIN, '--projectId', INFISICAL_PROJECT_ID,
+                                     '--env', 'prod', '--path', '/ai', '--plain', '--silent', '--expand=false'],
+                                    cwd='/', env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, text=True, timeout=15)
+            key = result.stdout.strip()
+            if result.returncode or not re.fullmatch(r'sk-[A-Za-z0-9_-]+', key):
+                raise ValueError(f'{label} 키를 가져오지 못했습니다. Infisical 로그인과 접근 권한을 확인하세요.')
+            wanted.append({'provider': provider, 'label': label, 'key': key})
+        if len({account['key'] for account in wanted}) != len(wanted):
+            raise ValueError('Infisical에 같은 Claude 키가 두 이름 이상으로 등록되어 있습니다.')
+        # 키는 자식 프로세스의 stdin으로만 넘긴다. 오류의 원문에는 키가 들어갈 수 있다.
+        helper = Path(__file__).with_name('paseo-zerosub-client.mjs')
+        result = subprocess.run([node, str(helper), str(home)], input=json.dumps(wanted),
+                                capture_output=True, text=True, env=env, timeout=125)
+    except subprocess.TimeoutExpired:
+        raise ValueError('Infisical 또는 ZeroSub 요청 시간이 초과됐습니다. 다시 실행하세요.') from None
+    if result.returncode:
+        raise ValueError('ZeroSub 가져오기 실패. Paseo 앱·ZeroSub 실행 상태와 API 계정 이름 충돌을 확인하세요. 일부 등록됐으면 다시 실행해 이어갈 수 있습니다.')
+    try:
+        selection = json.loads(result.stdout)
+    except ValueError:
+        raise ValueError('ZeroSub 등록 응답을 확인할 수 없습니다.') from None
+    if (not isinstance(selection, dict) or selection.keys() != CLAUDE_PROFILES.keys() or
+            not all(isinstance(account, str) for account in selection.values()) or
+            len(set(selection.values())) != len(CLAUDE_PROFILES)):
+        raise ValueError('ZeroSub API 계정 네 개를 서로 구분할 수 없습니다.')
+    original = config_path.read_bytes()
+    config = json.loads(original)
+    if covered_by_zerosub(home, config, selection) != set(CLAUDE_PROFILES):
+        raise ValueError('ZeroSub API 계정 네 개를 모두 확인할 수 없습니다.')
+    receipt = home / ZEROSUB_SELECTION
+    previous = receipt.read_bytes() if receipt.exists() else None
+    replace_file(receipt, previous, (json.dumps(selection, indent=2) + '\n').encode())
+    remove_covered_profiles(config, set(CLAUDE_PROFILES))
+    if config != json.loads(original):
+        save_config(config_path, original, config)
+
+
 def install_infisical_profiles(config_path, original, config, if_ready=False):
     binaries = {}
     for name in ('infisical', 'claude', 'codex'):
         binary = shutil.which(name)
         if not binary:
             if if_ready:
-                return False
+                return None
             raise ValueError(f'{name} 실행 파일을 PATH에서 찾을 수 없습니다.')
         binaries[name] = str(Path(binary).absolute())
     try:
-        login = subprocess.run([binaries['infisical'], 'profile', 'current', '--plain', '--silent'],
-                               cwd='/', stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
-        profile_name = login.stdout.strip()
-        has_profile = not login.returncode and bool(profile_name) and '\n' not in profile_name
-        if if_ready and (not has_profile or not active_infisical_project(binaries['infisical'], profile_name)):
-            return False
+        profile_name = infisical_profile(binaries['infisical'])
+        if if_ready and (not profile_name or not active_infisical_project(binaries['infisical'], profile_name)):
+            return None
     except subprocess.TimeoutExpired:
         if if_ready:
-            return False
+            return None
         raise ValueError('Infisical 로그인 프로필 조회 시간이 초과되었습니다.') from None
-    if not has_profile:
+    if not profile_name:
         raise ValueError('Infisical 로그인 프로필이 없습니다. infisical login을 실행하세요.')
 
     runner = config_path.with_name('paseo-infisical-provider')
@@ -132,8 +222,11 @@ def install_infisical_profiles(config_path, original, config, if_ready=False):
             not previous_runner or b'Fetch only the key assigned to the selected Paseo provider.' not in previous_runner)):
         raise ValueError('기존 Infisical 실행 파일이 있어 덮어쓸 수 없습니다.')
 
+    covered = covered_by_zerosub(config_path.parent, config)
     providers = config.setdefault('agents', {}).setdefault('providers', {})
     for provider_id, label, backend, secret in INFISICAL_PROFILES:
+        if provider_id in covered:
+            continue
         if provider_id in providers:
             provider = providers[provider_id]
             if (provider.get('extends') != backend or provider.get('command') not in
@@ -160,12 +253,14 @@ def install_infisical_profiles(config_path, original, config, if_ready=False):
         replace_file(runner, previous_runner, runner_source, mode=0o700)
     if config != json.loads(original):
         save_config(config_path, original, config)
-    return True
+    return len(INFISICAL_PROFILES) - len(covered)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--infisical', action='store_true', help='Infisical의 Claude·GPT API 프로필 6개 설치')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--infisical', action='store_true', help='Infisical의 Claude·GPT API 프로필 설치')
+    mode.add_argument('--zerosub', action='store_true', help='Infisical의 Claude API 키를 이 기기의 ZeroSub로 가져오기')
     parser.add_argument('--if-ready', action='store_true', help='Infisical 인증·프로젝트 접근이 준비된 경우에만 설치')
     parser.add_argument('--provider', help='대상 provider ID (기본: claude-api)')
     parser.add_argument('--create', action='store_true', help='새 Claude API provider와 선택용 프로필 생성')
@@ -175,14 +270,16 @@ def main():
     args = parser.parse_args()
     if args.if_ready and not args.infisical:
         parser.error('--if-ready는 --infisical과 함께 사용하세요.')
-    if args.infisical and (args.create or args.provider is not None or args.profile_name is not None):
-        parser.error('--infisical과 개별 provider 옵션은 함께 사용할 수 없습니다.')
+    if (args.infisical or args.zerosub) and (args.create or args.provider is not None or args.profile_name is not None):
+        parser.error('--infisical·--zerosub와 개별 provider 옵션은 함께 사용할 수 없습니다.')
+    if args.zerosub and args.no_reload:
+        parser.error('--zerosub는 실행 중인 로컬 Paseo가 필요합니다.')
     provider_id = 'claude-api' if args.provider is None else args.provider
     config_path = (args.home.expanduser() / 'config.json').resolve(strict=True)
     original = config_path.read_bytes()
     try:
         config = json.loads(original)
-        if not args.infisical:
+        if not (args.infisical or args.zerosub):
             env = prepare_provider(config, provider_id, args.create, args.profile_name)
     except (KeyError, TypeError, AttributeError, json.JSONDecodeError):
         print('기존 Claude provider 설정을 확인할 수 없습니다. 파일은 변경하지 않았습니다.', file=sys.stderr)
@@ -197,11 +294,15 @@ def main():
         print('Paseo CLI를 찾지 못했습니다. 파일만 바꾸려면 --no-reload를 사용하세요.', file=sys.stderr)
         return 1
 
-    if args.infisical:
-        if not install_infisical_profiles(config_path, original, config, args.if_ready):
+    if args.zerosub:
+        import_zerosub_claude(config_path)
+        print('ZeroSub Claude API 계정 4개 확인 완료. 이 기기의 중복 Paseo 프로필을 정리했습니다.')
+    elif args.infisical:
+        count = install_infisical_profiles(config_path, original, config, args.if_ready)
+        if count is None:
             print('Infisical API 프로필 건너뜀 (CLI·로그인·프로젝트 접근 상태 확인).')
             return 0
-        print('Infisical API 프로필 6개 저장 완료.')
+        print(f'Infisical API 프로필 {count}개 설정 완료.')
     else:
         print(f'대상: {provider_id} ({config_path})')
         # 터미널이 없을 때 getpass가 평문 입력으로 전환하지 않게 한다.

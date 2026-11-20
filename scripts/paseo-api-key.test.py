@@ -32,7 +32,8 @@ class ApiKeyTests(unittest.TestCase):
         }
         self.path.write_text(json.dumps(self.config))
 
-    def run_script(self, key='new-fixture-value', args=(), reload_code=0, login='fixture-profile', status=0, project=0):
+    def run_script(self, key='new-fixture-value', args=(), reload_code=0, login='fixture-profile', status=0, project=0,
+                   selection=None, lookup_code=0, zerosub_code=0):
         output = io.StringIO()
         def run(command, **kwargs):
             if command[1:3] == ['profile', 'current']:
@@ -41,6 +42,10 @@ class ApiKeyTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, status)
             if command[1:4] == ['secrets-manager', 'projects', 'get']:
                 return subprocess.CompletedProcess(command, project)
+            if command[1:3] == ['secrets', 'get']:
+                return subprocess.CompletedProcess(command, lookup_code, stdout=f'sk-fixture-{command[3]}\n')
+            if command[0] == '/fake/node':
+                return subprocess.CompletedProcess(command, zerosub_code, stdout=json.dumps(selection))
             return subprocess.CompletedProcess(command, reload_code)
 
         with patch('sys.argv', ['script', '--home', str(self.home), *args]), \
@@ -52,6 +57,7 @@ class ApiKeyTests(unittest.TestCase):
         if key:
             self.assertNotIn(key, output.getvalue())
         self.assertNotIn('old-fixture-value', output.getvalue())
+        self.assertNotIn('sk-fixture-', output.getvalue())
         return result, reload
 
     def test_replace_preserves_unrelated_settings_and_targets_home(self):
@@ -172,6 +178,60 @@ class ApiKeyTests(unittest.TestCase):
             self.run_script(args=('--infisical',))
         self.assertFalse((self.home / 'paseo-infisical-provider').exists())
         self.assertEqual(json.loads(self.path.read_text()), self.config)
+
+    def zerosub_accounts(self):
+        config = json.loads(self.path.read_text())
+        config['plugins'] = {'zerosub': {'enabled': True}}
+        self.path.write_text(json.dumps(config))
+        selection = {provider: f'claude-{index:012x}'
+                     for index, provider in enumerate(api_key.CLAUDE_PROFILES, 1)}
+        state = self.home / 'zerosub' / 'state.json'
+        state.parent.mkdir(exist_ok=True)
+        state.write_text(json.dumps({'accounts': [
+            {'id': identity, 'family': 'claude', 'auth': 'api', 'signedIn': True}
+            for identity in selection.values()
+        ]}))
+        return selection, state
+
+    def test_zerosub_import_removes_only_generated_claude_profiles_and_prevents_reinstall(self):
+        self.run_script(args=('--infisical', '--no-reload'))
+        selection, state = self.zerosub_accounts()
+        config = json.loads(self.path.read_text())
+        config['daemon']['agentProfiles'].append({'id': 'custom', 'name': 'Custom', 'provider': 'claude-api-k'})
+        self.path.write_text(json.dumps(config))
+        result, run = self.run_script(args=('--zerosub',), selection=selection)
+        self.assertEqual(result, 0)
+        receipt = self.home / api_key.ZEROSUB_SELECTION
+        self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(json.loads(receipt.read_text()), selection)
+        request = next(call for call in run.call_args_list if call.args[0][0] == '/fake/node')
+        sent = json.loads(request.kwargs['input'])
+        self.assertEqual([a['label'] for a in sent], ['office api', 'k api', 'y api', 'hi api'])
+        self.assertNotIn('sk-fixture-', repr(request.args) + repr(request.kwargs['env']))
+        self.assertNotIn('sk-fixture-', self.path.read_text() + receipt.read_text())
+
+        self.run_script(args=('--infisical', '--if-ready'))
+        providers = json.loads(self.path.read_text())['agents']['providers']
+        self.assertTrue(set(selection) <= providers.keys())
+        profiles = json.loads(self.path.read_text())['daemon']['agentProfiles']
+        self.assertEqual([p['id'] for p in profiles],
+                         ['other', 'local-api-codex-api-office', 'local-api-codex-api-k', 'custom'])
+        data = json.loads(state.read_text())
+        data['accounts'][0]['disabled'] = True
+        state.write_text(json.dumps(data))
+        self.run_script(args=('--infisical', '--if-ready'))
+        self.assertIn('local-api-claude-api-office', [p['id'] for p in json.loads(self.path.read_text())['daemon']['agentProfiles']])
+
+    def test_zerosub_failure_preserves_profiles_and_writes_no_receipt(self):
+        self.run_script(args=('--infisical', '--no-reload'))
+        selection, _ = self.zerosub_accounts()
+        original = self.path.read_bytes()
+        duplicate = dict.fromkeys(selection, next(iter(selection.values())))
+        for error in ({'lookup_code': 1}, {'zerosub_code': 1}, {'selection': {}}, {'selection': duplicate}):
+            with self.subTest(error=error), self.assertRaises(ValueError):
+                self.run_script(args=('--zerosub',), **({'selection': selection} | error))
+            self.assertEqual(self.path.read_bytes(), original)
+            self.assertFalse((self.home / api_key.ZEROSUB_SELECTION).exists())
 
 
 if __name__ == '__main__':

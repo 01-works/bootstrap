@@ -60,9 +60,10 @@ function daemonRunning(home) {
 
 // 앱의 CLI 런처(Resources/bin/paseo)와 같은 방식으로 Paseo 런타임에서 클라이언트 스크립트를 실행한다.
 // 앱 내부 클라이언트 모듈을 쓰는 스크립트에 BOOTSTRAP_PASEO_HOME·BOOTSTRAP_PASEO_CLIENT와 extraEnv를 넘긴다.
-export function runAppScript(runtime, script, home, extraEnv = {}) {
+export function runAppScript(runtime, script, home, extraEnv = {}, input) {
   return spawnSync(runtime.helper, ['--disable-warning=DEP0040', runtime.runner, 'node-script', script], {
     encoding: 'utf8',
+    input,
     timeout: 120_000,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PASEO_NODE_ENV: 'production', BOOTSTRAP_PASEO_HOME: home, BOOTSTRAP_PASEO_CLIENT: runtime.client, ...extraEnv }
   });
