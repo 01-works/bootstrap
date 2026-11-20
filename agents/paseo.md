@@ -40,9 +40,23 @@ infisical login
 | Claude API (Office), (K), (Y), (HI) | `ANTHROPIC_API_KEY_OFFICE`, `ANTHROPIC_API_KEY_K`, `ANTHROPIC_API_KEY_Y`, `ANTHROPIC_API_KEY_HI` |
 | GPT API (Office), (K) | `GPT_API_KEY_OFFICE`, `GPT_API_KEY_K` |
 
-명령은 Paseo home에 실행 스크립트를 복사하고 여섯 프로필을 병합한 뒤 데몬에 다시 로드한다. 각 프로필로 새 에이전트를 시작하면 해당 키 하나를 Infisical에서 읽어 Anthropic 또는 OpenAI 공식 API에 연결한다. 저장소와 Paseo 설정에는 키 이름만 들어간다. 키를 교체하면 다음 실행부터 반영된다. 로그인이 만료되면 `infisical login`을 다시 실행하고, 다른 로그인 프로필로 바꿨다면 가져오기 명령도 다시 실행한다.
+명령은 Paseo home에 실행 스크립트를 복사하고 프로필을 병합한 뒤 데몬에 다시 로드한다. 각 프로필로 새 에이전트를 시작하면 해당 키 하나를 Infisical에서 읽어 Anthropic 또는 OpenAI 공식 API에 연결한다. 이 방식은 키 이름만 저장한다. 키를 교체하면 다음 실행부터 반영된다. 로그인이 만료되면 `infisical login`을 다시 실행하고, 다른 로그인 프로필로 바꿨다면 가져오기 명령도 다시 실행한다.
 
 등록과 API 호출은 별개다. Claude Console에 사용 가능한 잔액이 필요하다. ChatGPT에 연결된 월간 API 크레딧 혜택을 이용하는 조직은 일반 OpenAI Responses API가 성공해도 Codex의 API 키 요청이 거절될 수 있다. [OpenAI의 API 크레딧 혜택 안내](https://help.openai.com/en/articles/20001626-api-credits-benefit-for-eligible-chatgpt-subscriptions)
+
+### Claude API 키를 ZeroSub에 한 번 가져오기
+
+이 기기에서 Paseo 앱과 ZeroSub를 켜고 Infisical에 로그인한 상태에서 실행한다.
+
+```sh
+python3 scripts/paseo-api-key.py --zerosub
+```
+
+Infisical의 Claude 키 네 개를 ZeroSub의 계정 추가 기능으로 이 기기에 저장한다. **Accounts (ZeroSub) → Claude**에서 `office api`, `k api`, `y api`, `hi api`를 선택할 수 있다. 동일 키가 이미 등록돼 있으면 기존 계정을 사용한다. **GPT API (Office/K)**는 Paseo **Profiles**에서 사용한다.
+
+가져오기가 끝나면 해당 Claude 계정과 중복되는 bootstrap 프로필을 제거한다. 이후에도 ZeroSub 계정이 활성 상태인 동안 `paseo` 단계는 해당 프로필의 자동 등록을 건너뛴다. 이 기기의 Paseo home에 있는 `bootstrap-zerosub-claude.json`은 계정 연결만 기록한다. 프로필로 돌아가려면 그 파일을 지운 뒤 `python3 scripts/paseo-api-key.py --infisical`을 실행한다.
+
+ZeroSub에 저장한 키는 이 기기에 남으므로 실행할 때 Infisical에 다시 로그인할 필요가 없다. 키를 교체하면 ZeroSub의 해당 계정에서 키도 교체한다. 다른 기기에서는 필요할 때 그 기기에서 가져오기 명령을 한 번 실행한다. ZeroSub 1.20.3에서는 등록한 Claude API 계정 사이의 전환을 계정 선택에서 직접 한다.
 
 ### 로컬에 키를 입력하는 방식
 
