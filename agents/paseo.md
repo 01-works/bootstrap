@@ -21,6 +21,8 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 
 ### Infisical에서 직접 API 프로필 가져오기
 
+**Paseo API 대체 프로필**은 Infisical의 직접 API 키로 실행하는 Claude·GPT 프로필을 통칭한다. “Paseo API 대체 프로필 가져와 줘”는 Paseo 호스트에 아래 명령으로 이 프로필들을 등록해 달라는 뜻이다.
+
 Paseo 데몬이 실행되는 Mac에서 초기 Paseo 설정을 마친 뒤, Claude Code와 Codex CLI가 PATH에 있는 터미널에서 실행한다.
 
 ```sh
