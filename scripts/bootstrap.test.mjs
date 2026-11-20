@@ -263,7 +263,7 @@ test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경�
   assert.equal(readlinkSync(compat), dst);
   const queue = join(root, 'queue');
   const protocol = () => JSON.parse(spawnSync('/bin/bash', [dst, 'capabilities'], {
-    env: { ...process.env, YW_HEAVY_QUEUE: queue }, encoding: 'utf8'
+    env: { ...process.env, YW_HEAVY_QUEUE: queue, YW_HEAVY_EXEC_LOCK: join(root, 'exec') }, encoding: 'utf8'
   }).stdout);
   assert.equal(protocol().mode, 'compat', '설치는 새 모드를 활성화하지 않는다');
   assert.equal(existsSync(queue + '.mode'), false);

@@ -8,9 +8,10 @@
 #   실행 lock YW_HEAVY_EXEC_LOCK (/tmp/yw-heavy-check.lock/owner.txt)
 #   편집 lock YW_HEAVY_FLOCK ($Q.flock, 커널 flock) + 호환 표지 파일 YW_HEAVY_EDIT_LOCK (/tmp/yw-heavy-queue.edit.lock)
 #   회수 기록 YW_HEAVY_LOG ($Q.log), 회수 끄기 YW_HEAVY_NO_RECLAIM ($Q.no-reclaim), 대기 주기 YW_HEAVY_POLL (30초)
-#   v3 모드 $Q.mode (없으면 compat), 신규 제출 중지 $Q.paused, 감독자 순환 $Q.rotation
+#   v3 모드 $Q.mode (없으면 compat, 단 v3 대기·실행이 남아 있으면 round-robin), 신규 제출 중지 $Q.paused, 감독자 순환 $Q.rotation
 #   v3 작업 이벤트 YW_HEAVY_EVENTS ($Q.events), 내부 재확인 YW_HEAVY_FAST_POLL (.2초)
 #   v3 pending 한도 YW_HEAVY_MAX_PENDING_SUPERVISOR (128), YW_HEAVY_MAX_PENDING (1024)
+#   /tmp 정리 방지 mtime 갱신 주기 YW_HEAVY_KEEP_EVERY (3600초), run 갱신 프로세스의 부모 확인 YW_HEAVY_KEEP_CHECK (20초)
 #   owner 없는 실행 lock 회수까지 YW_HEAVY_OWNERLESS_AGE (60초), 구형식 편집 lock 경고까지 YW_HEAVY_EDIT_WARN (120초)
 
 usage() {
@@ -56,10 +57,13 @@ init() {
   IN_GEN="${YW_HEAVY_GENERATION:-}" IN_TOKEN="${YW_HEAVY_TOKEN:-}"
   EDIT_WARN="${YW_HEAVY_EDIT_WARN:-120}"
   OWNERLESS_AGE="${YW_HEAVY_OWNERLESS_AGE:-60}"
+  KEEP_EVERY="${YW_HEAVY_KEEP_EVERY:-3600}"
+  KEEP_SECS="${KEEP_EVERY%.*}"
+  KEEP_CHECK="${YW_HEAVY_KEEP_CHECK:-20}"
   # 구버전 편집 lock이 풀리기를 기다리는 주기. 1초보다 짧은 대기 주기(테스트)면 그것을 쓴다.
   case "$POLL" in 0* | .*) EDIT_POLL="$POLL" ;; *) EDIT_POLL=1 ;; esac
   LOCKF=/usr/bin/lockf
-  ID='' WORKER='' SUP='' HOLDER='' HOLDER_START=- MYSTART=- MYMARK='' LOCKED=0 SIG='' HELD=0
+  ID='' WORKER='' SUP='' HOLDER='' HOLDER_START=- MYSTART=- MYMARK='' LOCKED=0 SIG='' HELD=0 KEPT_AT=-1 KEEPER=''
 }
 
 # role.sh와 같은 상태 경로·파일 판정. 프로젝트별 ID 대신 기존 verifier 루프의 감독자 식별자를 쓴다.
@@ -224,7 +228,17 @@ lock_queue() {
     # 한 번만 시도하고 셸에서 쉰다. flock 파일·FD는 재시도 사이에도 그대로 유지한다.
     "$LOCKF" -s -t 0 9
     rc=$?
-    [ "$rc" = 0 ] && break
+    if [ "$rc" = 0 ]; then
+      # 기다리는 동안 경로가 지워지고 새로 만들어졌으면 다른 inode의 잠금이다(#114). 같은 경로를 다시 연다.
+      [ "$(stat -f %i /dev/fd/9 2>/dev/null)" != "$(stat -f %i "$FL" 2>/dev/null)" ] || break
+      exec 9>&-
+      if ! exec 9>>"$FL"; then
+        exec 9>&-
+        say "대기열 잠금 파일을 열 수 없음: $FL"
+        return 1
+      fi
+      continue
+    fi
     if [ "$rc" != 75 ]; then
       exec 9>&-
       say "lockf 실패 ($rc): $FL"
@@ -252,8 +266,40 @@ lock_queue() {
     [ "$backoff" -le 500 ] || backoff=500
   done
   LOCKED=1
-  edit_lock
+  edit_lock || return
+  state_keep
+  mode_heal || say "모드 파일을 복원하지 못했습니다: $MODE"
+  return 0
 }
+
+# macOS tmp_cleaner는 매일 0시에 atime·mtime·ctime이 모두 3일 넘은 /tmp 파일을 지운다(#114).
+# APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않아 읽기만 하는 상태 파일과 flock 파일이 지워진다.
+# 잠금을 잡은 프로세스와 실행 중인 run이 주기마다 mtime을 갱신한다. 없는 파일은 만들지 않는다.
+keep_paths() { touch -c "$FL" "$Q" "$XL/owner.txt" "$MODE" "$PAUSED" "$RING" "$NR" "$LOG" "$EVENTS" 2>/dev/null 9>&- || true; }
+state_keep() {
+  [ "$KEPT_AT" -lt 0 ] || [ $((SECONDS - KEPT_AT)) -ge "${KEEP_SECS:-0}" ] || return 0
+  KEPT_AT="$SECONDS"
+  keep_paths
+}
+# 대기자가 없으면 run 동안 아무도 잠금을 잡지 않는다. 명령이 끝날 때까지 별도 프로세스가 갱신한다.
+# 부모 확인은 YW_HEAVY_KEEP_CHECK(20초)마다 따로 한다. run이 SIGKILL되면 그 안에 끝난다.
+keeper_start() {
+  local parent="$$" last="$SECONDS"
+  (
+    trap 'kill "$s" 2>/dev/null; exit 0' TERM
+    trap - INT HUP EXIT
+    while :; do
+      /bin/sleep "$KEEP_CHECK" & s=$!
+      wait "$s"
+      kill -0 "$parent" 2>/dev/null || exit 0
+      [ $((SECONDS - last)) -ge "${KEEP_SECS:-0}" ] || continue
+      last="$SECONDS"
+      keep_paths
+    done
+  ) </dev/null >/dev/null 2>&1 9>&- &
+  KEEPER=$!
+}
+keeper_stop() { [ -z "$KEEPER" ] || kill "$KEEPER" 2>/dev/null; KEEPER=''; }
 
 # 구버전(mkdir 편집 lock)이 같은 경로를 쓰지 못하게 표지 파일을 만든다. 표지 파일은 flock을 가진 쪽만 만든다.
 # set -C는 O_EXCL로 열어 경로에 무엇이든(디렉터리 포함) 있으면 실패한다. ln -s는 경로가 디렉터리면 그 안에 링크를 만들어 쓰지 않는다.
@@ -546,7 +592,7 @@ do_run() {
   trap 'SIG=TERM' TERM
   trap 'SIG=INT' INT
   trap 'SIG=HUP' HUP
-  trap '[ "$HELD" = 0 ] || finish_release' EXIT
+  trap 'keeper_stop; [ "$HELD" = 0 ] || finish_release' EXIT
   HOLDER="$$"
   HOLDER_START="$MYSTART"
   do_acquire || return $?
@@ -556,12 +602,14 @@ do_run() {
     sig_code
     return
   fi
+  keeper_start
   if [ -n "$GEN" ]; then
     YW_HEAVY_GENERATION="$GEN" YW_HEAVY_TOKEN="$TOKEN" "$@" 9>&-
   else
     "$@" 9>&-
   fi
   rc=$?
+  keeper_stop
   EXIT_CODE="$rc"
   finish_release
   if [ -n "$SIG" ]; then
@@ -576,6 +624,7 @@ do_status() {
   printf '모드: %s, 신규 제출: ' "$(mode_read)"
   if [ -e "$PAUSED" ]; then printf '중지\n'; else printf '허용\n'; fi
   if [ "$(mode_read)" = round-robin ]; then printf '감독자 순환: %s\n' "$(ring_read | tr '\n' ' ')"; fi
+  last_mode_change
   printf '대기열: %s\n' "$Q"
   while IFS= read -r l; do
     [ -n "$l" ] || continue
@@ -669,13 +718,45 @@ need_task() {
 
 # ---- v3: 명시적으로 활성화하는 단일 세대·감독자 순환 --------------------------
 # 기본 모드는 계속 v2 FIFO다. 제어 명령도 기존 편집 잠금 아래에서 직렬화한다.
-mode_read() { if [ -f "$MODE" ]; then cat "$MODE"; else printf compat; fi; }
+# 기록의 마지막 mode-change·mode-restore 한 줄: 시각, from→to, 주체(전환은 호출 부모, 복원은 복원한 프로세스).
+last_mode_change() {
+  local l
+  l="$(grep -E '^[^ ]+ mode-(change|restore) ' "$LOG" 2>/dev/null | tail -1)"
+  if [ -z "$l" ]; then printf '마지막 모드 변경: 기록 없음\n'; return; fi
+  printf '%s\n' "$l" | awk '{
+    for (i = 3; i <= NF; i++) { split($i, kv, "="); v[kv[1]] = substr($i, length(kv[1]) + 2) }
+    who = ("parent" in v) ? "parent=" v["parent"] : "by=" v["by"]
+    printf "마지막 모드 변경: %s %s→%s 주체 %s (%s)\n", $1, v["from"], v["to"], who, $2
+  }'
+}
+# compat 전환은 빈 대기열·실행 lock 부재에서만 하므로 v3 줄·owner가 남아 있으면 모드 파일만 사라진 것이다.
+v3_active() {
+  [ "$(json_num "$(owner_read)" v)" = 3 ] && return 0
+  q_lines | awk '{for (i = 2; i <= NF; i++) if ($i == "v=3") f = 1} END {exit !f}'
+}
+# 파일이 있어도 읽지 못하거나 비어 있으면 없는 것과 같이 판단한다.
+# 일반 파일이 아니면(FIFO 등) 읽다가 멈추지 않도록 읽지 않는다.
+mode_file() { local m; [ -f "$MODE" ] && m="$(cat "$MODE" 2>/dev/null)" && [ -n "$m" ] && printf '%s' "$m"; }
+mode_read() {
+  mode_file || if v3_active; then printf round-robin; else printf compat; fi
+}
+mode_write() {
+  local tmp
+  tmp="$(mktemp "$MODE.tmp.XXXXXX")" || return 1
+  if ! { printf '%s\n' "$1" >"$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$MODE"; }; then rm -f "$tmp"; return 1; fi
+}
+# 편집 잠금 아래에서만 부른다. 사라진 모드 파일을 v3 대기·실행이 남아 있을 때만 되살린다.
+mode_heal() {
+  ! mode_file >/dev/null && v3_active || return 0
+  mode_write round-robin || return 1
+  note "mode-restore from=missing to=round-robin"
+}
 capabilities() {
   printf '{"protocol":3,"mode":"%s","paused":%s,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl"]}\n' \
     "$(mode_read)" "$(if [ -e "$PAUSED" ]; then echo true; else echo false; fi)"
 }
 control() {
-  local cmd="$1" target="${2:-}" tmp
+  local cmd="$1" target="${2:-}" prev
   if [ "$cmd" = mode ] && [ $# = 1 ]; then mode_read; echo; return; fi
   case "$cmd:$#:$target" in reclaim:1: | pause:1: | resume:1: | mode:2:compat | mode:2:round-robin) ;;
     *) usage >&2; return 2 ;; esac
@@ -690,11 +771,11 @@ control() {
       if [ ! -e "$PAUSED" ] || [ -n "$(q_lines)" ] || [ -e "$XL" ]; then
         unlock_queue; say "전환 거절: pause 후 실행·대기자(구버전 포함)를 모두 drain해야 합니다"; return 4
       fi
-      tmp="$(mktemp "$MODE.tmp.XXXXXX")" || { unlock_queue; return 1; }
-      if ! { printf '%s\n' "$target" >"$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$MODE"; }; then
-        rm -f "$tmp"; unlock_queue; return 1
-      fi
-      rm -f "$RING"
+      prev="$(mode_read)"
+      # 순환 파일을 먼저 지운다. 실패하면 기존 모드를 유지한다.
+      rm -f "$RING" || { unlock_queue; return 1; }
+      mode_write "$target" || { unlock_queue; return 1; }
+      note "mode-change from=$prev to=$target parent=$PPID:$(ps -o ucomm= -p "$PPID" 2>/dev/null | tr -d ' ')"
       ;;
   esac
   local rc=$?
