@@ -2,7 +2,7 @@
 // 개발용 폴더 설치와 다른 소스 설치는 건드리지 않는다.
 // 설치·갱신은 실행 중인 데몬이 한다. 데몬이 꺼져 있으면 마지막 동기화 이후 목록이 바뀐 경우에만 데몬을 켠다.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,6 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifestPath = join(root, 'agents/paseo-plugins.json');
 const settingsClient = fileURLToPath(new URL('./paseo-plugins-settings-client.mjs', import.meta.url));
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const refreshIntervalMs = 24 * 60 * 60 * 1000;
 
 // github:owner/repo:path → Paseo가 기록하는 git 원격과 플러그인 경로. 레지스트리(owner/slug)는 null.
 export function gitSource(source) {
@@ -145,7 +144,7 @@ export function planPlugins(config, manifest, listed) {
 
 function paseo(args, options = {}) {
   const result = spawnSync('paseo', args, { encoding: 'utf8', ...options });
-  if (result.error && result.error.code !== 'ETIMEDOUT') throw result.error;
+  if (result.error) throw result.error;
   return result;
 }
 
@@ -154,9 +153,8 @@ function json(result) {
 }
 
 // 실행 중인 데몬의 플러그인 목록. 데몬이 꺼져 있으면 null.
-function listPlugins(home, options) {
-  const result = paseo(['plugin', 'ls', '--json', '--home', home], options);
-  if (result.error) throw result.error;
+function listPlugins(home) {
+  const result = paseo(['plugin', 'ls', '--json', '--home', home]);
   if (result.status !== 0 && /DAEMON_NOT_RUNNING/.test(result.stdout + result.stderr)) return null;
   const list = result.status === 0 ? json(result) : null;
   if (!Array.isArray(list)) throw new Error(`플러그인 목록 확인 실패: ${(result.stderr || result.stdout).trim().slice(0, 300)}`);
@@ -167,26 +165,6 @@ function requireList(home) {
   const list = listPlugins(home);
   if (!list) throw new Error('Paseo 데몬에 연결할 수 없습니다');
   return list;
-}
-
-function refreshLatest(home, manifest, listed) {
-  const failed = [];
-  for (const plugin of manifest.plugins.filter(followsLatest)) {
-    const current = listed.find(item => item.id === plugin.id);
-    if (!current || current.enabled === false || !sameSource(current.installation?.identity, plugin.source)) continue;
-    const result = paseo(['plugin', 'update', plugin.id, '--yes', '--json', '--home', home], { timeout: 120_000 });
-    const updates = json(result);
-    const update = Array.isArray(updates) && updates.find(item => item.id === plugin.id);
-    if (result.status !== 0 || !['updated', 'current', 'installed-newer'].includes(update?.outcome)) {
-      failed.push(plugin.id);
-      const detail = update?.error || result.error?.message || (result.stderr || result.stdout || '').trim();
-      console.log(`최신 버전 확인·갱신 실패: ${plugin.id} ${detail.slice(0, 200)}`);
-    } else if (update.outcome === 'updated') {
-      console.log(`최신 버전 적용: ${plugin.id} → ${update.plugin?.installation?.currentRevision ?? '?'}`);
-      if (update.plugin?.status !== 'running') failed.push(plugin.id);
-    }
-  }
-  if (failed.length) throw new Error(`플러그인 갱신 확인 실패: ${failed.join(', ')}`);
 }
 
 function report(plan) {
@@ -350,7 +328,7 @@ function main() {
   let home = process.env.PASEO_HOME || join(homedir(), '.paseo');
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--home' && args[i + 1] && !args[i + 1].startsWith('--')) home = args[++i];
-    else if (!['--check', '--dry-run', '--bump', '--refresh', '--auto'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
+    else if (!['--check', '--dry-run', '--bump'].includes(args[i])) throw new Error(`알 수 없는 인자: ${args[i]}`);
   }
   home = resolve(home);
   const check = args.includes('--check');
@@ -360,17 +338,6 @@ function main() {
   validate(manifest);
   if (args.includes('--bump')) return bump(home, manifest);
   const configPath = join(home, 'config.json');
-  if (args.includes('--refresh')) {
-    if (check || dryRun || !existsSync(configPath) || !manifest.plugins.some(followsLatest) ||
-        JSON.parse(readFileSync(configPath, 'utf8')).pluginsEnabled !== true) return;
-    const refreshStamp = `${syncedPath(home)}.refresh`;
-    if (args.includes('--auto') && Date.now() - (statSync(refreshStamp, { throwIfNoEntry: false })?.mtimeMs ?? 0) < refreshIntervalMs) return;
-    const listed = listPlugins(home, { timeout: 30_000 });
-    if (!listed) return;
-    writeSynced(refreshStamp, '');
-    refreshLatest(home, manifest, listed);
-    return;
-  }
   if (!existsSync(configPath)) {
     console.log('Paseo 설정 없음: ./bootstrap.sh --only paseo 가 첫 설정을 합니다.');
     if (!dryRun) process.exitCode = 2;
