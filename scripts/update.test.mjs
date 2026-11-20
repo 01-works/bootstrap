@@ -109,19 +109,15 @@ esac
 }
 const output = result => result.stdout + result.stderr;
 
-test('새 bootstrap 커밋 없이도 Paseo 플러그인 갱신을 확인한다', t => {
+test('bootstrap 갱신에서는 플러그인 새 버전을 조회하지 않는다', t => {
   const f = fixture(t);
   const bin = join(f.root, 'bin', 'paseo');
   writeFileSync(bin, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const calls = join(f.mock, 'plugins');
   assert.equal(f.update('--auto').status, 0);
-  rmSync(calls);
-  assert.equal(f.update('--auto', '--dry-run').status, 0);
-  assert.equal(existsSync(calls), false);
   assert.equal(f.update('--auto').status, 0);
-  assert.equal(readFileSync(calls, 'utf8'), '--refresh --auto\n');
   assert.equal(f.update().status, 0);
-  assert.equal(readFileSync(calls, 'utf8'), '--refresh --auto\n--refresh\n');
+  assert.equal(existsSync(calls), false);
   assert.equal(f.applied(), f.head());
 });
 

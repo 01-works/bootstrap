@@ -172,7 +172,7 @@ agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의
 
 - 플러그인 사용(`pluginsEnabled`, 앱의 Enable plugins)이 꺼져 있으면 켠다. bootstrap 기기는 이 목록의 플러그인을 쓰기로 이미 정한 기기로 본다.
 - 없는 플러그인을 설치한다. 목록에 있는 플러그인을 기기에서 지우면 다음에 이 단계가 돌 때 다시 설치된다. 빼려면 목록에서 뺀다.
-- `ref` 또는 `version`이 `latest`인 플러그인은 처음 설치할 때 최신본을 받고, 이후 실행 중인 데몬에서 하루에 한 번 새 버전을 확인한다. 레지스트리 설치는 최신 검토본을 받고, Git 설치는 저장소 기본 브랜치의 최신 커밋을 받는다. 커밋이나 검토본을 고정하려면 `latest` 대신 Git의 커밋 전체 해시 또는 레지스트리의 패키지 버전·커밋 해시를 지정한다.
+- `ref` 또는 `version`이 `latest`인 플러그인은 초기 설치 시 레지스트리 최신 검토본이나 Git 기본 브랜치의 최신 커밋을 받는다. 설치 뒤 버전 변경은 아래 수동 갱신 절차를 따른다. 저장소에서 버전을 관리할 항목은 `latest` 대신 Git의 커밋 전체 해시 또는 레지스트리의 패키지 버전·커밋 해시를 지정한다.
 - 목록에서 빼기만 한 플러그인은 기기에서 지우지 않는다. 모든 기기에서 지우려면 `plugins`에서 빼고 `retired`에 `{ "id", "source" }`로 옮긴다. 그 소스에서 설치된 것만 `paseo plugin remove`로 지우고(플러그인 데이터도 함께 지워진다), 폴더·다른 소스 설치는 유지하고 알린다. 모든 기기가 갱신된 뒤에도 남겨 두면 나중에 맞추는 기기에서도 지운다.
 - 맞춘 뒤 목록을 다시 읽어, 버전이 맞지 않거나 이번에 설치·갱신한 플러그인이 실행되지 않으면 실패로 남긴다(자동 갱신 알림·재시도 대상).
 - 폴더에서 설치한 플러그인(개발 중)과 다른 소스에서 설치한 플러그인은 그대로 두고 알리기만 한다. 꺼 둔 플러그인도 켜지 않는다.
@@ -180,9 +180,9 @@ agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의
 
 `doctor`는 설치 누락, 버전 차이, 은퇴한 플러그인의 잔류, 설정 차이, 꺼짐, 실행 안 됨, 다른 소스를 경고한다. 개발 중인 폴더 설치는 표시만 한다.
 
-### 새 버전 배포
+### 플러그인 갱신
 
-플러그인 코드는 데몬 권한으로 실행된다. mac-monitor는 자체 저장소 기본 브랜치에서, Better Paseo와 ZeroSub는 Paseo 레지스트리에서 새 버전을 받는다. 실행 중인 데몬에서 즉시 확인하려면 `node scripts/paseo-plugins.mjs --refresh`를 실행한다.
+플러그인 코드는 데몬 권한으로 실행된다. 터미널에서 `paseo plugin update --all --check`로 후보 버전과 리뷰 링크를 볼 수 있다. `paseo plugin update zerosub` 또는 `paseo plugin update --all`은 후보를 다시 표시하고 승인한 버전을 적용한다. [Paseo CLI 문서](https://paseo.sh/docs/plugins/reference#cli-reference)
 
 고정된 플러그인만 `node scripts/paseo-plugins.mjs --bump`로 새 버전을 확인하고 목록을 갱신한다. 변경을 bootstrap main에 반영하면 다른 기기에도 적용된다.
 

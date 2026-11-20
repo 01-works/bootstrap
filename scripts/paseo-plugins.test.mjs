@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdtempSync, readdirSync, readFileSync, realpathSync, utimesSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -202,12 +202,7 @@ if (args[1] === 'ls') {
   console.log(JSON.stringify([{ id: args[2], outcome: 'update', target: reviewed(args[2]) }]));
 } else if (args[1] === 'update') {
   if (process.env.SILENT_UPDATE) process.exit(0);
-  const plugin = plugins[args[2]];
-  if (!plugin) process.exit(8);
-  const revision = opt('--ref') ?? pin(args[2]);
-  const outcome = plugin.installation.currentRevision === revision ? 'current' : 'updated';
-  plugin.installation.currentRevision = revision;
-  if (args.includes('--json')) console.log(JSON.stringify([{ id: args[2], outcome, plugin: { ...plugin, status: 'running' } }]));
+  plugins[args[2]].installation.currentRevision = opt('--ref') ?? pin(args[2]);
   save();
 } else process.exit(9);
 `, { mode: 0o755 });
@@ -333,31 +328,21 @@ if (args[1] === 'ls') {
     assert.equal(run(['--home', join(dir, 'missing')]).status, 2);
     assert.equal(existsSync(join(dir, 'missing')), false);
 
-    // 최신 정책은 설치된 같은 소스만 Paseo의 일반 갱신에 넘긴다.
+    // latest는 누락된 설치에 적용하고 기존 설치는 수동으로만 갱신한다.
     const latest = { ...revisions, [registry.id]: '2.0.0' };
-    const runRefresh = (...args) => spawnSync(process.execPath, [script, '--refresh', ...args], {
+    const runLatest = () => spawnSync(process.execPath, [script], {
       env: { ...env, REGISTRY_PINS: JSON.stringify(latest) }, encoding: 'utf8'
     });
-    const refresh = runRefresh('--auto');
-    assert.equal(refresh.status, 0, refresh.stdout + refresh.stderr);
-    assert.match(refresh.stdout, /최신 버전 적용: zerosub → 2\.0\.0/);
     rmSync(calls);
-    assert.equal(runRefresh('--auto').status, 0);
-    assert.equal(existsSync(calls), false, '최근 확인했으면 데몬에도 접속하지 않는다');
-    assert.equal(runRefresh().status, 0);
-    assert.ok(callList().includes('plugin update zerosub --yes --json'), '수동 확인은 바로 실행한다');
-
-    const stateDir = join(dir, 'state/bootstrap/paseo-plugins');
-    const stamp = join(stateDir, readdirSync(stateDir).find(name => name.endsWith('.refresh')));
-    const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
-    utimesSync(stamp, yesterday, yesterday);
-    rmSync(daemon);
-    rmSync(calls);
-    assert.equal(runRefresh('--auto').status, 0);
+    assert.equal(runLatest().status, 0);
     assert.deepEqual(callList(), ['plugin ls --json']);
-    writeFileSync(daemon, '');
+    const latestConfig = JSON.parse(readFileSync(configPath, 'utf8'));
+    assert.equal(latestConfig.plugins[registry.id].installation.currentRevision, registry.version);
+    delete latestConfig.plugins[old.id];
+    writeFileSync(configPath, JSON.stringify(latestConfig));
     rmSync(calls);
-    assert.equal(runRefresh('--auto').status, 0);
-    assert.ok(callList().includes('plugin update zerosub --yes --json'), '데몬이 켜지면 확인한다');
+    assert.equal(runLatest().status, 0);
+    assert.ok(callList().includes(`plugin install ${old.source} --id ${old.id}`));
+    assert.ok(callList().every(call => !call.startsWith('plugin update')));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
