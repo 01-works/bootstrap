@@ -62,8 +62,12 @@ plugins=0
 node "$BOOTSTRAP_ROOT/scripts/paseo-plugins.mjs" || plugins=$?
 skills=0
 node "$BOOTSTRAP_ROOT/scripts/paseo-skills.mjs" || skills=$?
+api_profiles=0
+if has infisical && has python3; then
+  run python3 "$BOOTSTRAP_ROOT/scripts/paseo-api-key.py" --infisical --if-ready --home "$paseo_home" </dev/null || api_profiles=$?
+fi
 st=0
-for s in "$autostart" "$upgrade" "$profiles" "$plugins" "$skills"; do
+for s in "$autostart" "$upgrade" "$profiles" "$plugins" "$skills" "$api_profiles"; do
   [[ "$s" == 0 || "$s" == 2 ]] || exit 1
   [[ "$s" == 0 ]] || st=2
 done

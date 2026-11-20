@@ -147,6 +147,10 @@ test('처음에는 preflight를 뺀 전 단계, 이후에는 바뀐 파일에 �
   assert.deepEqual(f.calls(), ['power 1']);
   assert.equal(f.notifications().length, 5);
 
+  f.push({ 'scripts/paseo-api-key.py': '# importer\n', 'scripts/paseo-infisical-provider.sh': '# launcher\n' });
+  assert.equal(f.update('--auto').status, 0);
+  assert.deepEqual(f.calls(), ['paseo 1'], 'API 프로필 파일은 paseo 단계만');
+
   f.push({ 'scripts/steps/66-heavy.sh': mockStep('heavy') });
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.calls(), ['heavy 1'], '새 단계 파일은 그 단계');

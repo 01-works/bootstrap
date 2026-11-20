@@ -230,6 +230,24 @@ node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || ret
   assert.equal(terminal.status, 1, '터미널에서는 그대로 다시 올린다');
 });
 
+test('paseo 단계: Infisical CLI가 있을 때만 선택적 API 프로필 등록을 시도한다', t => {
+  const run = (cli, code) => mockStep(t, '65-paseo.sh', [
+    'has() { [[ "$1" != infisical || "$HAS_INFISICAL" == 1 ]]; }',
+    'is_laptop() { return 1; }',
+    'node() { :; }',
+    'run() { [[ "$1" == env ]] || "$@"; }',
+    'python3() { printf "%s\\n" "$*"; return "$INSTALL_CODE"; }',
+  ].join('\n'), { BOOTSTRAP_UNATTENDED: '1', PASEO_HOME: '/nonexistent/paseo-home', HAS_INFISICAL: cli, INSTALL_CODE: code }).result;
+  const skipped = run('0', '0');
+  assert.equal(skipped.status, 0, skipped.stderr);
+  assert.doesNotMatch(skipped.stdout, /paseo-api-key\.py/);
+  const ready = run('1', '0');
+  assert.equal(ready.status, 0, ready.stderr);
+  assert.match(ready.stdout, /paseo-api-key\.py --infisical --if-ready --home \/nonexistent\/paseo-home/);
+  const failed = run('1', '1');
+  assert.equal(failed.status, 1, '등록 자체의 실패는 갱신에서 재시도할 수 있게 전달한다');
+});
+
 test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경로는 없을 때만 링크로 만든다', t => {
   const { root } = sandbox(t);
   const home = join(root, 'home'), compat = join(root, 'cc-yw-heavy.sh'), dst = join(home, '.local/bin/yw-heavy');
