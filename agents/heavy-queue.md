@@ -75,7 +75,7 @@ yw-heavy release --generation GENERATION --token TOKEN --lease LEASE
 
 이름을 바꾼 사본·알 수 없는 실행기와 조회 직후 시작하는 새 제출은 놓칠 수 있다. 같은 이름의 무관한 helper나 셸 `-c` 문자열은 보수적으로 보류할 수 있으며 다른 격리 큐의 참여자도 보류 대상이다. 따라서 guard가 위의 제출 중지·drain 절차를 대신하지 않는다. 판정 경계와 실제 구 spin acquire의 설치 보류·drain 후 재시도는 `scripts/heavy-install.test.mjs`에서 확인한다.
 
-CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효과다. 실제 round-robin 대기에는 각 대기자의 `rr_reclaim` 전체 큐 생존 검사(O(N) 임계구역)가 남으며 #72에서 별도로 줄인다.
+CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효과다(#73에서 일회성 측정 스크립트로 잼, 스크립트는 지움). 실제 round-robin 대기에는 각 대기자의 `rr_reclaim` 전체 큐 생존 검사(O(N) 임계구역)가 남으며 #72에서 별도로 줄인다.
 
 ### 활성화와 롤백
 
