@@ -65,7 +65,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 - **프로필:** `list_profiles`로 모든 notes를 읽고 따른다. 역할 용도는 `agents/paseo.md`의 "프로필"·"총괄 운영 스킬". Sol이 한도·용량 오류로 막히면 그 작업만 Opus로 대체하고 이유를 기록한다. 사용자의 명시적 배정이 우선한다. 작업마다 모든 역할을 만들지 않는다.
 - 프로필은 `create_agent`에 `provider/model`, `settings.modeId`, `settings.thinkingOptionId`, `settings.features`(`featureValues` → `features`)로 펼친다. 없는 필드는 생략하고 `profile` 인자를 만들지 않는다.
-- **실행 기기:** heavy(설치·전체 테스트·빌드·push)는 기기 역할(`./bootstrap.sh role status`)·저장소 runbook상 허용된 호스트의 `serverId`로 배정한다. 없으면 보류하고 계약에 따라 범위·예산 결정을 올린다.
+- **실행 기기:** heavy(설치·전체 테스트·빌드·push)는 기기 역할(`./bootstrap.sh role status`)·저장소 runbook상 허용된 호스트의 `serverId`로 배정한다. 작업 종류별 기기는 `agents/paseo.md`의 "작업 배치"(host metadata `work`)를 따른다. 없으면 보류하고 계약에 따라 범위·예산 결정을 올린다.
 - **소유 확인:** 할당 전 공유 기록(열린·최근 머지 PR, 이슈 claim)과 등록 호스트의 workspace에서 같은 파일·기능을 변경·은퇴·대체하는 lane을 확인한다. 호스트별 `serverId`로 `list_workspaces`, 대상 `cwd`로 `list_agents`를 조회하고 전체 확인에는 `includeBackground: true`를 쓴다. claim은 저장소 규칙을 따른다.
 - **정체된 claim 인수:** 공유 기록의 다음 단계 대비 정체 근거를 남겨 계약 3번을 적용한다. 원 lane이 돌아오면 소유 lane을 하나로 정하는 조정 기록을 남긴다.
 - 독립 구현은 별도 worktree에서 병렬로, 의존 작업은 통합 뒤 순차로 배정한다. 같은 checkout에 수정 작업자 둘을 두지 않고, 대기 작업은 미리 만들지 않는다. 병렬도는 독립 작업 수와 승인된 예산에 맞춘다.
