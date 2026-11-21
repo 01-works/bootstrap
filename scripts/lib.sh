@@ -259,11 +259,6 @@ tailscale_status() {
   printf '%s %s\n' "$state" "$expiry"
 }
 
-# Tailscale 앱 설정의 "로그인 시 실행". 공개되지 않은 앱 내부 설정값이라 앱이 바뀌면 틀릴 수 있다.
-tailscale_starts_on_login() {
-  [[ "$(defaults read io.tailscale.ipn.macsys TailscaleStartOnLogin 2>/dev/null)" == 1 ]]
-}
-
 # CPU에 맞는 Homebrew 기본 경로. Intel은 /usr/local, Apple Silicon은 /opt/homebrew. 테스트는 대역 경로를 준다.
 if [[ -z "${BOOTSTRAP_BREW_PREFIX:-}" ]]; then
   case "$(uname -m)" in

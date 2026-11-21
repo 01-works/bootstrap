@@ -1,4 +1,4 @@
-// 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬·Paseo 업그레이드, (모든 기기) 저장소 자동 갱신.
+// 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬·Paseo 업그레이드·Tailscale 앱, (모든 기기) 저장소 자동 갱신.
 // plist에는 이 기기의 절대 경로가 들어가므로 저장소에 두지 않고 여기서 만든다.
 // 기기 역할(scripts/role.sh)이 끈 등록은 만들지 않고, 있으면 내린다.
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -12,8 +12,9 @@ export const AGENT_CHROME_URL = `http://127.0.0.1:${AGENT_CHROME_PORT}`;
 export const CHROME_BETA = '/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta';
 // cask는 /opt/homebrew/bin에, 앱 직접 설치는 다른 곳에 링크하므로 앱 안의 CLI를 직접 쓴다.
 export const PASEO_CLI = '/Applications/Paseo.app/Contents/Resources/bin/paseo';
+export const TAILSCALE_APP = '/Applications/Tailscale.app';
 export const LABELS = { 'agent-chrome': 'local.bootstrap.agent-chrome', paseo: 'local.bootstrap.paseo',
-  'paseo-upgrade': 'local.bootstrap.paseo-upgrade', update: 'local.bootstrap.update' };
+  'paseo-upgrade': 'local.bootstrap.paseo-upgrade', tailscale: 'local.bootstrap.tailscale', update: 'local.bootstrap.update' };
 // 자동 갱신 주기(초). 잠들어 있던 기기는 깨어나면 놓친 주기를 한 번 실행한다.
 export const UPDATE_INTERVAL = 600;
 // Paseo 업그레이드 확인 주기(초). 최신 버전은 하루에 한 번 확인하고, 올릴 버전이 있으면 에이전트가 쉴 때까지 이 주기로 다시 본다.
@@ -88,6 +89,12 @@ export function definitions({ home, laptop, env = {}, root = REPO_ROOT, roles = 
       label: LABELS['paseo-upgrade'], args: ['/bin/bash', join(root, 'bootstrap.sh'), 'paseo-upgrade', '--auto'],
       runAtLoad: false, keepAlive: false, processType: 'Background', startInterval: PASEO_UPGRADE_INTERVAL,
       log: join(upgradeState, 'upgrade.log'), dirs: [upgradeState], env: stateEnv,
+    },
+    // 늘 켜두는 기기는 재시동 뒤에도 밖에서 붙어야 하므로 로그인할 때 Tailscale 앱을 연다. 앱의 "로그인 시 실행"은
+    // 공개되지 않은 앱 내부 설정이라 bootstrap이 켤 수 없고, 꺼져 있으면 재시동 뒤 연결이 끊긴다. 이미 실행 중이면 open은 아무것도 하지 않는다.
+    // 노트북은 앱 설정에 맡긴다 (macos/system-settings.md#원격-접속).
+    tailscale: laptop ? null : {
+      label: LABELS.tailscale, args: ['/usr/bin/open', '-g', '-a', TAILSCALE_APP], runAtLoad: true, keepAlive: false,
     },
     // 모든 기기가 같다. 로그인할 때와 주기마다 저장소를 확인해 바뀐 부분만 적용한다 (scripts/update.sh).
     // 다른 일을 방해하지 않게 낮은 우선순위로 돈다. 출력은 update.log에 이어 쓴다.
@@ -209,8 +216,9 @@ export function apply({ home = homedir(), env = process.env, laptop, only, check
       continue;
     }
     if (!def) {
-      console.log(name === 'paseo' ? 'Paseo 자동 시작: 노트북은 선택 사항 (시스템 설정 > 일반 > 로그인 항목)'
-        : 'Paseo 업그레이드: 노트북은 앱이 스스로 업데이트');
+      console.log({ paseo: 'Paseo 자동 시작: 노트북은 선택 사항 (시스템 설정 > 일반 > 로그인 항목)',
+        'paseo-upgrade': 'Paseo 업그레이드: 노트북은 앱이 스스로 업데이트',
+        tailscale: 'Tailscale 자동 시작: 노트북은 앱 설정의 로그인 시 실행 (선택)' }[name]);
       continue;
     }
     if (name === 'agent-chrome') {

@@ -238,10 +238,11 @@ else
       wait_for_user "Tailscale 키가 ${ts_expiry%%T*}에 만료 → 관리 콘솔 Machines에서 이 기기 Disable key expiry"
     fi
   fi
-  if tailscale_starts_on_login; then
-    pass "Tailscale 로그인 시 실행"
+  # 앱 설정의 "로그인 시 실행"과 별개로 LaunchAgent가 로그인할 때 앱을 연다 (auth 단계).
+  if has node && node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only tailscale --desktop >/dev/null 2>&1; then
+    pass "Tailscale 자동 시작 (local.bootstrap.tailscale)"
   else
-    warn 'Tailscale 로그인 시 실행이 꺼진 것으로 보임 → 앱 설정에서 켜기 (앱 내부 설정값으로 판단해 틀릴 수 있음)'
+    wait_for_user 'Tailscale 자동 시작 없음 → ./bootstrap.sh --only auth'
   fi
 fi
 
