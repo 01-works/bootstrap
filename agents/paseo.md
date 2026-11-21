@@ -136,6 +136,21 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도다.
 - 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고, OpenRouter 두 프로필은 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
 
+## 작업 배치
+
+프로필은 맡을 역할을 정하고, 작업을 실행할 기기는 작업 종류로 정한다.
+
+| 작업 종류 | `work` 값 | 기준 |
+|---|---|---|
+| 외주(고객사 프로젝트) | `외주` | 모든 외주를 기기 한 대에 모은다. |
+| 01-software | `01-software` | 리소스를 가장 많이 쓰는 주력 SaaS. heavy(빌드·전체 테스트·push)는 이 값이 붙은 기기에서 하고, 검증 기기 제한은 01-software runbook을 따른다. |
+| 그 밖의 내부 서비스·실험 | `실험` | 실험용 기기나 사람이 쓰는 기기에서 한다. |
+| 검증 | `verifier` | `role add verifier`를 켠 기기. heavy는 검증 루프만 한다([verifier](../README.md#verifier)). |
+
+- 기기 이름과 배치는 이 저장소에 쓰지 않는다. 대신 감독 기기에 등록한 Paseo host의 metadata `work`에 적는다. 값이 여러 개면 쉼표로 잇는다. 예를 들어 01-software 전용 작업 기기가 없는 동안에는 외주 기기에 `외주,01-software`를 붙여, 두 작업이 그 기기의 `yw-heavy` 대기열을 나눠 쓴다.
+- 감독은 `list_hosts`의 `metadata.work`를 보고 작업자를 띄울 `serverId`를 고른다. 사용자가 기기를 지정하면 그 기기가 우선한다. 맞는 host가 없거나 `work`가 비어 있으면 사용자에게 묻는다. 감독 자신의 기기는 목록에 나오지 않는다.
+- 값은 `paseo host update <등록 ID> --meta work=<값>`으로 바꾸고 `paseo host inspect <등록 ID>`로 확인한다. host 등록은 감독 기기의 데몬마다 따로 저장된다. 배치를 바꾸면 그 host를 등록한 모든 감독 기기에서 함께 고친다.
+
 ## 총괄 운영 스킬
 
 작업 대화에서 `yw-supervisor 스킬로 <목표와 완료 조건>을 총괄해줘`라고 요청한다.
