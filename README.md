@@ -13,7 +13,7 @@
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/01-works/bootstrap/main/install.sh)"
    ```
 
-3. **로그인**: 설치가 끝나며 열어 준 앱과 Chrome Beta(에이전트 전용)에 로그인, 터미널에서 `claude`·`codex` 첫 실행. 보조 리뷰 프로필을 쓸 기기는 `agy` 첫 실행과 `opencode auth login`(OpenRouter) (10분)
+3. **로그인**: 설치가 끝나며 열어 준 앱과 Chrome Beta(에이전트 전용)에 로그인, 터미널에서 `claude`·`codex` 첫 실행. 보조 리뷰 프로필을 쓸 기기는 `agy` 첫 실행과 [OpenRouter 가져오기](agents/paseo.md#openrouter-모델-opencode) (10분)
 4. **화면 설정**: 새 터미널에서 `~/dev/bootstrap/bootstrap.sh doctor`. 실패·대기를 해결하고 마지막의 "직접 확인할 것"을 처리한다 (5분)
 
 한 줄 설치는 Xcode 명령줄 도구(설치 창 없이)부터 저장소 받기(`~/dev/bootstrap`), 모든 단계, 최종 doctor까지 이어서 한다. 중간에 멈추면 같은 한 줄을 다시 실행한다. 이미 받은 기기에서는 저장소를 갱신(fast-forward)한 뒤 실행한다. 할 일만 보려면 끝에 ` install --dry-run`, 다른 위치에 받으려면 앞에 `BOOTSTRAP_DIR=<경로>`를 붙인다.
