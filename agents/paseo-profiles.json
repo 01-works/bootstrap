@@ -76,12 +76,20 @@
       "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)에만 쓰는 읽기 전용 검토자. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. yw-chief-supervisor의 새 운영 정책 설계에는 둘 다 쓴다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
     },
     {
+      "id": "bootstrap-opus-agy",
+      "name": "Opus (agy)",
+      "provider": "antigravity",
+      "model": "claude-opus-5-5-high",
+      "modeId": "full-access",
+      "notes": "Antigravity(agy) 구독 쿼터로 Claude Opus 5.5를 쓰는 선택용 프로필. 사용자가 직접 고를 때만 쓰고 Supervisor는 자동으로 고르지 않는다. 역할이 정해져 있지 않으므로 지시문에 역할을 적는다. Claude Code가 아닌 agy에서 실행되어 Paseo 도구, 이 저장소의 스킬, ~/.claude/CLAUDE.md의 공통 지시가 적용되지 않으므로 감독 작업과 브라우저 작업에는 쓰지 않고 필요한 규칙은 지시문에 적는다. 추론은 high가 최대다. 권한 확인 없이만 실행되므로 읽기 전용이 필요하면 지시문에 파일·git 상태를 바꾸지 말라고 적고 끝난 뒤 git status로 확인한다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
+    },
+    {
       "id": "bootstrap-scan-reviewer",
       "name": "Scan Reviewer",
-      "provider": "opencode",
-      "model": "openrouter/deepseek/deepseek-v4.1-flash-1017",
-      "modeId": "plan",
-      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 저비용 1차 스캔(DeepSeek V4.1 Flash, OpenRouter). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
+      "provider": "antigravity",
+      "model": "gemini-4-argon-high",
+      "modeId": "full-access",
+      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 1차 스캔(Gemini 4 Argon, Antigravity 구독에서 따로 계산되는 Argon 쿼터). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인하며, 비밀값이 있는 저장소에는 쓰지 않는다. Argon 주간 한도를 다 쓰면 갱신 전까지 실행이 실패한다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
     },
     {
       "id": "bootstrap-bug-hunter",
