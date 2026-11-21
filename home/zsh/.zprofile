@@ -4,7 +4,7 @@ case "$(uname -m)" in
   arm64) [[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)" ;;
   x86_64) [[ -x /usr/local/bin/brew ]] && eval "$(/usr/local/bin/brew shellenv)" ;;
 esac
-export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 
 # Homebrew 설치 전에도 공식 fnm 설치기로 설치한 기존 fnm을 찾는다.
 if ! command -v fnm >/dev/null && [[ -x "$HOME/.local/share/fnm/fnm" ]]; then

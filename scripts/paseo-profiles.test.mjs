@@ -9,41 +9,42 @@ import { mergeProfiles } from './paseo-profiles.mjs';
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-profiles.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-profiles.mjs', import.meta.url).pathname;
 
-test('총괄·설계는 Opus, 심층 리뷰는 Fable high를 사용한다', () => {
+test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는 정책 검토 전용', () => {
   for (const [name, model, modeId, thinkingOptionId] of [
     ['Supervisor', 'claude-opus-5-5', 'bypassPermissions', 'high'],
     ['Architect', 'claude-opus-5-5', 'plan', 'xhigh'],
-    ['Deep Reviewer', 'claude-fable-5-2', 'plan', 'high'],
+    ['Deep Reviewer', 'claude-opus-5-5', 'plan', 'high'],
+    ['Policy Reviewer (Fable)', 'claude-fable-5-2', 'plan', 'high'],
+    ['Policy Reviewer (Astra)', 'gpt-6.2-astra', 'auto-review', 'xhigh'],
   ]) {
     const profile = manifest.profiles.find(p => p.name === name);
     assert.deepEqual([profile.model, profile.modeId, profile.thinkingOptionId],
       [model, modeId, thinkingOptionId], name);
   }
-  const supervisor = manifest.profiles.find(p => p.name === 'Supervisor');
-  assert.match(supervisor.notes, /\. Opus 한도 소진·접속 불가 시에만 .*Supervisor \(Astra\)로 인계한다/);
+  // 비용 때문에 Fable·Astra는 정책 검토 프로필에만 둔다. 모델 대체 프로필은 두지 않는다.
+  assert.deepEqual(manifest.profiles.filter(p => /fable|astra/i.test(p.model ?? '')).map(p => p.name),
+    ['Policy Reviewer (Fable)', 'Policy Reviewer (Astra)']);
+  for (const name of ['Policy Reviewer (Fable)', 'Policy Reviewer (Astra)']) {
+    const notes = manifest.profiles.find(p => p.name === name).notes;
+    assert.match(notes, /에만 쓰는 읽기 전용 검토자/, name);
+    assert.match(notes, /그 밖의 리뷰에는 쓰지 않는다/, name);
+  }
+  assert.deepEqual(manifest.removed.map(r => r.name), ['Supervisor (Astra)', 'Architect (Astra)']);
+  for (const profile of manifest.profiles) {
+    assert.doesNotMatch(profile.notes ?? '', /한도 소진|대체 프로필/, profile.name);
+  }
 });
 
-test('chief 교차 모델 예외는 설계·심층 검토 4개 프로필에만 두고 인계 조건과 구분한다', () => {
-  const exceptions = manifest.profiles.filter(p => (p.notes ?? '').includes('예외:'));
-  assert.deepEqual(exceptions.map(p => p.name), [
-    'Architect', 'Architect (Astra)', 'Deep Reviewer', 'Deep Reviewer (Astra)'
-  ]);
-  for (const profile of exceptions) {
-    // 제한문이 문장 첫머리에 있어야 한다. "일반 설계에서는 …" 같은 한정어가 붙으면 실패한다.
-    // 대체 조건은 그 역할의 기본 Claude 모델을 가리킨다: 설계는 Opus, 심층 리뷰는 Fable.
-    const model = profile.name.startsWith('Architect') ? 'Opus' : 'Fable';
-    const limit = new RegExp(`${profile.name.endsWith('(Astra)') ? '^' : '\\. '}${model} 한도 소진·접속 불가 시에만 `);
-    assert.match(profile.notes, limit);
-    assert.match(profile.notes, /예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독/);
-    assert.match(profile.notes, /교차 모델 합의\(감사·완료 판정·운영 정책 설계\)/);
-    assert.match(profile.notes, new RegExp(`${model} 가용 여부와 관계없이 Astra를 선택할 수 있다`));
-    assert.match(profile.notes, /yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다/);
-  }
-  const supervisor = manifest.profiles.find(p => p.name === 'Supervisor (Astra)');
-  assert.match(supervisor.notes, /^Opus 한도 소진·접속 불가 시에만/);
-  assert.doesNotMatch(supervisor.notes, /교차 모델|가용 여부와 관계없이/);
-  for (const profile of manifest.profiles) {
-    assert.doesNotMatch(profile.notes ?? '', /일반 (설계|코드 리뷰)/, profile.name);
+test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권한 자동 승인을 켜지 않는다', () => {
+  for (const [name, provider, modeId] of [
+    ['Scan Reviewer', 'opencode', 'plan'],
+    ['Bug Hunter', 'opencode', 'plan'],
+    ['Gemini Cross-check', 'antigravity', 'full-access'],  // Antigravity의 유일한 모드
+  ]) {
+    const profile = manifest.profiles.find(p => p.name === name);
+    assert.deepEqual([profile.provider, profile.modeId], [provider, modeId], name);
+    assert.equal(profile.featureValues?.auto_accept, undefined, name);
+    assert.match(profile.notes, /바꾸지 말라고 명시/, name);
   }
 });
 
@@ -62,7 +63,8 @@ test('명시적 갱신은 ID·외형을 보존하고 제공자 기능을 교체�
     { id: 'a', name: 'Architect', provider: 'codex', icon: 'hammer', featureValues: { plan_mode: true } },
     { id: 'b', name: 'Cross Reviewer', provider: 'claude', color: 'orange' }
   ];
-  assert.equal(mergeProfiles(existing, manifest).profiles.filter(p => /Reviewer/.test(p.name)).length, 3);
+  // 갱신 없이는 이전 이름을 그대로 두고 새 이름의 프로필을 따로 추가하지 않는다.
+  assert.equal(mergeProfiles(existing, manifest).profiles.some(p => p.name === 'Deep Reviewer'), false);
   const result = mergeProfiles(existing, manifest, true);
   assert.equal(result.profiles.length, manifest.profiles.length);
   assert.equal(result.profiles[0].provider, 'claude');
@@ -72,6 +74,26 @@ test('명시적 갱신은 ID·외형을 보존하고 제공자 기능을 교체�
   assert.equal(result.profiles[1].name, 'Deep Reviewer');
   assert.equal(result.profiles[1].id, 'b');
   assert.equal(result.profiles[1].color, 'orange');
+  assert.deepEqual(mergeProfiles(result.profiles, manifest, true).changes, []);
+});
+
+test('저장소에서 없앤 프로필은 저장소 ID일 때만 명시적 갱신에서 지우고, Astra 심층 리뷰는 정책 검토로 이어진다', () => {
+  const existing = [
+    { id: 'bootstrap-supervisor-astra', name: 'Supervisor (Astra)', provider: 'codex' },
+    { id: 'mine', name: 'Architect (Astra)', provider: 'claude' },
+    { id: 'y', name: 'Deep Reviewer (Astra)', provider: 'codex', color: 'blue' },
+  ];
+  const kept = mergeProfiles(existing, manifest);
+  assert.deepEqual(kept.profiles.slice(0, 2), existing.slice(0, 2));
+  assert.ok(kept.drift.includes('Supervisor (Astra)') && kept.drift.includes('Architect (Astra)'));
+  const result = mergeProfiles(existing, manifest, true);
+  assert.equal(result.profiles.some(p => p.id === 'bootstrap-supervisor-astra'), false);
+  assert.ok(result.changes.includes('제거: Supervisor (Astra)'));
+  // 이름만 같은 개인 프로필은 지우지 않고 차이로 알린다.
+  assert.ok(result.profiles.some(p => p.id === 'mine'));
+  assert.ok(result.drift.includes('Architect (Astra)'));
+  const policy = result.profiles.find(p => p.id === 'y');
+  assert.deepEqual([policy.name, policy.model, policy.color], ['Policy Reviewer (Astra)', 'gpt-6.2-astra', 'blue']);
   assert.deepEqual(mergeProfiles(result.profiles, manifest, true).changes, []);
 });
 

@@ -38,7 +38,7 @@ test('기기 종류별 정의: 데스크톱은 로그인 시 시작, 노트북�
   assert.match(plist(desktop['agent-chrome']), /SuccessfulExit/);
   assert.match(plist(desktop['agent-chrome']), /--user-data-dir=\/h\/.local\/share\/bootstrap\/agent-chrome/);
   assert.match(plist(desktop.paseo), /<string>\/Applications\/Paseo\.app\/Contents\/Resources\/bin\/paseo<\/string>\s*<string>daemon<\/string>\s*<string>start<\/string>/);
-  assert.match(plist(desktop.paseo), /<key>PATH<\/key><string>\/h\/.local\/bin:/);
+  assert.match(plist(desktop.paseo), /<key>PATH<\/key><string>\/h\/.local\/bin:\/h\/.opencode\/bin:/);
   const upgrade = plist(desktop['paseo-upgrade']);
   assert.match(upgrade, /<string>paseo-upgrade<\/string>\s*<string>--auto<\/string>/);
   assert.match(upgrade, /<key>RunAtLoad<\/key><false\/>/, '로그인할 때 데몬과 함께 뜨지 않음');

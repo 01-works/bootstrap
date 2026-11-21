@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 코딩 에이전트 CLI. 둘 다 공식 문서가 기본으로 안내하는 설치 스크립트를 쓴다.
-# 둘 다 ~/.local/bin에 설치되고 스스로 업데이트된다. 근거: TOOLS.md
+# 코딩 에이전트 CLI. 모두 공식 문서가 기본으로 안내하는 설치 스크립트를 쓰고 스스로 업데이트된다. 근거: TOOLS.md
+# claude·codex는 ~/.local/bin, opencode는 ~/.opencode/bin에 설치된다. opencode 설치기는 셸 설정을 고치지 않게 하고 PATH는 .zprofile이 맡는다.
 # 앱(Claude, ChatGPT, Paseo)은 Brewfile에서 설치된다. 로그인 안내는 auth 단계가 모아서 보여 준다.
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
@@ -9,10 +9,11 @@ export CODEX_NON_INTERACTIVE=1  # Codex 설치 끝에 "지금 실행할까요?"�
 
 failed=0
 
-# install_cli <명령> <설치 스크립트 주소> <실행할 셸>
+# install_cli <명령> <설치 스크립트 주소> <실행할 셸> [설치 스크립트 인자...]
 # curl | sh는 받기에 실패해도 성공으로 끝나므로, 먼저 받아 두고 확인한 뒤 실행한다. 하나가 실패해도 다른 하나는 설치한다.
 install_cli() {
   local cmd="$1" url="$2" shell="$3" script
+  shift 3
   if has "$cmd"; then
     if cli_works "$cmd"; then
       ok "$cmd $("$cmd" --version 2>/dev/null | head -1)"
@@ -26,7 +27,7 @@ install_cli() {
     info "[dry-run] $url 을 받아서 $shell 로 실행"
     return 0
   fi
-  if script="$(curl -fsSL "$url")" && printf '%s\n' "$script" | "$shell" && cli_works "$cmd"; then
+  if script="$(curl -fsSL "$url")" && printf '%s\n' "$script" | "$shell" -s -- "$@" && cli_works "$cmd"; then
     ok "$cmd 설치됨"
   else
     warn "$cmd 설치 실패. 다시: ./bootstrap.sh --only agents"
@@ -36,5 +37,14 @@ install_cli() {
 
 install_cli claude https://claude.ai/install.sh bash
 install_cli codex https://chatgpt.com/codex/install.sh sh
+install_cli opencode https://opencode.ai/v2/install bash --no-modify-path  # v2 설치기. 예전 opencode.ai/install은 v1만 설치한다
+# Paseo는 OpenCode v2를 2.0.10 이상부터 받는다. 실행되기만 하는 오래된 v2를 성공으로 넘기지 않는다.
+if [[ "$DRY_RUN" != 1 ]] && has opencode; then
+  oc_version="$(opencode --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [[ "$oc_version" =~ ^2\.0\.([0-9]+)$ ]] && (( BASH_REMATCH[1] < 10 )); then
+    warn "opencode $oc_version: Paseo는 v2를 2.0.10 이상부터 받습니다. opencode upgrade로 올리세요"
+    failed=1
+  fi
+fi
 
 exit "$failed"

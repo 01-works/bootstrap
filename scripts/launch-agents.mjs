@@ -76,10 +76,10 @@ export function definitions({ home, laptop, env = {}, root = REPO_ROOT, roles = 
       runAtLoad: !laptop, keepAlive: !laptop, processType: 'Interactive', dirs: [profile],
     },
     // 노트북의 Paseo 자동 시작은 선택 사항이라 만들지 않는다 (시스템 설정 > 일반 > 로그인 항목).
-    // 데몬만 띄운다(앱 불필요). 이미 실행 중이면 그대로 둔다. 데몬이 claude·codex를 찾을 수 있게 PATH를 준다.
+    // 데몬만 띄운다(앱 불필요). 이미 실행 중이면 그대로 둔다. 데몬이 claude·codex·opencode를 찾을 수 있게 PATH를 준다.
     paseo: laptop ? null : {
       label: LABELS.paseo, args: [PASEO_CLI, 'daemon', 'start'], runAtLoad: true, keepAlive: false,
-      env: { PATH: [join(home, '.local/bin'), join(home, 'Library/pnpm/bin'), join(home, '.local/share/fnm/aliases/default/bin'),
+      env: { PATH: [join(home, '.local/bin'), join(home, '.opencode/bin'), join(home, 'Library/pnpm/bin'), join(home, '.local/share/fnm/aliases/default/bin'),
         '/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':') },
     },
     // 앱 없이 데몬만 도는 기기는 앱의 자동 업데이트가 돌지 않아 따로 올린다 (scripts/paseo-upgrade.sh). 노트북은 앱이 올린다.

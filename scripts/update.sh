@@ -174,18 +174,20 @@ update_clis() {
   if [[ "$AUTO" == 1 && -n "$(find "$STATE/cli-updated" -mmin -$((CLI_UPDATE_HOURS * 60)) 2>/dev/null)" ]]; then
     return 0
   fi
-  local cli before after st out='' failed=0
-  for cli in claude codex; do
+  local cli sub before after st out='' failed=0
+  for cli in claude codex opencode; do
     has "$cli" || continue
+    sub=update
+    [[ "$cli" != opencode ]] || sub=upgrade  # opencode v2의 공식 갱신 명령. v2 안에서만 올린다
     if [[ "$DRY_RUN" == 1 ]]; then
-      info "[dry-run] $cli update"
+      info "[dry-run] $cli $sub"
       continue
     fi
     # dry-run은 잠금 없이 돌므로 실행마다 따로 만든 파일을 쓴다.
     [[ -n "$out" ]] || out="$(mktemp "$STATE/cli-update.XXXXXX")" || return 0
     limited 30 "$out" "$cli" --version
     before="$(head -1 "$out")"
-    limited "$CLI_UPDATE_TIMEOUT" "$out" "$cli" update
+    limited "$CLI_UPDATE_TIMEOUT" "$out" "$cli" "$sub"
     st=$?
     if [[ "$st" == 0 ]]; then
       limited 30 "$out" "$cli" --version
@@ -200,9 +202,9 @@ update_clis() {
       failed=1
       header
       if [[ "$st" == 124 ]]; then
-        warn "$cli update 시간 초과(${CLI_UPDATE_TIMEOUT}초): 끝내고 넘어갑니다"
+        warn "$cli $sub 시간 초과(${CLI_UPDATE_TIMEOUT}초): 끝내고 넘어갑니다"
       else
-        warn "$cli update 실패: $(tail -1 "$out")"
+        warn "$cli $sub 실패: $(tail -1 "$out")"
       fi
     fi
   done

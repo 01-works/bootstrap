@@ -38,13 +38,13 @@ function fixture(t) {
   writeFileSync(join(bin, 'curl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$MOCK/push"\n', { mode: 0o755 });
   writeFileSync(join(bin, 'ps'), '#!/bin/sh\nprintf \'%s\\n\' codex\n', { mode: 0o755 });
   writeFileSync(join(bin, 'scutil'), '#!/bin/sh\necho TestMac\n', { mode: 0o755 });
-  // 에이전트 CLI 대역: update 호출을 남긴다. $MOCK/next-<이름>이 있으면 그 버전으로 올리고, $MOCK/exit-cli-<이름>의 코드로 끝난다.
-  for (const name of ['claude', 'codex']) {
+  // 에이전트 CLI 대역: update(opencode는 upgrade) 호출을 남긴다. $MOCK/next-<이름>이 있으면 그 버전으로 올리고, $MOCK/exit-cli-<이름>의 코드로 끝난다.
+  for (const name of ['claude', 'codex', 'opencode']) {
     writeFileSync(join(bin, name), `#!/bin/sh
 case "$1" in
   --version) cat "$MOCK/version-${name}" 2>/dev/null || echo '${name} 1.0' ;;
-  update)
-    printf '%s\\n' '${name} update' >> "$MOCK/cli"
+  update|upgrade)
+    printf '%s\\n' "${name} $1" >> "$MOCK/cli"
     if [ -f "$MOCK/hang-${name}" ]; then echo $$ > "$MOCK/hang-pid"; trap '' TERM; while :; do sleep 1; done; fi
     code="$(cat "$MOCK/exit-cli-${name}" 2>/dev/null || echo 0)"
     if [ "$code" != 0 ]; then echo 'download failed'; exit "$code"; fi
@@ -641,7 +641,7 @@ test('에이전트 CLI는 자동 갱신에서 하루에 한 번, 터미널에서
   writeFileSync(join(f.mock, 'next-codex'), 'codex 2.0\n');
   let result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
-  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade']);
   assert.match(result.stdout, /codex 업데이트: codex 1\.0 → codex 2\.0/);
   assert.doesNotMatch(output(result), /claude 업데이트|claude 최신/, '바뀌지 않은 CLI는 자동 갱신 기록에 남기지 않음');
   f.calls();
@@ -654,11 +654,11 @@ test('에이전트 CLI는 자동 갱신에서 하루에 한 번, 터미널에서
   const stamp = join(f.state, 'cli-updated');
   utimesSync(stamp, new Date(Date.now() - 25 * 3600e3), new Date(Date.now() - 25 * 3600e3));
   assert.equal(f.update('--auto').status, 0);
-  assert.deepEqual(f.cli(), ['claude update', 'codex update'], '하루가 지나면 다시 확인');
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade'], '하루가 지나면 다시 확인');
 
   result = f.update();
   assert.equal(result.status, 0, output(result));
-  assert.deepEqual(f.cli(), ['claude update', 'codex update'], '터미널에서는 매번 확인');
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade'], '터미널에서는 매번 확인');
   assert.match(result.stdout, /claude 최신 \(claude 1\.0\)/);
 
   result = f.update('--dry-run');
@@ -672,7 +672,7 @@ test('에이전트 CLI 업데이트가 실패해도 기록만 남기고 저장�
   writeFileSync(join(f.mock, 'exit-cli-claude'), '1');
   let result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
-  assert.deepEqual(f.cli(), ['claude update', 'codex update'], '한 CLI가 실패해도 다음 CLI를 올림');
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade'], '한 CLI가 실패해도 다음 CLI를 올림');
   assert.match(result.stderr, /claude update 실패: download failed/);
   assert.equal(f.status().result, 'ok');
   assert.equal(f.calls().length, 5);
@@ -687,7 +687,7 @@ test('에이전트 CLI 업데이트가 실패해도 기록만 남기고 저장�
   const hourAgo = (Date.now() - 23 * 3600e3 - 61 * 60e3) / 1000;
   utimesSync(stamp, hourAgo, hourAgo);
   assert.equal(f.update('--auto').status, 0);
-  assert.deepEqual(f.cli(), ['claude update', 'codex update'], '한 시간 뒤 다시 시도');
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade'], '한 시간 뒤 다시 시도');
   assert.equal(f.update('--auto').status, 0);
   assert.deepEqual(f.cli(), [], '성공하면 다시 하루 간격');
 
@@ -696,7 +696,7 @@ test('에이전트 CLI 업데이트가 실패해도 기록만 남기고 저장�
   result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
   assert.equal(f.status().result, 'held');
-  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade']);
 });
 
 test('멈춘 에이전트 CLI 업데이트는 시간 제한 뒤 끝내고 저장소 반영을 계속한다', t => {
@@ -708,7 +708,7 @@ test('멈춘 에이전트 CLI 업데이트는 시간 제한 뒤 끝내고 저장
   const result = f.update('--auto');
   assert.equal(result.status, 0, output(result));
   assert.ok(Date.now() - started < 30e3, 'TERM을 무시해도 시간 제한 안에 끝남');
-  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade']);
   assert.match(result.stderr, /claude update 시간 초과\(3초\)/);
   assert.equal(f.status().result, 'ok');
   assert.equal(f.calls().length, 5);
@@ -727,7 +727,7 @@ test('새 커밋을 받아 다시 시작해도 에이전트 CLI는 한 번만, �
   f.push({ 'home/zsh/.zshrc': '# changed\n' });
   let result = f.update();
   assert.equal(result.status, 0, output(result));
-  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade']);
   assert.deepEqual(f.calls(), ['dotfiles 0']);
 
   // 이 함수가 없던 update.sh가 받아서 다시 시작한 경우: 다시 시작한 실행이 단계보다 먼저 올린다.
@@ -740,6 +740,6 @@ test('새 커밋을 받아 다시 시작해도 에이전트 CLI는 한 번만, �
   f.git(f.work, 'merge', '-q', '--ff-only', '@{u}');
   result = spawnSync('/bin/bash', [join(f.work, 'scripts/update.sh'), '--auto'], { env, encoding: 'utf8' });
   assert.equal(result.status, 0, output(result));
-  assert.deepEqual(f.cli(), ['claude update', 'codex update']);
+  assert.deepEqual(f.cli(), ['claude update', 'codex update', 'opencode upgrade']);
   assert.deepEqual(f.calls(), ['dotfiles 1']);
 });
