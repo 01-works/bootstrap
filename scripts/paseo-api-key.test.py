@@ -174,6 +174,14 @@ class ApiKeyTests(unittest.TestCase):
         self.assertIn(api_key.INFISICAL_PROJECT_ID, calls[2])
         self.assertEqual(len(json.loads(self.path.read_text())['daemon']['agentProfiles']), 7)
 
+    def test_automatic_install_skips_reload_when_unchanged(self):
+        self.assertEqual(self.run_script(args=('--infisical', '--if-ready'))[0], 0)
+        before = self.path.read_bytes()
+        result, run = self.run_script(args=('--infisical', '--if-ready'), reload_code=1)
+        self.assertEqual(result, 0)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(any(call.args[0][1] == 'reload' for call in run.call_args_list))
+
     def test_infisical_install_stops_on_missing_login_or_manual_provider(self):
         original = self.path.read_bytes()
         with self.assertRaisesRegex(ValueError, 'infisical login'):

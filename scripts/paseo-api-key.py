@@ -405,6 +405,10 @@ def main():
             print('Infisical API 프로필 건너뜀 (CLI·로그인·프로젝트 접근 상태 확인).')
             return 0
         print(f'Infisical API 프로필 {count}개 설정 완료.')
+        # 자동 실행은 바뀐 설정이 없으면 reload하지 않는다. 데몬이 꺼진 기기(앱을 닫은 노트북)에서 매번 실패하지 않게 한다.
+        if args.if_ready and config == json.loads(original):
+            print('바뀐 설정이 없어 Paseo reload는 건너뜁니다.')
+            return 0
     else:
         print(f'대상: {provider_id} ({config_path})')
         # 터미널이 없을 때 getpass가 평문 입력으로 전환하지 않게 한다.

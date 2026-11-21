@@ -248,6 +248,20 @@ test('paseo 단계: Infisical CLI가 있을 때만 선택적 API 프로필 등�
   assert.equal(failed.status, 1, '등록 자체의 실패는 갱신에서 재시도할 수 있게 전달한다');
 });
 
+test('paseo 단계: 사용자 스킬 연결이 실패해도 나머지 작업을 하고 실패로 끝난다', t => {
+  const { root, result } = mockStep(t, '65-paseo.sh', [
+    'has() { [[ "$1" != infisical ]]; }',
+    'is_laptop() { return 1; }',
+    'run() { :; }',
+    'node() { printf "%s\\n" "${1##*/}" >>"$BOOTSTRAP_ROOT/calls"; [[ "$1" != *agent-skills.mjs ]]; }',
+  ].join('\n'), { BOOTSTRAP_UNATTENDED: '1', PASEO_HOME: '/nonexistent/paseo-home' });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  const calls = readFileSync(join(root, 'calls'), 'utf8');
+  for (const script of ['launch-agents.mjs', 'paseo-profiles.mjs', 'paseo-plugins.mjs', 'paseo-skills.mjs']) {
+    assert.match(calls, new RegExp(script.replace('.', '\\.')), `${script}가 실행되지 않음`);
+  }
+});
+
 test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경로는 없을 때만 링크로 만든다', t => {
   const { root } = sandbox(t);
   const home = join(root, 'home'), compat = join(root, 'cc-yw-heavy.sh'), dst = join(home, '.local/bin/yw-heavy');
