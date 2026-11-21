@@ -131,7 +131,6 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다.
-- 예전 Astra 대체 프로필은 다음 `--update`에서 정리된다. Deep Reviewer (Astra)는 Policy Reviewer (Astra)로 이어지고, 저장소가 만든 ID의 Supervisor (Astra)·Architect (Astra)는 지워진다. 이름만 같은 개인 프로필은 지우지 않고 차이로 알린다.
 - 구현·총괄 프로필은 권한 확인 없이 실행한다(Claude `bypassPermissions`, Codex `full-access`). 리뷰·설계 프로필은 직접 수정하지 않는 역할이라 plan 계열 모드를 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 - Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도다.

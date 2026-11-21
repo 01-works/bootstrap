@@ -29,7 +29,6 @@ test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는
     assert.match(notes, /에만 쓰는 읽기 전용 검토자/, name);
     assert.match(notes, /그 밖의 리뷰에는 쓰지 않는다/, name);
   }
-  assert.deepEqual(manifest.removed.map(r => r.name), ['Supervisor (Astra)', 'Architect (Astra)']);
   for (const profile of manifest.profiles) {
     assert.doesNotMatch(profile.notes ?? '', /한도 소진|대체 프로필/, profile.name);
   }
@@ -77,24 +76,30 @@ test('명시적 갱신은 ID·외형을 보존하고 제공자 기능을 교체�
   assert.deepEqual(mergeProfiles(result.profiles, manifest, true).changes, []);
 });
 
-test('저장소에서 없앤 프로필은 저장소 ID일 때만 명시적 갱신에서 지우고, Astra 심층 리뷰는 정책 검토로 이어진다', () => {
+test('저장소에서 없앤 프로필은 저장소 ID일 때만 명시적 갱신에서 지우고, 이전 이름은 새 이름으로 이어진다', () => {
+  const target = { id: 'bootstrap-new', name: 'New Reviewer', provider: 'codex', model: 'm' };
+  const migration = {
+    renames: { 'Old Reviewer': 'New Reviewer' },
+    removed: [{ id: 'bootstrap-gone', name: 'Gone' }, { id: 'bootstrap-gone-2', name: 'Gone 2' }],
+    profiles: [target],
+  };
   const existing = [
-    { id: 'bootstrap-supervisor-astra', name: 'Supervisor (Astra)', provider: 'codex' },
-    { id: 'mine', name: 'Architect (Astra)', provider: 'claude' },
-    { id: 'y', name: 'Deep Reviewer (Astra)', provider: 'codex', color: 'blue' },
+    { id: 'bootstrap-gone', name: 'Gone', provider: 'codex' },
+    { id: 'mine', name: 'Gone 2', provider: 'claude' },
+    { id: 'y', name: 'Old Reviewer', provider: 'codex', color: 'blue' },
   ];
-  const kept = mergeProfiles(existing, manifest);
+  const kept = mergeProfiles(existing, migration);
   assert.deepEqual(kept.profiles.slice(0, 2), existing.slice(0, 2));
-  assert.ok(kept.drift.includes('Supervisor (Astra)') && kept.drift.includes('Architect (Astra)'));
-  const result = mergeProfiles(existing, manifest, true);
-  assert.equal(result.profiles.some(p => p.id === 'bootstrap-supervisor-astra'), false);
-  assert.ok(result.changes.includes('제거: Supervisor (Astra)'));
+  assert.ok(kept.drift.includes('Gone') && kept.drift.includes('Gone 2'));
+  const result = mergeProfiles(existing, migration, true);
+  assert.equal(result.profiles.some(p => p.id === 'bootstrap-gone'), false);
+  assert.ok(result.changes.includes('제거: Gone'));
   // 이름만 같은 개인 프로필은 지우지 않고 차이로 알린다.
   assert.ok(result.profiles.some(p => p.id === 'mine'));
-  assert.ok(result.drift.includes('Architect (Astra)'));
-  const policy = result.profiles.find(p => p.id === 'y');
-  assert.deepEqual([policy.name, policy.model, policy.color], ['Policy Reviewer (Astra)', 'gpt-6.2-astra', 'blue']);
-  assert.deepEqual(mergeProfiles(result.profiles, manifest, true).changes, []);
+  assert.ok(result.drift.includes('Gone 2'));
+  const renamed = result.profiles.find(p => p.id === 'y');
+  assert.deepEqual([renamed.name, renamed.model, renamed.color], ['New Reviewer', 'm', 'blue']);
+  assert.deepEqual(mergeProfiles(result.profiles, migration, true).changes, []);
 });
 
 test('중복과 모호한 이전은 쓰기 전에 거부', () => {
