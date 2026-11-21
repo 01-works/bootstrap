@@ -55,16 +55,16 @@ export function mergeProfiles(existing, manifest, update = false) {
       changes.push(`갱신: ${wanted.name}`);
     }
   }
-  // 저장소에서 없앤 프로필. 이름으로 찾고 명시적 갱신에서만 지운다. 아니면 차이로 알린다.
-  for (const name of manifest.removed ?? []) {
-    const index = profiles.findIndex(profile => profile.name === name);
-    if (index < 0) continue;
-    if (!update) {
+  // 저장소에서 없앤 프로필. 저장소가 만든 ID일 때만 명시적 갱신에서 지운다.
+  // 이름만 같은 프로필은 소유가 불분명하므로 지우지 않고 차이로 알린다.
+  for (const { id, name } of manifest.removed ?? []) {
+    const index = profiles.findIndex(profile => profile.id === id);
+    if (index >= 0 && update) {
+      changes.push(`제거: ${profiles[index].name}`);
+      profiles.splice(index, 1);
+    } else if (index >= 0 || profiles.some(profile => profile.name === name)) {
       drift.push(name);
-      continue;
     }
-    profiles.splice(index, 1);
-    changes.push(`제거: ${name}`);
   }
   validate(profiles);
   return { profiles, changes, drift };

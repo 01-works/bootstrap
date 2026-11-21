@@ -38,5 +38,13 @@ install_cli() {
 install_cli claude https://claude.ai/install.sh bash
 install_cli codex https://chatgpt.com/codex/install.sh sh
 install_cli opencode https://opencode.ai/v2/install bash --no-modify-path  # v2 설치기. 예전 opencode.ai/install은 v1만 설치한다
+# Paseo는 OpenCode v2를 2.0.10 이상부터 받는다. 실행되기만 하는 오래된 v2를 성공으로 넘기지 않는다.
+if [[ "$DRY_RUN" != 1 ]] && has opencode; then
+  oc_version="$(opencode --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [[ "$oc_version" =~ ^2\.0\.([0-9]+)$ ]] && (( BASH_REMATCH[1] < 10 )); then
+    warn "opencode $oc_version: Paseo는 v2를 2.0.10 이상부터 받습니다. opencode upgrade로 올리세요"
+    failed=1
+  fi
+fi
 
 exit "$failed"

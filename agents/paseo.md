@@ -102,7 +102,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-총괄·중요한 설계·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer 두 개로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 문구·오타·문서만 바꾸는 변경, 일상 감사에는 쓰지 않는다. 두 검토자가 각각 독립 판정해 교차 합의하고, 검토는 한 차례만 한다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
+총괄·중요한 설계·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer 두 개로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 두 검토자가 각각 독립 판정해 교차 합의하고, 검토는 한 차례만 한다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
@@ -122,7 +122,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다.
-- 예전 Astra 대체 프로필은 다음 `--update`에서 정리된다. Deep Reviewer (Astra)는 Policy Reviewer (Astra)로 이어지고, Supervisor (Astra)·Architect (Astra)는 지워진다.
+- 예전 Astra 대체 프로필은 다음 `--update`에서 정리된다. Deep Reviewer (Astra)는 Policy Reviewer (Astra)로 이어지고, 저장소가 만든 ID의 Supervisor (Astra)·Architect (Astra)는 지워진다. 이름만 같은 개인 프로필은 지우지 않고 차이로 알린다.
 - 구현·총괄 프로필은 권한 확인 없이 실행한다(Claude `bypassPermissions`, Codex `full-access`). 리뷰·설계 프로필은 직접 수정하지 않는 역할이라 plan 계열 모드를 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 - Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도다.
