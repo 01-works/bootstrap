@@ -12,9 +12,9 @@ const script = new URL('./paseo-profiles.mjs', import.meta.url).pathname;
 test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는 정책 검토 전용', () => {
   for (const [name, model, modeId, thinkingOptionId] of [
     ['Supervisor', 'claude-opus-5-5', 'bypassPermissions', 'high'],
-    ['Architect', 'claude-opus-5-5', 'plan', 'xhigh'],
-    ['Deep Reviewer', 'claude-opus-5-5', 'plan', 'high'],
-    ['Policy Reviewer (Fable)', 'claude-fable-5-2', 'plan', 'high'],
+    ['Architect', 'claude-opus-5-5', 'bypassPermissions', 'xhigh'],
+    ['Deep Reviewer', 'claude-opus-5-5', 'bypassPermissions', 'high'],
+    ['Policy Reviewer (Fable)', 'claude-fable-5-2', 'bypassPermissions', 'high'],
     ['Policy Reviewer (Astra)', 'gpt-6.2-astra', 'auto-review', 'xhigh'],
   ]) {
     const profile = manifest.profiles.find(p => p.name === name);
