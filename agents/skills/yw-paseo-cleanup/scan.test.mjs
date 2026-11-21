@@ -51,7 +51,7 @@ test('collector records malformed schemas and strips live permission payload', a
     writeFileSync(join(dir, 'server-id'), 'srv_fixture');
     const live = join(dir, 'live.json'), pending = join(dir, 'pending.json');
     writeFileSync(live, JSON.stringify(observation('live', { 'fake-agent': { status: 'idle', pendingPermissions: [{ token: 'Bearer private-token' }] } }))); writeFileSync(pending, JSON.stringify(observation('pending', [{ agentId: 'fake-agent', kind: 'question', prompt: 'private' }])));
-    const snapshot = await collect({ paseoHome: dir, live, pending, minAgeHours: 72 });
+    const snapshot = await collect({ paseoHome: dir, paseoInfoPlist: join(dir, 'missing.plist'), live, pending, minAgeHours: 72 });
     assert.equal(snapshot.agents[0].pendingCount, 1); assert.equal(snapshot.agents[0].statusSource, 'live'); assert.equal(snapshot.classification.agents[0].work, 'waiting_user');
     assert.ok(snapshot.meta.gaps.some(g => g.reason === 'invalid-json')); assert.ok(snapshot.meta.gaps.some(g => g.reason === 'expected-array'));
     assert.equal(snapshot.schedules[0].cwd, '/fake/scheduled'); assert.doesNotMatch(JSON.stringify(snapshot), /Bearer |"config"|private-token|"prompt"/);
@@ -181,13 +181,13 @@ function syntheticStore() {
   for (const relative of ['agents/fake', 'projects', 'schedules', 'worktrees', 'state/yw-supervisor/fake', 'directory']) mkdirSync(join(dir, relative), { recursive: true });
   const cwd = join(dir, 'directory'), stateHome = join(dir, 'state');
   const owner = '11111111-1111-4111-8111-111111111111';
-  writeFileSync(join(dir, 'server-id'), 'srv_fixture'); writeFileSync(join(dir, 'version.json'), JSON.stringify({ version: '0.15.4' }));
+  writeFileSync(join(dir, 'server-id'), 'srv_fixture'); writeFileSync(join(dir, 'version.json'), JSON.stringify({ version: '0.16.2' }));
   writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([{ ...oldWorkspace, workspaceId: 'wks_fake', cwd, kind: 'directory' }]));
   writeFileSync(join(dir, 'projects/projects.json'), '[]'); writeFileSync(join(dir, 'finish-subscriptions.json'), '[]');
   writeFileSync(join(dir, 'agents/fake/owner.json'), JSON.stringify({ id: owner, cwd: '/fake/supervisor-owner', lastStatus: 'closed', lastActivityAt: '2026-01-01T00:00:00Z', archivedAt: '2026-01-02T00:00:00Z' }));
   writeFileSync(join(stateHome, 'yw-supervisor/fake/tasks.md'), `owner: ${owner}`);
   for (const [name, value] of [['live', {}], ['pending', []], ['terminals', { observations: [{ cwd, terminals: [] }] }]]) writeFileSync(join(dir, `${name}.json`), JSON.stringify(observation(name, value)));
-  return { dir, cwd, options: { paseoHome: dir, stateHome, live: join(dir, 'live.json'), pending: join(dir, 'pending.json'), terminals: join(dir, 'terminals.json'), minAgeHours: 72 } };
+  return { dir, cwd, options: { paseoHome: dir, paseoInfoPlist: join(dir, 'missing.plist'), stateHome, live: join(dir, 'live.json'), pending: join(dir, 'pending.json'), terminals: join(dir, 'terminals.json'), minAgeHours: 72 } };
 }
 const invalidStoreCases = [
   ...[null, [], {}, false, 0, 'schema-change'].map(value => ['agents/fake/bad.json', value, 'invalid agent schema']),
@@ -433,11 +433,79 @@ test('#68 R3 legacy live pending and terminal shapes are retained as unchecked',
     const s = await collect(options); assert.ok(Object.values(s.meta.inputObservations).every(i => i.state === 'unchecked')); assert.notEqual(s.classification.workspaces[0].verdict, 'batch_candidate'); assert.equal(s.workspaces[0].checks.terminals, 'unchecked');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('#68 F8 unavailable version stays null with a protection gap', async () => {
+test('unavailable version stays null without blocking a workspace', async () => {
   const { dir, options } = syntheticStore();
   try {
-    rmSync(join(dir, 'version.json')); options.paseoInfoPlist = join(dir, 'not-installed/Info.plist');
-    const s = await collect(options); assert.equal(s.meta.paseoVersion, null); assert.ok(s.meta.gaps.some(g => g.reason === 'paseo_version_unknown')); assert.notEqual(s.classification.workspaces[0].verdict, 'batch_candidate');
+    rmSync(join(dir, 'version.json'));
+    const s = await collect(options);
+    assert.equal(s.meta.paseoVersion, null);
+    assert.equal(s.meta.paseoVersionSource, null);
+    assert.equal(s.classification.workspaces[0].verdict, 'batch_candidate');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('a newer daemon version and additive record fields do not block a workspace', async () => {
+  const { dir, cwd, options } = syntheticStore();
+  try {
+    const live = { ...observation('live', {}), daemonVersion: '0.16.3' };
+    writeFileSync(options.live, JSON.stringify(live));
+    writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([
+      { ...oldWorkspace, workspaceId: 'wks_fake', cwd, kind: 'directory', background: false },
+      { ...oldWorkspace, workspaceId: 'wks_archived', cwd, kind: 'worktree', archivedAt: '2026-01-02', head: 'refs/heads/archived' },
+    ]));
+    const agentFile = join(dir, 'agents/fake/owner.json');
+    const agent = JSON.parse(readFileSync(agentFile, 'utf8'));
+    writeFileSync(agentFile, JSON.stringify({ ...agent, controls: [], background: true, metadata: {} }));
+    const observed = await collect(options);
+    assert.equal(observed.meta.paseoVersion, '0.16.3');
+    assert.equal(observed.meta.paseoVersionSource, 'live_observation');
+    assert.deepEqual(observed.meta.gaps.filter(g => g.source !== 'git'), []);
+    assert.equal(observed.classification.workspaces[0].verdict, 'batch_candidate');
+
+    writeFileSync(options.live, JSON.stringify({ ...live, serverId: 'srv_other' }));
+    const wrongHost = await collect(options);
+    assert.equal(wrongHost.meta.paseoVersion, '0.16.2');
+    assert.equal(wrongHost.meta.paseoVersionSource, 'paseo_home_version');
+    assert.ok(wrongHost.meta.gaps.some(g => g.reason === 'input_server_mismatch_or_missing'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('an invalid daemon version observation does not fall back to installed version metadata', async () => {
+  const { dir, options } = syntheticStore();
+  try {
+    const installed = await collect(options);
+    assert.equal(installed.meta.paseoVersion, '0.16.2');
+    assert.equal(installed.meta.paseoVersionSource, 'paseo_home_version');
+
+    writeFileSync(options.live, JSON.stringify({ ...observation('live', {}), daemonVersion: 'invalid' }));
+    const invalid = await collect(options);
+    assert.equal(invalid.meta.paseoVersion, null);
+    assert.equal(invalid.meta.paseoVersionSource, 'live_observation');
+    assert.equal(invalid.classification.workspaces[0].verdict, 'batch_candidate');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('0.16.2 live background work protects idle agents and their workspace', async () => {
+  const { dir, cwd, options } = syntheticStore();
+  const id = '22222222-2222-4222-8222-222222222222';
+  try {
+    writeFileSync(join(dir, 'agents/fake/member.json'), JSON.stringify({
+      id, cwd, workspaceId: 'wks_fake', lastStatus: 'idle', lastActivityAt: '2026-01-01',
+    }));
+    const observe = async backgroundWork => {
+      writeFileSync(options.live, JSON.stringify({
+        ...observation('live', { [id]: { status: 'idle', backgroundWork } }), daemonVersion: '0.16.2',
+      }));
+      return collect(options);
+    };
+    const running = await observe({ count: 1 });
+    assert.equal(running.classification.agents.find(a => a.id === id).work, 'waiting_work');
+    assert.deepEqual(running.classification.agents.find(a => a.id === id).hold, ['none']);
+    assert.ok(running.classification.workspaces[0].hold.includes('active_lane'));
+    const finished = await observe({ count: 0 });
+    assert.equal(finished.classification.agents.find(a => a.id === id).work, 'unknown');
+    for (const malformed of [{}, { count: '1' }]) {
+      const invalid = await observe(malformed);
+      assert.ok(invalid.meta.gaps.some(g => g.reason === 'invalid backgroundWork schema' && g.scope.agentIds.includes(id)));
+      assert.equal(invalid.classification.workspaces[0].verdict, 'review');
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('#68 F8 and F7 stored unknown schedule and canonical ownership fields remain visible', async () => {
@@ -462,8 +530,8 @@ test('#68 R5 explicit and invalid selections never permit unselected excerpt rea
 test('#68 F7 malformed ownership fields cannot downgrade a destructive workspace to safe local', async () => {
   const { dir, cwd, options } = syntheticStore();
   try {
-    for (const change of [{ mainRepoRoot: {} }, { worktreeRoot: 1 }, { mainRepoRoot: 'relative/path' }, { isPaseoOwnedWorktree: 'yes' }]) {
-      writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([{ ...oldWorkspace, workspaceId: 'wks_fake', cwd, mainRepoRoot: cwd, worktreeRoot: cwd, isPaseoOwnedWorktree: true, ...change }]));
+    for (const change of [{ mainRepoRoot: {} }, { worktreeRoot: 1 }, { mainRepoRoot: 'relative/path' }, { isPaseoOwnedWorktree: 'yes' }, { isPaseoOwnedWorktree: undefined }, { worktreeRoot: null }, { mainRepoRoot: '' }]) {
+      writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([{ ...oldWorkspace, workspaceId: 'wks_fake', cwd, kind: 'worktree', mainRepoRoot: cwd, worktreeRoot: cwd, isPaseoOwnedWorktree: true, ...change }]));
       const s = await collect(options); assert.ok(s.meta.gaps.some(g => g.reason === 'invalid workspace ownership schema')); assert.notEqual(s.classification.workspaces[0].verdict, 'batch_candidate');
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }

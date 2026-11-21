@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { classify, protectionContext, scanSummary, isOwnedWorkspace } from './classify.mjs';
+import { classify, protectionContext, scanSummary, isOwnedWorkspace, isLocalWorkspace } from './classify.mjs';
 
 const labelKeys = new Set(['paseo.parent-agent-id', 'paseo.parent-server-id', 'zerosub.continued-from', 'handoff.from', 'handoff.profile', 'agent-list.continued-from', 'agent-list.original-title', 'supervisor', 'role', 'lane', 'issue', 'pr', 'task']);
 const agentFields = ['id', 'provider', 'cwd', 'workspaceId', 'createdAt', 'updatedAt', 'lastActivityAt', 'lastUserMessageAt', 'title', 'lastStatus', 'archivedAt', 'requiresAttention', 'attentionReason', 'internal'];
@@ -80,6 +80,7 @@ export function parseOptions(argv) {
 }
 const jsonReadFailed = Symbol('json-read-failed');
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(value);
 export function validateObservation(kind, input, serverId, now, maxAgeMinutes = 30) {
   const metadata = { serverId: typeof input?.serverId === 'string' ? input.serverId : null, observedAt: typeof input?.observedAt === 'string' ? input.observedAt : null, scope: typeof input?.scope === 'string' ? input.scope : null, state: 'unchecked', issues: [] };
   if (!serverId || metadata.serverId !== serverId) metadata.issues.push('input_server_mismatch_or_missing');
@@ -98,7 +99,7 @@ export function readPaseoVersion(paseoHome, infoPlist = '/Applications/Paseo.app
     try {
       const text = readFileSync(source.path, 'utf8');
       const version = source.kind === 'app_info_plist' ? text.match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)?.[1] : JSON.parse(text)?.version;
-      if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) return { version, source: source.kind };
+      if (isVersion(version)) return { version, source: source.kind };
     } catch { /* Try the next read-only source. */ }
   }
   return { version: null, source: null };
@@ -391,9 +392,6 @@ export async function collect(options) {
   const read = (file, domain) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { gaps.push({ source: file, ...(domain ? { domain } : {}), reason: e.code ?? 'invalid-json' }); return jsonReadFailed; } };
   const array = (file, required) => { const value = read(file); if (!Array.isArray(value)) { if (value !== jsonReadFailed) gaps.push({ source: file, reason: 'expected-array' }); return []; } return value.filter((v, i) => { const ok = isRecord(v) && required.every(k => typeof v[k] === 'string'); if (!ok) gaps.push({ source: file, reason: `invalid record:${i}` }); return ok; }); };
   try { snapshot.meta.serverId = readFileSync(join(paseoHome, 'server-id'), 'utf8').trim(); } catch (e) { gaps.push({ source: 'server-id', reason: e.code }); }
-  const version = readPaseoVersion(paseoHome, options.paseoInfoPlist);
-  snapshot.meta.paseoVersion = version.version; snapshot.meta.paseoVersionSource = version.source;
-  if (!version.version) gaps.push({ domain: 'protection', source: 'paseo-version', reason: 'paseo_version_unknown' });
   const observationInput = kind => {
     const input = options[kind] ? read(options[kind], kind === 'terminals' ? 'terminals' : undefined) : undefined;
     const metadata = validateObservation(kind, input, snapshot.meta.serverId, collectedAt, options.maxInputAgeMinutes ?? 30);
@@ -405,6 +403,10 @@ export async function collect(options) {
   if (!existsSync(agentRoot)) gaps.push({ source: agentRoot, reason: 'agent_store_missing' });
   let agentFiles = []; try { agentFiles = globSync('*/*.json', { cwd: agentRoot }); } catch (e) { gaps.push({ source: agentRoot, reason: e.code }); }
   const liveInput = observationInput('live');
+  const version = liveInput.trusted && Object.hasOwn(liveInput.input, 'daemonVersion')
+    ? { version: isVersion(liveInput.input.daemonVersion) ? liveInput.input.daemonVersion : null, source: 'live_observation' }
+    : readPaseoVersion(paseoHome, options.paseoInfoPlist);
+  snapshot.meta.paseoVersion = version.version; snapshot.meta.paseoVersionSource = version.source;
   let live = isRecord(liveInput.input) && ['serverId', 'observedAt', 'scope', 'agents'].some(k => Object.hasOwn(liveInput.input, k)) ? liveInput.input.agents : liveInput.input;
   const liveMapUsable = liveInput.trusted && isRecord(live);
   if (!isRecord(live)) { gaps.push({ source: options.live, reason: 'expected agent status map' }); live = {}; }
@@ -424,6 +426,11 @@ export async function collect(options) {
     if (state) {
       if (['initializing', 'running', 'idle', 'closed', 'error'].includes(state.status) && (state.pendingPermissions === undefined || Array.isArray(state.pendingPermissions))) { a.status = state.status; a.statusSource = 'live'; snapshot.meta.liveCoverage++; }
       else gaps.push({ source: options.live, reason: `invalid live record:${a.id}`, scope: { agentIds: [a.id] } });
+      if (state.backgroundWork !== undefined) {
+        const count = state.backgroundWork?.count;
+        if (Number.isSafeInteger(count) && count >= 0) a.backgroundWorkCount = count;
+        else gaps.push({ domain: 'protection', source: options.live, reason: 'invalid backgroundWork schema', scope: { agentIds: [a.id] } });
+      }
     }
     a.pendingCount = Math.max(pending.get(a.id) ?? 0, Array.isArray(state?.pendingPermissions) ? state.pendingPermissions.length : 0);
     if (typeof raw.persistence?.sessionId === 'string') sessionIds.set(a.id, raw.persistence.sessionId);
@@ -435,7 +442,11 @@ export async function collect(options) {
   const wfile = join(paseoHome, 'projects/workspaces.json');
   snapshot.workspaces = array(wfile, ['workspaceId', 'cwd']).map(w => {
     const invalidOwnership = (w.isPaseoOwnedWorktree !== undefined && typeof w.isPaseoOwnedWorktree !== 'boolean') || ['worktreeRoot', 'mainRepoRoot'].some(k => w[k] != null && (typeof w[k] !== 'string' || (w[k] && !w[k].startsWith('/'))));
-    if (invalidOwnership) gaps.push({ domain: 'protection', source: wfile, reason: 'invalid workspace ownership schema', scope: { workspaceIds: [w.workspaceId], paths: [canonical(w.cwd)] } });
+    const incompleteOwnership = !w.archivedAt && !isOwnedWorkspace(w) && !isLocalWorkspace(w);
+    if (invalidOwnership || incompleteOwnership) {
+      const paths = [w.cwd, w.worktreeRoot].filter(path => typeof path === 'string' && path.startsWith('/')).map(canonical);
+      gaps.push({ domain: 'protection', source: wfile, reason: 'invalid workspace ownership schema', scope: { workspaceIds: [w.workspaceId], paths } });
+    }
     return { ...pick(w, ['workspaceId', 'projectId', 'cwd', 'kind', 'displayName', 'title', 'branch', 'worktreeRoot', 'mainRepoRoot', 'createdAt', 'updatedAt', 'archivedAt', 'isPaseoOwnedWorktree']), cwd: canonical(w.cwd), ...Object.fromEntries(['worktreeRoot', 'mainRepoRoot'].filter(k => typeof w[k] === 'string' && w[k]).map(k => [k, canonical(w[k])])) };
   });
   snapshot.projects = array(join(paseoHome, 'projects/projects.json'), ['projectId', 'rootPath']).map(p => pick(p, ['projectId', 'rootPath', 'kind', 'displayName', 'archivedAt']));
@@ -506,7 +517,8 @@ async function main() {
   if (options.help) {
     console.log(`Usage: node scan.mjs [--out DIR] [--paseo-home DIR] [--self-agent ID] [--self-cwd PATH] [--min-age-hours 72] [--max-input-age-minutes 30] [--gh] [--excerpts] [--excerpt-ids FILE] [--live FILE] [--pending FILE] [--terminals FILE]
 Every observation requires serverId matching the local server-id, observedAt (ISO 8601 with Z or an explicit UTC offset), and scope. Inputs older than --max-input-age-minutes (default 30), over one minute in the future, or missing metadata are unchecked. Legacy payloads are accepted as unchecked; live/pending uncertainty blocks all batch candidates.
---live: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"listed_agents","agents":{"full-agent-id":{"status":"idle","pendingPermissions":[]}}} (scope all is also accepted; missing agents remain scoped unknown)
+--live: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"listed_agents","agents":{"full-agent-id":{"status":"idle","pendingPermissions":[],"backgroundWork":{"count":1}}}} (scope all is also accepted; missing agents remain scoped unknown)
+Record daemonVersion from paseo daemon status --json for the selected host. Version metadata is informational.
 --pending: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"all","permissions":[{"agentId":"full-agent-id","kind":"question"}]}
 --terminals (all cwd): {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"all","terminals":[{"cwd":"/absolute/path"}]} (absent cwd confirmed_none; terminal cwd inside target path present)
 --terminals (per cwd): {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"cwd","observations":[{"cwd":"/absolute/path","terminals":[]}]} (unobserved cwd unchecked)

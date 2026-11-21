@@ -36,13 +36,13 @@ test('review P1 collector and both output files preserve a live agent path depen
     const cwd = join(dir, 'worktrees/fake/xoxb-example');
     for (const p of ['agents/fake', 'projects', 'schedules', 'state/yw-supervisor', 'worktrees/fake/xoxb-example']) mkdirSync(join(dir, p), { recursive: true });
     const id = '11111111-1111-4111-8111-111111111111', serverId = 'xoxb-server-example';
-    writeFileSync(join(dir, 'server-id'), serverId); writeFileSync(join(dir, 'version.json'), '{"version":"0.15.4"}');
+    writeFileSync(join(dir, 'server-id'), serverId); writeFileSync(join(dir, 'version.json'), '{"version":"0.16.2"}');
     writeFileSync(join(dir, 'projects/workspaces.json'), '[]'); writeFileSync(join(dir, 'projects/projects.json'), '[]'); writeFileSync(join(dir, 'finish-subscriptions.json'), '[]');
     writeFileSync(join(dir, 'agents/fake/one.json'), JSON.stringify({ id, cwd, lastStatus: 'running', lastActivityAt: old, title: 'Bearer fake-fixture-credential' }));
     const observedAt = new Date().toISOString();
     const inputs = { live: { serverId, observedAt, scope: 'all', agents: { [id]: { status: 'running' } } }, pending: { serverId, observedAt, scope: 'all', permissions: [] }, terminals: { serverId, observedAt, scope: 'all', terminals: [] } };
     for (const [kind, value] of Object.entries(inputs)) writeFileSync(join(dir, `${kind}.json`), JSON.stringify(value));
-    const s = await collect({ paseoHome: dir, stateHome: join(dir, 'state'), live: join(dir, 'live.json'), pending: join(dir, 'pending.json'), terminals: join(dir, 'terminals.json') });
+    const s = await collect({ paseoHome: dir, paseoInfoPlist: join(dir, 'missing.plist'), stateHome: join(dir, 'state'), live: join(dir, 'live.json'), pending: join(dir, 'pending.json'), terminals: join(dir, 'terminals.json') });
     assert.equal(s.agents[0].cwd, s.orphans[0].path); assert.ok(s.agents[0].cwd.endsWith('/xoxb-example')); assert.equal(s.agents[0].statusSource, 'live'); assert.ok(s.classification.orphans[0].hold.includes('active_lane'));
     s.orphans[0].git = structuredClone(fixture.fixtureGit); s.orphans[0].checks = structuredClone(fixture.fixtureChecks); s.orphans[0].observedTimesMax = old;
     s.classification = classify(s); assert.equal(s.classification.orphans[0].verdict, 'exclude');
