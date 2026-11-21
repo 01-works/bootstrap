@@ -22,6 +22,7 @@ function fixture(t) {
     if (args[0] === 'print') return { status: loaded.has(label) ? 0 : 113, stdout: running.has(label) ? `${label} = {\n\tstate = running\n\tpid = 4242\n}\n` : '' };
     if (args[0] === 'bootstrap') { loaded.add(args[2].split('/').pop().replace(/\.plist$/, '')); return { status: 0 }; }
     if (args[0] === 'bootout') {
+      if (bootoutFails === 'stuck') return { status: 0 };
       if (bootoutFails) return { status: 5, stderr: 'Boot-out failed: 5: Input/output error' };
       loaded.delete(label); running.delete(label); return { status: 0 };
     }
@@ -83,6 +84,9 @@ test('바뀐 등록을 내리지 못하면 plist를 쓰지 않고 실패한다',
   assert.throws(() => apply({ ...f.options, laptop: true, only: 'agent-chrome' }), /launchctl bootout 실패/);
   assert.equal(readFileSync(path, 'utf8'), before, '옛 등록이 남았으면 다음 실행에서 다시 시도한다');
   assert.equal(apply({ ...f.options, laptop: true, only: 'agent-chrome', check: true }), 1);
+  f.failBootout('stuck');
+  assert.throws(() => apply({ ...f.options, laptop: true, only: 'agent-chrome' }), /launchctl bootout 실패/, '성공을 돌려줘도 등록이 남아 있으면 실패');
+  assert.equal(readFileSync(path, 'utf8'), before);
   f.failBootout(false);
   assert.equal(apply({ ...f.options, laptop: true, only: 'agent-chrome' }), 0);
   assert.notEqual(readFileSync(path, 'utf8'), before);

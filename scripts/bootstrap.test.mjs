@@ -260,6 +260,9 @@ test('paseo 단계: 사용자 스킬 연결이 실패해도 나머지 작업을 
   for (const script of ['launch-agents.mjs', 'paseo-profiles.mjs', 'paseo-plugins.mjs', 'paseo-skills.mjs']) {
     assert.match(calls, new RegExp(script.replace('.', '\\.')), `${script}가 실행되지 않음`);
   }
+  const dryRun = mockStep(t, '65-paseo.sh', 'has() { [[ "$1" == node ]]; }\nnode() { return 1; }',
+    { BOOTSTRAP_UNATTENDED: '1', DRY_RUN: '1' }).result;
+  assert.equal(dryRun.status, 1, 'Paseo CLI가 없는 미리보기도 스킬 충돌은 실패로 알린다');
 });
 
 test('heavy 단계: yw-heavy를 원자적으로 교체 설치하고, 예전 경로는 없을 때만 링크로 만든다', t => {

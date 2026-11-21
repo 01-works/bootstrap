@@ -14,7 +14,7 @@ if ! has node; then
 fi
 # 스킬 연결이 실패해도(경로 충돌 등) 데몬 등록·프로필·플러그인 작업은 계속하고, 끝에서 실패로 알린다.
 links=0
-node "$BOOTSTRAP_ROOT/scripts/agent-skills.mjs" || links=$?
+node "$BOOTSTRAP_ROOT/scripts/agent-skills.mjs" || links=1
 # Homebrew 밖에서 설치한 앱은 CLI 연결이 없을 수 있다. 앱 안의 CLI를 ~/.local/bin(PATH에 있음)에 연결한다.
 paseo_cli=/Applications/Paseo.app/Contents/Resources/bin/paseo
 paseo_link="$HOME/.local/bin/paseo"
@@ -29,7 +29,7 @@ if ! has paseo && [[ -x "$paseo_cli" ]]; then
 fi
 if ! has paseo; then
   warn 'paseo 없음 (Brewfile의 cask "paseo" 확인)'
-  [[ "$DRY_RUN" == 1 ]] && exit 0
+  [[ "$DRY_RUN" == 1 && "$links" == 0 ]] && exit 0
   exit 1
 fi
 

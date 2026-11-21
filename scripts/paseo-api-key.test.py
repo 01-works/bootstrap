@@ -33,7 +33,7 @@ class ApiKeyTests(unittest.TestCase):
         self.path.write_text(json.dumps(self.config))
 
     def run_script(self, key='new-fixture-value', args=(), reload_code=0, login='fixture-profile', status=0, project=0,
-                   selection=None, lookup_code=0, zerosub_code=0, stored=(), secret=None, login_ok=True):
+                   selection=None, lookup_code=0, zerosub_code=0, stored=(), secret=None, login_ok=True, daemon='running'):
         output = io.StringIO()
         stored = list(stored)
         def run(command, **kwargs):
@@ -48,6 +48,8 @@ class ApiKeyTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, project)
             if command[1:3] == ['secrets', 'get']:
                 return subprocess.CompletedProcess(command, lookup_code, stdout=f'{secret or "sk-fixture-" + command[3]}\n')
+            if command[1:3] == ['daemon', 'status']:
+                return subprocess.CompletedProcess(command, 0, stdout=json.dumps({'localDaemon': daemon}) if daemon else 'not json')
             if command[0] == '/fake/node':
                 return subprocess.CompletedProcess(command, zerosub_code, stdout=json.dumps(selection))
             return subprocess.CompletedProcess(command, reload_code)
@@ -174,13 +176,15 @@ class ApiKeyTests(unittest.TestCase):
         self.assertIn(api_key.INFISICAL_PROJECT_ID, calls[2])
         self.assertEqual(len(json.loads(self.path.read_text())['daemon']['agentProfiles']), 7)
 
-    def test_automatic_install_skips_reload_when_unchanged(self):
-        self.assertEqual(self.run_script(args=('--infisical', '--if-ready'))[0], 0)
-        before = self.path.read_bytes()
-        result, run = self.run_script(args=('--infisical', '--if-ready'), reload_code=1)
-        self.assertEqual(result, 0)
-        self.assertEqual(self.path.read_bytes(), before)
-        self.assertFalse(any(call.args[0][1] == 'reload' for call in run.call_args_list))
+    def test_automatic_install_tolerates_reload_failure_only_when_daemon_is_off(self):
+        for daemon, expected in (('stopped', 0), ('running', 1), (None, 1)):
+            with self.subTest(daemon=daemon):
+                self.path.write_text(json.dumps(self.config))
+                result, run = self.run_script(args=('--infisical', '--if-ready'), reload_code=1, daemon=daemon)
+                self.assertEqual(result, expected)
+                self.assertTrue(any(call.args[0][1] == 'reload' for call in run.call_args_list))
+        result, _ = self.run_script(args=('--infisical',), reload_code=1, daemon='stopped')
+        self.assertEqual(result, 1, '직접 실행은 reload 실패를 그대로 알린다')
 
     def test_infisical_install_stops_on_missing_login_or_manual_provider(self):
         original = self.path.read_bytes()
