@@ -45,7 +45,14 @@ for (const pathKey of ['cwd', 'worktreeRoot']) test(`F6 nested active workspace 
 });
 test('F7 daemon ownership flags determine destructive workspace Git checks, regardless of kind', () => {
   const owned = scan({ workspaces: [workspace({ kind: 'directory', git: { ...base.fixtureGit, dirtyCount: 1 } })] }).workspaces[0]; assert.equal(owned.verdict, 'review'); assert.ok(owned.hold.includes('data')); assert.equal(owned.deleteDirectory, undefined);
-  for (const change of [{ isPaseoOwnedWorktree: false }, { worktreeRoot: null }, { mainRepoRoot: null }]) { const local = scan({ workspaces: [workspace({ kind: 'worktree', git: null, ...change })] }).workspaces[0]; assert.equal(local.verdict, 'batch_candidate'); assert.equal(local.deleteDirectory, false); }
+  const local = scan({ workspaces: [workspace({ kind: 'worktree', git: null, isPaseoOwnedWorktree: false })] }).workspaces[0];
+  assert.equal(local.verdict, 'batch_candidate');
+  assert.equal(local.deleteDirectory, false);
+  for (const change of [{ isPaseoOwnedWorktree: undefined }, { worktreeRoot: null }, { mainRepoRoot: null }]) {
+    const unresolved = scan({ workspaces: [workspace({ kind: 'worktree', git: null, ...change })] }).workspaces[0];
+    assert.equal(unresolved.verdict, 'review');
+    assert.equal(unresolved.deleteDirectory, undefined);
+  }
 });
 for (const status of [undefined, 'unknown-new-status', null]) test(`F8 unknown schedule status protects both target types ${status}`, () => {
   const data = { agents: [agent('target')], workspaces: [workspace()], orphans: [orphan()], schedules: [{ id: 'heartbeat', status, target: { type: 'agent', agentId: 'target' } }, { id: 'schedule', status, target: { type: 'new-agent' }, cwd: '/fake/orphan/sub' }, { id: 'workspace-schedule', status, target: { type: 'new-agent' }, cwd: '/fake/lane' }] };

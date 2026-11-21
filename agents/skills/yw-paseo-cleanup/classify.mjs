@@ -4,7 +4,8 @@ const continuationKeys = ['zerosub.continued-from', 'handoff.from', 'agent-list.
 const waiting = ['active', 'waiting_user', 'waiting_work', 'waiting_schedule'];
 export const within = (path, root) => Boolean(path && root && (path === root || path.startsWith(`${root.replace(/\/$/, '')}/`)));
 const overlaps = (a, b) => within(a, b) || within(b, a);
-export const isOwnedWorkspace = w => w.isPaseoOwnedWorktree === true && [w.worktreeRoot, w.mainRepoRoot].every(path => typeof path === 'string' && path.length > 0);
+export const isOwnedWorkspace = w => w.isPaseoOwnedWorktree === true && [w.worktreeRoot, w.mainRepoRoot].every(path => typeof path === 'string' && path.startsWith('/'));
+export const isLocalWorkspace = w => w.isPaseoOwnedWorktree === false || (w.isPaseoOwnedWorktree === undefined && w.kind !== 'worktree');
 const workspacePaths = w => [w.cwd, w.worktreeRoot].filter(path => typeof path === 'string' && path.length > 0);
 export function ageHours(time, now) {
   const value = Date.parse(time), current = Date.parse(now);
@@ -109,6 +110,10 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if (a.statusSource === 'store' && protectionGaps.some(g => g.reason === 'live_missing' && g.scope?.agentIds?.includes(a.id))) r.work = 'unknown';
     r.reasons.push(`status:${status ?? 'missing'} (${a.statusSource ?? 'store'})`);
     if (a.pendingCount > 0) r.work = 'waiting_user';
+    if (a.backgroundWorkCount > 0) {
+      waitingForWork(r);
+      hold(r, 'active_lane', 'background work pending');
+    }
     r.recentActivityOnly = age !== null && age >= minAgeHours && activityAge !== null && activityAge < minAgeHours;
     if (self.has(a.id) || within(a.cwd, selfCwd)) hold(r, 'self', 'current cleanup scope');
     if (age === null || activityAge === null || age < minAgeHours || activityAge < minAgeHours) hold(r, 'recent', 'recent or unknown activity time');
@@ -209,9 +214,10 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if ((snapshot.workspaces ?? []).some(other => other.workspaceId !== w.workspaceId && !other.archivedAt && workspacePaths(other).some(p => workspacePaths(w).some(path => overlaps(p, path))))) hold(r, 'active_lane', 'overlapping active workspace path');
     if (pathUsers.some(a => a.workspaceId !== w.workspaceId && workspacePaths(w).some(path => within(a.cwd, path)))) hold(r, 'active_lane', 'protected agent uses workspace path');
     if (supervisors.some(s => s.workspaceIds?.includes(w.workspaceId) || s.paths?.some(p => workspacePaths(w).some(path => overlaps(p, path))))) hold(r, 'supervisor_scope', 'workspace path referenced by supervisor record');
-    const local = !isOwnedWorkspace(w);
-    if (!local) dataChecks(r, w.git);
-    else { r.deleteDirectory = false; r.reasons.push('local directory remains'); }
+    const local = isLocalWorkspace(w);
+    if (isOwnedWorkspace(w)) dataChecks(r, w.git);
+    else if (local) { r.deleteDirectory = false; r.reasons.push('local directory remains'); }
+    else hold(r, 'data', 'workspace directory removal unverified');
     observationChecks(r, w, local);
     r.remainingChecks.push('workspace_owned_terminals');
     r.work = r.hold.length ? 'unknown' : 'candidate';

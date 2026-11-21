@@ -440,6 +440,62 @@ test('#68 F8 unavailable version stays null with a protection gap', async () => 
     const s = await collect(options); assert.equal(s.meta.paseoVersion, null); assert.ok(s.meta.gaps.some(g => g.reason === 'paseo_version_unknown')); assert.notEqual(s.classification.workspaces[0].verdict, 'batch_candidate');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('verified daemon version and additive 0.16.2 record fields do not block a workspace', async () => {
+  const { dir, cwd, options } = syntheticStore();
+  try {
+    options.paseoInfoPlist = join(dir, 'not-installed/Info.plist');
+    rmSync(join(dir, 'version.json'));
+    const live = { ...observation('live', {}), daemonVersion: '0.16.2' };
+    writeFileSync(options.live, JSON.stringify(live));
+    writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([
+      { ...oldWorkspace, workspaceId: 'wks_fake', cwd, kind: 'directory', background: false },
+      { ...oldWorkspace, workspaceId: 'wks_archived', cwd, kind: 'worktree', archivedAt: '2026-01-02', head: 'refs/heads/archived' },
+    ]));
+    const agentFile = join(dir, 'agents/fake/owner.json');
+    const agent = JSON.parse(readFileSync(agentFile, 'utf8'));
+    writeFileSync(agentFile, JSON.stringify({ ...agent, controls: [], background: true, metadata: {} }));
+    const verified = await collect(options);
+    assert.equal(verified.meta.paseoVersion, '0.16.2');
+    assert.equal(verified.meta.paseoVersionSource, 'live_observation');
+    assert.deepEqual(verified.meta.gaps.filter(g => g.source !== 'git'), []);
+    assert.equal(verified.classification.workspaces[0].verdict, 'batch_candidate');
+
+    writeFileSync(join(dir, 'version.json'), JSON.stringify({ version: '0.15.4' }));
+    writeFileSync(options.live, JSON.stringify({ ...live, daemonVersion: '0.16.2-beta.1' }));
+    const unverified = await collect(options);
+    assert.equal(unverified.meta.paseoVersion, '0.16.2-beta.1');
+    assert.ok(unverified.meta.gaps.some(g => g.reason === 'paseo_version_unverified'));
+    assert.equal(unverified.classification.workspaces[0].verdict, 'review');
+
+    writeFileSync(options.live, JSON.stringify({ ...live, serverId: 'srv_other' }));
+    const wrongHost = await collect(options);
+    assert.equal(wrongHost.meta.paseoVersion, '0.15.4');
+    assert.ok(wrongHost.meta.gaps.some(g => g.reason === 'input_server_mismatch_or_missing'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('0.16.2 live background work protects idle agents and their workspace', async () => {
+  const { dir, cwd, options } = syntheticStore();
+  const id = '22222222-2222-4222-8222-222222222222';
+  try {
+    writeFileSync(join(dir, 'agents/fake/member.json'), JSON.stringify({
+      id, cwd, workspaceId: 'wks_fake', lastStatus: 'idle', lastActivityAt: '2026-01-01',
+    }));
+    const observe = async backgroundWork => {
+      writeFileSync(options.live, JSON.stringify({
+        ...observation('live', { [id]: { status: 'idle', backgroundWork } }), daemonVersion: '0.16.2',
+      }));
+      return collect(options);
+    };
+    const running = await observe({ count: 1 });
+    assert.equal(running.classification.agents.find(a => a.id === id).work, 'waiting_work');
+    assert.ok(running.classification.workspaces[0].hold.includes('active_lane'));
+    const finished = await observe({ count: 0 });
+    assert.ok(!finished.classification.agents.find(a => a.id === id).reasons.includes('background work pending'));
+    const invalid = await observe({ count: '1' });
+    assert.ok(invalid.meta.gaps.some(g => g.reason === 'invalid backgroundWork schema' && g.scope.agentIds.includes(id)));
+    assert.equal(invalid.classification.workspaces[0].verdict, 'review');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 test('#68 F8 and F7 stored unknown schedule and canonical ownership fields remain visible', async () => {
   const { dir, cwd, options } = syntheticStore();
   try {
@@ -462,8 +518,8 @@ test('#68 R5 explicit and invalid selections never permit unselected excerpt rea
 test('#68 F7 malformed ownership fields cannot downgrade a destructive workspace to safe local', async () => {
   const { dir, cwd, options } = syntheticStore();
   try {
-    for (const change of [{ mainRepoRoot: {} }, { worktreeRoot: 1 }, { mainRepoRoot: 'relative/path' }, { isPaseoOwnedWorktree: 'yes' }]) {
-      writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([{ ...oldWorkspace, workspaceId: 'wks_fake', cwd, mainRepoRoot: cwd, worktreeRoot: cwd, isPaseoOwnedWorktree: true, ...change }]));
+    for (const change of [{ mainRepoRoot: {} }, { worktreeRoot: 1 }, { mainRepoRoot: 'relative/path' }, { isPaseoOwnedWorktree: 'yes' }, { isPaseoOwnedWorktree: undefined }, { worktreeRoot: null }, { mainRepoRoot: '' }]) {
+      writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([{ ...oldWorkspace, workspaceId: 'wks_fake', cwd, kind: 'worktree', mainRepoRoot: cwd, worktreeRoot: cwd, isPaseoOwnedWorktree: true, ...change }]));
       const s = await collect(options); assert.ok(s.meta.gaps.some(g => g.reason === 'invalid workspace ownership schema')); assert.notEqual(s.classification.workspaces[0].verdict, 'batch_candidate');
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
