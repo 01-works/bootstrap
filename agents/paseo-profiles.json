@@ -8,7 +8,7 @@
       "model": "claude-opus-5-5",
       "modeId": "bypassPermissions",
       "thinkingOptionId": "high",
-      "notes": "여러 작업·프로젝트를 Paseo 에이전트에 할당하고 우선순위·의존성·진행·검증·완료를 관리하는 총괄. 직접 구현하지 않는다. 실제 운영은 yw-supervisor 스킬을 호출한다. 사용자가 여러 감독 세션의 감사·총괄이나 완료된 감독 세션 정리를 요청하면 yw-chief-supervisor 스킬을 호출한다. 일반 구현·탐색·테스트는 Builder, 시각적 완성도가 중요한 UI 구현은 Frontend Builder, 중요한 설계는 Architect, 독립 리뷰는 Reviewer와 필요 시 Deep Reviewer에 맡긴다. 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)은 Policy Reviewer (Fable)와 Policy Reviewer (Astra)의 교차 검토를 받는다."
+      "notes": "여러 작업·프로젝트를 Paseo 에이전트에 할당하고 우선순위·의존성·진행·검증·완료를 관리하는 총괄. 직접 구현하지 않는다. 실제 운영은 yw-supervisor 스킬을 호출한다. 사용자가 여러 감독 세션의 감사·총괄이나 완료된 감독 세션 정리를 요청하면 yw-chief-supervisor 스킬을 호출한다. 일반 구현·탐색·테스트는 Builder, 시각적 완성도가 중요한 UI 구현은 Frontend Builder, 중요한 설계는 Architect, 독립 리뷰는 Reviewer와 필요 시 Deep Reviewer에 맡긴다. 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)은 작성 모델과 다른 계열의 Policy Reviewer에게 한 차례 검토받는다."
     },
     {
       "id": "bootstrap-builder",
@@ -43,7 +43,7 @@
       "name": "Architect",
       "provider": "claude",
       "model": "claude-opus-5-5",
-      "modeId": "plan",
+      "modeId": "bypassPermissions",
       "thinkingOptionId": "xhigh",
       "notes": "중요한 아키텍처 결정, 복잡한 원인 분석과 설계에 선택. 요구사항·제약·대안·근거·검증 방법을 정리하고 구현은 Builder에 맡긴다."
     },
@@ -52,7 +52,7 @@
       "name": "Deep Reviewer",
       "provider": "claude",
       "model": "claude-opus-5-5",
-      "modeId": "plan",
+      "modeId": "bypassPermissions",
       "thinkingOptionId": "high",
       "notes": "중요한 변경, 설계 결과, 논쟁적인 리뷰 지적과 추가 결함 탐색에 선택. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 독립적으로 검토한다. 지적마다 코드 근거·발생 조건·영향·재현 방법을 요구하고, 직접 수정하지 않는다. Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다."
     },
@@ -61,9 +61,9 @@
       "name": "Policy Reviewer (Fable)",
       "provider": "claude",
       "model": "claude-fable-5-2",
-      "modeId": "plan",
+      "modeId": "bypassPermissions",
       "thinkingOptionId": "high",
-      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)에만 쓰는 읽기 전용 검토자. Policy Reviewer (Astra)와 각각 새 세션에서 같은 원자료로 독립 판정해 교차 합의하고, 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 검토는 한 차례이며 새 근거 없이 반복하지 않는다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
+      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)에만 쓰는 읽기 전용 검토자. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
     },
     {
       "id": "bootstrap-deep-reviewer-astra",
@@ -73,7 +73,7 @@
       "modeId": "auto-review",
       "thinkingOptionId": "xhigh",
       "featureValues": { "plan_mode": true },
-      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)에만 쓰는 읽기 전용 검토자. Policy Reviewer (Fable)와 각각 새 세션에서 같은 원자료로 독립 판정해 교차 합의하고, 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 검토는 한 차례이며 새 근거 없이 반복하지 않는다. yw-chief-supervisor의 새 운영 정책 설계에도 같은 구성으로 쓴다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
+      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)에만 쓰는 읽기 전용 검토자. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. yw-chief-supervisor의 새 운영 정책 설계에는 둘 다 쓴다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
     },
     {
       "id": "bootstrap-scan-reviewer",

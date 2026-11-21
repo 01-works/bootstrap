@@ -111,7 +111,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-총괄·중요한 설계·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer 두 개로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 두 검토자가 각각 독립 판정해 교차 합의하고, 검토는 한 차례만 한다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
+총괄·중요한 설계·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
@@ -119,9 +119,9 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | Builder | GPT-6.2 Sol | high | full-access |
 | Frontend Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Reviewer | GPT-6.2 Sol | xhigh | auto-review + plan |
-| Architect | Claude Opus 5.5 | xhigh | plan |
-| Deep Reviewer | Claude Opus 5.5 | high | plan |
-| Policy Reviewer (Fable) | Claude Fable 5.2 | high | plan |
+| Architect | Claude Opus 5.5 | xhigh | bypassPermissions |
+| Deep Reviewer | Claude Opus 5.5 | high | bypassPermissions |
+| Policy Reviewer (Fable) | Claude Fable 5.2 | high | bypassPermissions |
 | Policy Reviewer (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
 | Scan Reviewer | DeepSeek V4.1 Flash 1017 (OpenRouter) | 모델 기본값 | OpenCode plan |
 | Bug Hunter | Kimi K3.1 Pro (OpenRouter) | high | OpenCode plan |
@@ -131,7 +131,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다.
-- 구현·총괄 프로필은 권한 확인 없이 실행한다(Claude `bypassPermissions`, Codex `full-access`). 리뷰·설계 프로필은 직접 수정하지 않는 역할이라 plan 계열 모드를 유지한다.
+- Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 구현·총괄은 `full-access`, Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 - Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도다.
 - 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고, OpenRouter 두 프로필은 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
