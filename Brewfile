@@ -18,7 +18,7 @@ brew "docker"
 cask "claude"
 cask "chatgpt"        # Codex 앱 포함
 cask "paseo"
-cask "antigravity-cli" if Hardware::CPU.arm?  # agy. Paseo의 Antigravity provider로 Gemini 모델을 쓴다. cask가 arm64 바이너리만 준다 (agents/paseo.md)
+cask "antigravity-cli"  # agy. Paseo의 Antigravity provider로 Gemini 모델을 쓴다 (agents/paseo.md)
 cask "tailscale-app"  # 기기 간 원격 접속
 
 # 브라우저 (agents/browser.md). 에이전트는 Chrome Beta의 전용 프로필을 Browser Use CLI로 조작한다.

@@ -40,7 +40,7 @@ Scan Reviewer·Bug Hunter는 Paseo 내장 OpenCode provider로 OpenRouter 모델
    OpenCode는 키를 터미널 입력으로만 받아서, 스크립트가 가상 터미널로 `opencode auth login openrouter`에 키를 넣는다. 키는 명령 인자·환경변수·출력에 남지 않고 OpenCode 데이터(`~/.local/share/opencode`)에만 저장된다. 다시 로그인하면 OpenCode가 계정을 하나 더 만들어서, OpenRouter가 이미 등록돼 있으면 등록은 건너뛰고 provider만 켠다. 키를 바꿀 때는 `opencode auth logout openrouter` 후 다시 실행한다. Infisical 없이 하려면 `opencode auth login`에서 OpenRouter를 고르고 키를 넣은 뒤 Paseo 앱 Settings → 호스트 → Providers에서 OpenCode를 켠다.
 2. 확인: `paseo provider diagnostic opencode`(Ready), `paseo provider models opencode`에 프로필의 모델 ID가 있는지.
 
-새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 세 프로필은 공유 프로필로 추가되지만 실행이 실패한다(Gemini Cross-check는 Apple Silicon의 agy 로그인 필요). ZeroSub는 OpenCode·Antigravity 계정을 관리하지 않는다.
+새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 세 프로필은 공유 프로필로 추가되지만 실행이 실패한다(Gemini Cross-check는 agy 로그인 필요). ZeroSub는 OpenCode·Antigravity 계정을 관리하지 않는다.
 
 ## Claude API 키와 프로필
 
