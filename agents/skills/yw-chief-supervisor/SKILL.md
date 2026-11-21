@@ -80,13 +80,11 @@ heavy의 모드별 한도·전환·이전 ID 이행·회수 기준은 bootstrap 
 
 | 총괄 감독 | 중요한 감사·완료 판단 | 새 운영 정책 설계 |
 |---|---|---|
-| Claude(Opus) | Deep Reviewer (Astra) | Architect (Astra) |
-| Astra(인계) | Deep Reviewer (Opus) | Architect (Opus) |
+| Claude(Opus) | Reviewer (Sol) | Policy Reviewer (Fable)·(Astra) |
 
-- 총괄 포함 2모델을 쓴다. 합의에는 표가 notes보다 우선하며 Claude 총괄은 Claude 가용 여부와 관계없이 Astra를 쓴다(총괄 인계 조건과 별개).
-- Reviewer(Sol)는 상태·SHA·로그·명세·테스트 근거와 결함을 검토하되 Claude↔Astra 합의를 대신하지 않는다.
+- 감사·완료 판단은 총괄 포함 2모델, 새 운영 정책 설계는 총괄과 두 Policy Reviewer의 합의다. 합의에는 표가 notes보다 우선한다. 비싼 Policy Reviewer를 일상 감사에 쓰지 않는다.
 - 상대 모델이 없으면 미합의로 보존하거나 사용자 지정 대체 구성을 쓴다. 같은 계열의 새 세션은 교차 검토가 아니다.
-- 총괄 자신의 bootstrap PR 같은 코드 리뷰는 [yw-supervisor의 "진행과 검증"](../yw-supervisor/SKILL.md#진행과-검증)에 있는 기존 흐름(Reviewer Sol + 필요 시 Deep Reviewer)을 따른다.
+- 총괄 자신의 bootstrap PR 같은 코드 리뷰는 [yw-supervisor의 "진행과 검증"](../yw-supervisor/SKILL.md#진행과-검증)에 있는 기존 흐름(Reviewer Sol + 필요 시 Deep Reviewer)을 따른다. 워크플로 정책 변경 PR은 같은 흐름의 정의에 따라 두 Policy Reviewer의 교차 검토를 한 차례 더한다.
 
 ### 독립 판정과 불일치 처리
 
