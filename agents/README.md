@@ -4,7 +4,7 @@
 
 | 도구 | 역할 | 설치 | 저장소에 있는 설정 | 로그인 |
 |---|---|---|---|---|
-| [Claude Code](claude-code.md) | 터미널·Paseo 코딩 작업 | 공식 설치 스크립트 (`agents` 단계) | `CLAUDE.md`, `settings.json` (링크) | `claude` 실행 |
+| [Claude Code](claude-code.md) | 터미널·Paseo 코딩 작업 | 공식 설치 스크립트 (`agents` 단계) | `CLAUDE.md` (링크), `settings.json` (초기값, 없을 때만 복사) | `claude` 실행 |
 | Claude 앱 | Cowork·데스크톱 Claude Code | `cask "claude"` | | 앱에서 |
 | [Codex CLI](codex.md) | 터미널·Paseo 코딩 작업 | 공식 설치 스크립트 (`agents` 단계) | `AGENTS.md` (링크), `config.toml` (seed) | `codex` 실행 |
 | ChatGPT 앱 (Codex 앱) | Work·Codex | `cask "chatgpt"` | | 앱에서 |

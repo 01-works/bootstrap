@@ -57,11 +57,15 @@ flowchart LR
     CLAUDEAPP["Claude 앱"]
     CHATGPT["ChatGPT 앱<br/>= Codex 앱"]
     CODEX["Codex CLI<br/>터미널용"]
+    OPENCODE["OpenCode<br/>OpenRouter 모델"]
+    AGY["Antigravity CLI (agy)<br/>Gemini 모델"]
     PASEO["Paseo<br/>앱 · CLI · 스킬"]
   end
   CHATGPT -->|브라우저 · 컴퓨터 사용 도구| CODEX
   CC --> PASEO
   CODEX --> PASEO
+  OPENCODE --> PASEO
+  AGY --> PASEO
 
   subgraph sgBrowser["브라우저"]
     CHROME["Google Chrome<br/>개인, 요청 시"]
@@ -85,9 +89,9 @@ flowchart LR
   classDef bundled fill:#dcfce7,stroke:#16a34a,color:#000
   classDef use fill:#ffffff,stroke:#d1d5db,color:#333
 
-  class BREW,CC,CODEX,PNPM script
+  class BREW,CC,CODEX,OPENCODE,PNPM script
   class CLT,NODE,NPM,VM,VERCEL,BU bundled
-  class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,CF,GH,GL,TSAPP,CHROME,CHROMEBETA,UV brew
+  class FNM,COLIMA,DOCKER,CLAUDEAPP,CHATGPT,PASEO,AGY,CF,GH,GL,TSAPP,CHROME,CHROMEBETA,UV brew
   class PP,NP,GIT,HOOK,LOCAL use
 ```
 

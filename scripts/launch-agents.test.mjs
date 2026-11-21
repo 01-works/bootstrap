@@ -14,13 +14,18 @@ function fixture(t) {
   const loaded = new Set();
   const running = new Set();
   const calls = [];
+  let bootoutFails = false;
   const run = (cmd, args) => {
     assert.equal(cmd, '/bin/launchctl');
     calls.push(args[0]);
     const label = args[1].split('/').pop();
     if (args[0] === 'print') return { status: loaded.has(label) ? 0 : 113, stdout: running.has(label) ? `${label} = {\n\tstate = running\n\tpid = 4242\n}\n` : '' };
     if (args[0] === 'bootstrap') { loaded.add(args[2].split('/').pop().replace(/\.plist$/, '')); return { status: 0 }; }
-    if (args[0] === 'bootout') { loaded.delete(label); running.delete(label); return { status: 0 }; }
+    if (args[0] === 'bootout') {
+      if (bootoutFails === 'stuck') return { status: 0 };
+      if (bootoutFails) return { status: 5, stderr: 'Boot-out failed: 5: Input/output error' };
+      loaded.delete(label); running.delete(label); return { status: 0 };
+    }
     throw new Error(`예상하지 못한 호출: ${args.join(' ')}`);
   };
   const options = { home, env: {}, run, uid: 501, chromeBinary };
@@ -29,7 +34,7 @@ function fixture(t) {
   const roleFile = join(home, '.config/bootstrap/roles/verifier');
   const setRole = on => on ? (mkdirSync(join(roleFile, '..'), { recursive: true }), writeFileSync(roleFile, 'colima_memory=6\n'))
     : rmSync(roleFile, { force: true });
-  return { home, options, calls, loaded, running, agentPath, setRole };
+  return { home, options, calls, loaded, running, agentPath, setRole, failBootout: on => { bootoutFails = on; } };
 }
 
 test('기기 종류별 정의: 데스크톱은 로그인 시 시작, 노트북은 Chrome만 필요할 때', () => {
@@ -68,6 +73,23 @@ test('적용: dry-run·check 무변경, 등록·.env 추가, 재실행 무변경
   assert.equal(apply({ ...f.options, laptop: false }), 0);
   assert.equal(apply({ ...f.options, laptop: false, check: true }), 0);
   assert.ok(f.calls.slice(before).every(call => call === 'print'), '재실행은 조회만');
+});
+
+test('바뀐 등록을 내리지 못하면 plist를 쓰지 않고 실패한다', t => {
+  const f = fixture(t);
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  const path = f.agentPath(LABELS['agent-chrome']);
+  const before = readFileSync(path, 'utf8');
+  f.failBootout(true);
+  assert.throws(() => apply({ ...f.options, laptop: true, only: 'agent-chrome' }), /launchctl bootout 실패/);
+  assert.equal(readFileSync(path, 'utf8'), before, '옛 등록이 남았으면 다음 실행에서 다시 시도한다');
+  assert.equal(apply({ ...f.options, laptop: true, only: 'agent-chrome', check: true }), 1);
+  f.failBootout('stuck');
+  assert.throws(() => apply({ ...f.options, laptop: true, only: 'agent-chrome' }), /launchctl bootout 실패/, '성공을 돌려줘도 등록이 남아 있으면 실패');
+  assert.equal(readFileSync(path, 'utf8'), before);
+  f.failBootout(false);
+  assert.equal(apply({ ...f.options, laptop: true, only: 'agent-chrome' }), 0);
+  assert.notEqual(readFileSync(path, 'utf8'), before);
 });
 
 test('내용이 바뀐 등록만 내렸다 올리고, 노트북은 Paseo를 만들지 않는다', t => {

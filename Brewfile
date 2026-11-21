@@ -14,7 +14,7 @@ brew "fnm"
 brew "colima"
 brew "docker"
 
-# 앱. Claude Code와 Codex CLI는 자동 업데이트되는 공식 스크립트로 설치한다 (scripts/steps/60-agents.sh)
+# 앱. Claude Code·Codex CLI·OpenCode는 자동 업데이트되는 공식 스크립트로 설치한다 (scripts/steps/60-agents.sh)
 cask "claude"
 cask "chatgpt"        # Codex 앱 포함
 cask "paseo"

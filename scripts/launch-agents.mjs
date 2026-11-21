@@ -150,7 +150,13 @@ function ensureAgent(def, { home, check, dryRun, noRestart, run, uid }) {
   for (const dir of def.dirs || []) mkdirSync(dir, { recursive: true, mode: 0o700 });
   mkdirSync(dirname(path), { recursive: true });
   // 내용이 바뀐 경우에만 내렸다 올린다. 에이전트 Chrome이 실행 중이면 이때 다시 시작된다.
-  if (current !== null && current !== want && loaded()) run('/bin/launchctl', ['bootout', `${domain}/${def.label}`]);
+  // 내리지 못했으면 plist를 쓰기 전에 실패로 끝낸다. 새 파일만 남으면 다음 실행이 옛 등록을 "등록됨"으로 본다.
+  if (current !== null && current !== want && loaded()) {
+    const result = run('/bin/launchctl', ['bootout', `${domain}/${def.label}`], { encoding: 'utf8' });
+    if (result.error || result.status !== 0 || loaded()) {
+      throw new Error(`launchctl bootout 실패: ${def.label} ${result.stderr || result.error?.message || ''}`);
+    }
+  }
   if (current !== want) writeFileSync(path, want);
   if (!loaded()) {
     const result = run('/bin/launchctl', ['bootstrap', domain, path], { encoding: 'utf8' });

@@ -348,6 +348,16 @@ def install_infisical_profiles(config_path, original, config, if_ready=False):
     return len(INFISICAL_PROFILES) - len(covered)
 
 
+def daemon_stopped(cli, home, env):
+    # 꺼졌다고 확인된 경우만 참이다. 상태를 모르면 reload 실패를 그대로 알린다.
+    try:
+        result = subprocess.run([cli, 'daemon', 'status', '--json', '--home', str(home)], env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
+        return result.returncode == 0 and json.loads(result.stdout).get('localDaemon') == 'stopped'
+    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
@@ -429,6 +439,11 @@ def main():
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=45)
     except (OSError, subprocess.TimeoutExpired):
         result = None
+    # 자동 실행에서 데몬이 꺼져 있으면 reload 실패를 실패로 보지 않는다. 데몬은 시작할 때 설정을 읽는다.
+    # 데몬이 꺼진 기기(앱을 닫은 노트북)에서 자동 갱신이 매번 실패하지 않게 한다.
+    if (result is None or result.returncode != 0) and args.if_ready and daemon_stopped(cli, config_path.parent, child_env):
+        print('Paseo 데몬이 꺼져 있어 reload는 건너뜁니다. 다음에 데몬이 시작할 때 반영됩니다.')
+        return 0
     if result is None or result.returncode != 0:
         print('파일은 저장됐지만 Paseo reload를 확인하지 못했습니다. 해당 호스트의 설정을 다시 로드하세요.', file=sys.stderr)
         return 1
