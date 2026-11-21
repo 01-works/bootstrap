@@ -49,7 +49,7 @@ class ApiKeyTests(unittest.TestCase):
             if command[1:3] == ['secrets', 'get']:
                 return subprocess.CompletedProcess(command, lookup_code, stdout=f'{secret or "sk-fixture-" + command[3]}\n')
             if command[1:3] == ['daemon', 'status']:
-                return subprocess.CompletedProcess(command, 0, stdout=json.dumps({'localDaemon': daemon}) if daemon else 'not json')
+                return subprocess.CompletedProcess(command, 0, stdout=json.dumps(daemon if isinstance(daemon, dict) else {'localDaemon': daemon}) if daemon is not None else 'not json')
             if command[0] == '/fake/node':
                 return subprocess.CompletedProcess(command, zerosub_code, stdout=json.dumps(selection))
             return subprocess.CompletedProcess(command, reload_code)
@@ -177,7 +177,7 @@ class ApiKeyTests(unittest.TestCase):
         self.assertEqual(len(json.loads(self.path.read_text())['daemon']['agentProfiles']), 7)
 
     def test_automatic_install_tolerates_reload_failure_only_when_daemon_is_off(self):
-        for daemon, expected in (('stopped', 0), ('running', 1), (None, 1)):
+        for daemon, expected in (('stopped', 0), ('running', 1), ('unknown', 1), ({}, 1), (None, 1)):
             with self.subTest(daemon=daemon):
                 self.path.write_text(json.dumps(self.config))
                 result, run = self.run_script(args=('--infisical', '--if-ready'), reload_code=1, daemon=daemon)
