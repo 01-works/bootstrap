@@ -17,6 +17,12 @@ AI 코딩 에이전트를 돌리는 데몬과 앱.
 - 기본 스킬: Paseo가 `~/.claude/skills/paseo*`(Claude Code)와 `~/.agents/skills/paseo*`에 설치한다. 각 폴더의 `.paseo-managed-files.json`이 Paseo가 관리한다는 표시다. 저장소에 넣지 않는다. 데몬은 이미 설치된 스킬만 자동 갱신하고 처음 설치는 앱 설정(Orchestration skills)에서 해야 해서, `paseo` 단계가 하나도 없을 때만 데몬에 설치를 요청한다(`scripts/paseo-skills.mjs`). 앱의 내부 모듈을 쓰므로 Paseo 버전이 바뀌어 실패하면 앱 설정에서 설치한다. 앱에서 스킬을 하나도 고르지 않은 기기는 그대로 둔다. 앱의 제거(Uninstall)만 하면 다음 `paseo` 단계가 다시 설치하므로, 빼려면 선택을 비운다.
 - 사용자 스킬: [yw-supervisor](skills/yw-supervisor/SKILL.md), [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md), [yw-paseo-cleanup](skills/yw-paseo-cleanup/SKILL.md)은 이 저장소에서 관리한다. `paseo` 단계가 각 스킬의 같은 원본 폴더를 `~/.agents/skills/<스킬 이름>`과 `~/.claude/skills/<스킬 이름>`에 연결한다. `~/.codex/skills`에는 중복 설치하지 않는다. 다른 내용의 같은 이름 스킬이나 Codex 중복 경로가 있으면 덮어쓰지 않고 중단한다.
 
+## Gemini (Antigravity)
+
+Gemini 모델은 Paseo 내장 Antigravity provider로 쓴다. `Brewfile`의 `cask "antigravity-cli"`가 `agy`를 설치하고, Paseo 설정은 따로 하지 않는다. 기기마다 사용자가 터미널에서 `agy`를 한 번 실행해 Google 계정으로 로그인한다. 확인은 `paseo provider diagnostic antigravity`(Ready)와 `agy models`. 모델 목록은 계정에 따라 다르다.
+
+Gemini CLI(`gemini --acp`)를 ACP provider로 붙이는 방법은 쓰지 않는다. 2026-11-21 기준 개인 Google 계정 로그인이 "no longer supported for Gemini Code Assist for individuals"로 거부되고 Antigravity로 이전하라고 안내한다. 공식 문서: [Antigravity provider](https://paseo.sh/docs/supported-providers/antigravity.md).
+
 ## Claude API 키와 프로필
 
 ### Infisical에서 직접 API 프로필 가져오기
