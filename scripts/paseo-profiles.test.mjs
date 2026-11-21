@@ -34,16 +34,28 @@ test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는
   }
 });
 
+test('Opus (agy)는 역할 없이 사용자가 직접 고르는 선택용 프로필이다', () => {
+  const profile = manifest.profiles.find(p => p.name === 'Opus (agy)');
+  assert.deepEqual([profile.provider, profile.model, profile.modeId],
+    ['antigravity', 'claude-opus-5-5-high', 'full-access']);
+  assert.match(profile.notes, /사용자가 직접 고를 때만 쓰고 Supervisor는 자동으로 고르지 않는다/);
+  assert.match(profile.notes, /감독 작업과 브라우저 작업에는 쓰지 않/);
+});
+
 test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권한 자동 승인을 켜지 않는다', () => {
-  for (const [name, provider, modeId] of [
-    ['Scan Reviewer', 'opencode', 'plan'],
-    ['Bug Hunter', 'opencode', 'plan'],
-    ['Gemini Cross-check', 'antigravity', 'full-access'],  // Antigravity의 유일한 모드
+  // Scan Reviewer(Argon)와 Gemini Cross-check(Neon)는 서로 다른 Antigravity 쿼터를 쓴다.
+  for (const [name, provider, model, modeId] of [
+    ['Scan Reviewer', 'antigravity', 'gemini-4-argon-high', 'full-access'],
+    ['Bug Hunter', 'opencode', 'openrouter/moonshotai/kimi-k3.1-pro', 'plan'],
+    ['Gemini Cross-check', 'antigravity', 'gemini-4-neon-high', 'full-access'],  // Antigravity의 유일한 모드
   ]) {
     const profile = manifest.profiles.find(p => p.name === name);
-    assert.deepEqual([profile.provider, profile.modeId], [provider, modeId], name);
+    assert.deepEqual([profile.provider, profile.model, profile.modeId], [provider, model, modeId], name);
     assert.equal(profile.featureValues?.auto_accept, undefined, name);
     assert.match(profile.notes, /바꾸지 말라고 명시/, name);
+  }
+  for (const name of ['Scan Reviewer', 'Bug Hunter']) {
+    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않는다/, name);
   }
 });
 
