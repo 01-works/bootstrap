@@ -219,7 +219,7 @@ test('browser 단계: 자동 갱신 중 에이전트 Chrome 등록이 바뀌었�
 
 test('paseo 단계: Paseo 에이전트 안에서 직접 실행하면 데몬 등록을 내렸다 올리지 않고 대기로 남긴다', t => {
   // --no-restart 없이 데몬 등록을 다시 올리려 하면 9(데몬과 함께 끝남)로 본다.
-  const mocks = `has() { return 0; }\nis_laptop() { return 1; }\nrun() { :; }
+  const mocks = `has() { return 0; }\nis_laptop() { return 1; }\nrun() { :; }\npaseo() { return 1; }
 node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || return 0; [[ " $* " == *" --no-restart "* ]] && return 2; return 9; }\n`;
   const run = agent => mockStep(t, '65-paseo.sh', mocks,
     { BOOTSTRAP_UNATTENDED: '0', PASEO_AGENT_ID: agent, PASEO_HOME: '/nonexistent/paseo-home' }).result;
@@ -228,6 +228,23 @@ node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || ret
   assert.match(inAgent.stderr, /Paseo 에이전트 안이라 데몬 등록을 다시 올리지 않았습니다/);
   const terminal = run('');
   assert.equal(terminal.status, 1, '터미널에서는 그대로 다시 올린다');
+});
+
+test('paseo 단계: 터미널에서도 실행 중인 에이전트가 있으면 데몬 등록을 내렸다 올리지 않는다', t => {
+  // --no-restart 없이 데몬 등록을 다시 올리려 하면 9(에이전트와 함께 끝남)로 본다.
+  const run = list => mockStep(t, '65-paseo.sh', [
+    'has() { [[ "$1" != infisical ]]; }', 'is_laptop() { return 1; }', 'run() { :; }',
+    'paseo() { case "$1 $2" in "daemon status") echo \'{"localDaemon": "running"}\' ;; "ls -g") [[ -n "$LIST" ]] && echo "$LIST" ;; esac; }',
+    'node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || return 0; [[ " $* " == *" --no-restart "* ]] && return 2; return 9; }',
+  ].join('\n'), { BOOTSTRAP_UNATTENDED: '0', PASEO_AGENT_ID: '', PASEO_HOME: '/nonexistent/paseo-home', LIST: list }).result;
+  const busy = run('[{"status": "running"}, {"status": "idle"}]');
+  assert.equal(busy.status, 2, busy.stdout + busy.stderr);
+  assert.match(busy.stderr, /실행 중인 에이전트\(1개\)가 있어 데몬 등록을 다시 올리지 않았습니다/);
+  const unknown = run('');
+  assert.equal(unknown.status, 2, '목록을 읽지 못하면 바쁜 것으로 본다');
+  assert.match(unknown.stderr, /실행 중인 에이전트\(\?개\)/);
+  const idle = run('[{"status": "idle"}]');
+  assert.equal(idle.status, 1, '한가하면 그대로 다시 올린다');
 });
 
 test('paseo 단계: Infisical CLI가 있을 때만 선택적 API 프로필 등록을 시도한다', t => {
