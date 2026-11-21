@@ -25,11 +25,20 @@ Gemini CLI(`gemini --acp`)를 ACP provider로 붙이는 방법은 쓰지 않는�
 
 ## OpenRouter 모델 (OpenCode)
 
-Scan Reviewer·Bug Hunter는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 사용자가 한다.
+Scan Reviewer·Bug Hunter는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
 
-1. `opencode auth login`에서 OpenRouter를 고르고 키를 넣는다. 키는 OpenCode의 `~/.local/share/opencode/auth.json`에 남고 저장소·Paseo 설정에는 넣지 않는다.
-2. Paseo 앱 Settings → 호스트 → Providers에서 OpenCode를 켠다. 기본값은 꺼짐이고, CLI의 `daemon config set`은 provider 하위 경로를 받지 않아 bootstrap이 켜지 않는다.
-3. 확인: `paseo provider diagnostic opencode`(Ready), `paseo provider models opencode`에 프로필의 모델 ID가 있는지.
+**OpenRouter 가져오기**는 Infisical `/ai`의 `OPENROUTER_API_KEY`를 한 번 읽어 이 Mac의 OpenCode에 등록하고 Paseo의 OpenCode provider(기본값 꺼짐)를 켜는 작업이다.
+
+> 이 Mac에 OpenRouter 가져와 줘.
+
+1. Infisical에 로그인한 뒤 bootstrap 저장소 루트에서 실행한다.
+
+   ```sh
+   python3 scripts/paseo-api-key.py --openrouter
+   ```
+
+   OpenCode는 키를 터미널 입력으로만 받아서, 스크립트가 가상 터미널로 `opencode auth login openrouter`에 키를 넣는다. 키는 명령 인자·환경변수·출력에 남지 않고 OpenCode 데이터(`~/.local/share/opencode`)에만 저장된다. 다시 로그인하면 OpenCode가 계정을 하나 더 만들어서, OpenRouter가 이미 등록돼 있으면 등록은 건너뛰고 provider만 켠다. 키를 바꿀 때는 `opencode auth logout openrouter` 후 다시 실행한다. Infisical 없이 하려면 `opencode auth login`에서 OpenRouter를 고르고 키를 넣은 뒤 Paseo 앱 Settings → 호스트 → Providers에서 OpenCode를 켠다.
+2. 확인: `paseo provider diagnostic opencode`(Ready), `paseo provider models opencode`에 프로필의 모델 ID가 있는지.
 
 새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 세 프로필은 공유 프로필로 추가되지만 실행이 실패한다(Gemini Cross-check는 Apple Silicon의 agy 로그인 필요). ZeroSub는 OpenCode·Antigravity 계정을 관리하지 않는다.
 

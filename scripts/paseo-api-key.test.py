@@ -33,9 +33,13 @@ class ApiKeyTests(unittest.TestCase):
         self.path.write_text(json.dumps(self.config))
 
     def run_script(self, key='new-fixture-value', args=(), reload_code=0, login='fixture-profile', status=0, project=0,
-                   selection=None, lookup_code=0, zerosub_code=0):
+                   selection=None, lookup_code=0, zerosub_code=0, stored=(), secret=None, login_ok=True):
         output = io.StringIO()
+        stored = list(stored)
         def run(command, **kwargs):
+            if command[1:3] == ['auth', 'list']:
+                listed = b'\x1b[1mOpenRouter\x1b[0m  OpenRouter  stored\n' if stored.pop(0) else b'No authenticated integrations\n'
+                return subprocess.CompletedProcess(command, 0, stdout=listed)
             if command[1:3] == ['profile', 'current']:
                 return subprocess.CompletedProcess(command, 0, stdout=login)
             if command[1:3] == ['login', 'status']:
@@ -43,7 +47,7 @@ class ApiKeyTests(unittest.TestCase):
             if command[1:4] == ['secrets-manager', 'projects', 'get']:
                 return subprocess.CompletedProcess(command, project)
             if command[1:3] == ['secrets', 'get']:
-                return subprocess.CompletedProcess(command, lookup_code, stdout=f'sk-fixture-{command[3]}\n')
+                return subprocess.CompletedProcess(command, lookup_code, stdout=f'{secret or "sk-fixture-" + command[3]}\n')
             if command[0] == '/fake/node':
                 return subprocess.CompletedProcess(command, zerosub_code, stdout=json.dumps(selection))
             return subprocess.CompletedProcess(command, reload_code)
@@ -52,12 +56,15 @@ class ApiKeyTests(unittest.TestCase):
              patch.object(api_key.getpass, 'getpass', return_value=key), \
              patch.object(api_key.shutil, 'which', side_effect=lambda name: f'/fake/{name}'), \
              patch.object(api_key.subprocess, 'run', side_effect=run) as reload, \
+             patch.object(api_key.os, 'access', return_value=True), \
+             patch.object(api_key, 'opencode_login', return_value=login_ok) as self.login, \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             result = api_key.main()
         if key:
             self.assertNotIn(key, output.getvalue())
         self.assertNotIn('old-fixture-value', output.getvalue())
         self.assertNotIn('sk-fixture-', output.getvalue())
+        self.assertNotIn('sk-or-', output.getvalue())
         return result, reload
 
     def test_replace_preserves_unrelated_settings_and_targets_home(self):
@@ -232,6 +239,31 @@ class ApiKeyTests(unittest.TestCase):
                 self.run_script(args=('--zerosub',), **({'selection': selection} | error))
             self.assertEqual(self.path.read_bytes(), original)
             self.assertFalse((self.home / api_key.ZEROSUB_SELECTION).exists())
+
+    def test_openrouter_logs_in_once_then_enables_provider(self):
+        result, run = self.run_script(args=('--openrouter',), stored=(False, True), secret='sk-or-fixture-key')
+        self.assertEqual(result, 0)
+        self.login.assert_called_once_with('/fake/opencode', 'sk-or-fixture-key')
+        self.assertNotIn('sk-or-', repr([c.args for c in run.call_args_list]))
+        expected = copy.deepcopy(self.config)
+        expected['agents']['providers']['opencode'] = {'enabled': True}
+        self.assertEqual(json.loads(self.path.read_text()), expected)
+        self.assertEqual(run.call_args.args[0], ['/fake/paseo', 'reload', '--home', str(self.home)])
+
+    def test_openrouter_already_stored_skips_infisical_and_login(self):
+        result, run = self.run_script(args=('--openrouter', '--no-reload'), stored=(True,))
+        self.assertEqual(result, 0)
+        self.login.assert_not_called()
+        self.assertFalse(any(c.args[0][1:3] == ['secrets', 'get'] for c in run.call_args_list))
+        self.assertEqual(json.loads(self.path.read_text())['agents']['providers']['opencode'], {'enabled': True})
+
+    def test_openrouter_failure_keeps_config(self):
+        original = self.path.read_bytes()
+        for error in ({'lookup_code': 1}, {'secret': 'sk-not-openrouter'}, {'login_ok': False},
+                      {'stored': (False, False)}):
+            with self.subTest(error=error), self.assertRaises(ValueError):
+                self.run_script(args=('--openrouter',), **({'stored': (False, True), 'secret': 'sk-or-fixture-key'} | error))
+            self.assertEqual(self.path.read_bytes(), original)
 
 
 if __name__ == '__main__':

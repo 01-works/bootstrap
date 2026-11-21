@@ -46,7 +46,7 @@ printf '      %s\n' \
   'claude          터미널에서 처음 실행하면 로그인 안내' \
   'codex           터미널에서 처음 실행하면 "Sign in with ChatGPT"' \
   'agy             터미널에서 처음 실행하면 Google 로그인 (Gemini 프로필)' \
-  'opencode        opencode auth login → OpenRouter, Paseo 설정에서 OpenCode 켜기 (OpenRouter 프로필)' \
+  'opencode        python3 scripts/paseo-api-key.py --openrouter (Infisical) 또는 opencode auth login (OpenRouter 프로필)' \
   'vercel          vercel login' \
   'cloudflared     고정 이름 터널을 쓸 때 cloudflared tunnel login' \
   'Claude·ChatGPT 앱, Tailscale 앱' \
