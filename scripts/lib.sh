@@ -277,7 +277,7 @@ if [[ -x "$BOOTSTRAP_BREW_PREFIX/bin/brew" ]]; then
   eval "$("$BOOTSTRAP_BREW_PREFIX/bin/brew" shellenv)"
 fi
 export PNPM_HOME="$HOME/Library/pnpm"  # .zshrc와 같은 값. pnpm 전역 설치에 필요
-export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/Library/pnpm/bin:$PATH"
+export PATH="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:$HOME/.opencode/bin:$HOME/Library/pnpm/bin:$PATH"
 if ! has fnm && [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
   export PATH="$HOME/.local/share/fnm:$PATH"
 fi

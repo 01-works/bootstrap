@@ -70,10 +70,10 @@
       "id": "bootstrap-deep-reviewer",
       "name": "Deep Reviewer",
       "provider": "claude",
-      "model": "claude-fable-5-2",
+      "model": "claude-opus-5-5",
       "modeId": "plan",
       "thinkingOptionId": "high",
-      "notes": "중요한 변경, 설계 결과, 논쟁적인 리뷰 지적과 추가 결함 탐색에 선택. 작성자가 Claude여도 사용할 수 있으며 새 세션에서 요구사항·diff·관련 코드·검증 결과를 독립적으로 검토한다. 지적마다 코드 근거·발생 조건·영향·재현 방법을 요구하고, 직접 수정하지 않는다. Fable 한도 소진·접속 불가 시에만 Deep Reviewer (Astra)를 선택한다. 예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Fable 가용 여부와 관계없이 Astra를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다."
+      "notes": "중요한 변경, 설계 결과, 논쟁적인 리뷰 지적과 추가 결함 탐색에 선택. 작성자가 Claude여도 사용할 수 있으며 새 세션에서 요구사항·diff·관련 코드·검증 결과를 독립적으로 검토한다. 지적마다 코드 근거·발생 조건·영향·재현 방법을 요구하고, 직접 수정하지 않는다. Opus 한도 소진·접속 불가 시에만 Deep Reviewer (Astra)를 선택한다. 예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Opus 가용 여부와 관계없이 Astra를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다."
     },
     {
       "id": "bootstrap-deep-reviewer-astra",
@@ -83,7 +83,32 @@
       "modeId": "auto-review",
       "thinkingOptionId": "xhigh",
       "featureValues": { "plan_mode": true },
-      "notes": "Fable 한도 소진·접속 불가 시에만 사용하는 Deep Reviewer 대체 프로필. 새 세션에서 중요한 변경과 논쟁적인 지적을 독립 검토한다. 코드 근거·발생 조건·영향·재현 방법을 제시하고 직접 수정하지 않는다. 기본 1차 리뷰에는 Reviewer(GPT-6.2 Sol)를 사용한다. 예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Fable 가용 여부와 관계없이 Astra를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다."
+      "notes": "Opus 한도 소진·접속 불가 시에만 사용하는 Deep Reviewer 대체 프로필. 새 세션에서 중요한 변경과 논쟁적인 지적을 독립 검토한다. 코드 근거·발생 조건·영향·재현 방법을 제시하고 직접 수정하지 않는다. 기본 1차 리뷰에는 Reviewer(GPT-6.2 Sol)를 사용한다. 예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Opus 가용 여부와 관계없이 Astra를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다."
+    },
+    {
+      "id": "bootstrap-scan-reviewer",
+      "name": "Scan Reviewer",
+      "provider": "opencode",
+      "model": "openrouter/deepseek/deepseek-v4.1-flash-1017",
+      "modeId": "plan",
+      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 저비용 1차 스캔(DeepSeek V4.1 Flash, OpenRouter). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
+    },
+    {
+      "id": "bootstrap-bug-hunter",
+      "name": "Bug Hunter",
+      "provider": "opencode",
+      "model": "openrouter/moonshotai/kimi-k3.1-pro",
+      "modeId": "plan",
+      "thinkingOptionId": "high",
+      "notes": "놓치면 안 되는 변경에서 결함을 최대한 많이 찾는 탐색 리뷰(Kimi K3.1 Pro, OpenRouter). 재현율이 높은 대신 오탐도 많으므로 지적마다 코드 근거·발생 조건·영향·재현 방법을 붙이고, 확정은 Reviewer 또는 Deep Reviewer가 한다. 직접 수정하지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
+    },
+    {
+      "id": "bootstrap-gemini-cross-check",
+      "name": "Gemini Cross-check",
+      "provider": "antigravity",
+      "model": "gemini-4-neon-high",
+      "modeId": "full-access",
+      "notes": "Claude·GPT와 다른 계열(Gemini 4 Neon)로 넓게 탐색하는 독립 검토자. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 보고 반례와 빠진 맥락을 찾는다. 심각도를 높게 잡고 이미 기록된 결정·이슈를 새 발견처럼 내는 경향이 있으므로, 지시문에 기존 결정·이슈를 함께 주고 결과는 Reviewer(Sol)로 반박 검증한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인한다. 시험 운영 중이며 Reviewer·Deep Reviewer를 대신하지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
     }
   ]
 }

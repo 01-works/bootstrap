@@ -80,8 +80,8 @@ heavy의 모드별 한도·전환·이전 ID 이행·회수 기준은 bootstrap 
 
 | 총괄 감독 | 중요한 감사·완료 판단 | 새 운영 정책 설계 |
 |---|---|---|
-| Claude(Fable·Opus) | Deep Reviewer (Astra) | Architect (Astra) |
-| Astra(인계) | Deep Reviewer (Fable) | Architect (Opus) |
+| Claude(Opus) | Deep Reviewer (Astra) | Architect (Astra) |
+| Astra(인계) | Deep Reviewer (Opus) | Architect (Opus) |
 
 - 총괄 포함 2모델을 쓴다. 합의에는 표가 notes보다 우선하며 Claude 총괄은 Claude 가용 여부와 관계없이 Astra를 쓴다(총괄 인계 조건과 별개).
 - Reviewer(Sol)는 상태·SHA·로그·명세·테스트 근거와 결함을 검토하되 Claude↔Astra 합의를 대신하지 않는다.

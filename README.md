@@ -13,7 +13,7 @@
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/01-works/bootstrap/main/install.sh)"
    ```
 
-3. **로그인**: 설치가 끝나며 열어 준 앱과 Chrome Beta(에이전트 전용)에 로그인, 터미널에서 `claude`·`codex` 첫 실행 (10분)
+3. **로그인**: 설치가 끝나며 열어 준 앱과 Chrome Beta(에이전트 전용)에 로그인, 터미널에서 `claude`·`codex` 첫 실행. 보조 리뷰 프로필을 쓸 기기는 `agy` 첫 실행과 `opencode auth login`(OpenRouter) (10분)
 4. **화면 설정**: 새 터미널에서 `~/dev/bootstrap/bootstrap.sh doctor`. 실패·대기를 해결하고 마지막의 "직접 확인할 것"을 처리한다 (5분)
 
 한 줄 설치는 Xcode 명령줄 도구(설치 창 없이)부터 저장소 받기(`~/dev/bootstrap`), 모든 단계, 최종 doctor까지 이어서 한다. 중간에 멈추면 같은 한 줄을 다시 실행한다. 이미 받은 기기에서는 저장소를 갱신(fast-forward)한 뒤 실행한다. 할 일만 보려면 끝에 ` install --dry-run`, 다른 위치에 받으려면 앞에 `BOOTSTRAP_DIR=<경로>`를 붙인다.
@@ -84,7 +84,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 - 적용: 이 기기에 마지막으로 적용한 커밋부터 바뀐 파일을 쓰는 단계만 실행한다. 예: `home/` → dotfiles, `Brewfile` → homebrew(없는 것만 설치, 업그레이드 안 함), `scripts/steps/<번호>-<이름>.sh` → 그 단계, `bootstrap.sh`·`scripts/lib.sh` → 전 단계. 문서·테스트만 바뀌면 실행하지 않는다. 전체 대응은 `scripts/update.sh`의 `steps_for_paths`. 적용 기록이 없으면 전 단계를 확인하고, 전체 설치가 실패 없이 끝나면 기록을 남긴다.
 - 사람이 필요한 일: 자동 갱신은 관리자 비밀번호(전원 설정·자동 로그인·Homebrew 설치), 설치 창(Xcode 명령줄 도구), GitHub 로그인, 배경화면 제어 허용 창을 띄우지 않고 "수동 작업 대기"로 남긴다. 터미널에서 `./bootstrap.sh update`를 실행하면 대기 단계까지 다시 실행한다. 관리자 비밀번호가 필요한 cask는 자동 갱신에서 실패로 표시된다.
 - 실패: 적용 기록은 앞으로 옮기고, 실패한 단계만 `status`의 `failed`에 남겨 다음 실행 때 다시 실행한다. 자동 갱신은 같은 커밋이면 한 시간 뒤, 새 커밋이 오면 바로 다시 시도한다. 전체 설치(`./bootstrap.sh`)의 실패·대기도 같은 상태에 남아 `./bootstrap.sh update`가 이어서 실행한다. 전체 설치는 실패가 있으면 적용 기록을 옮기지 않는다.
-- 에이전트 CLI: 저장소와 별개로 Claude Code·Codex CLI를 공식 업데이트 명령(`claude update`, `codex update`)으로 올린다. 자동 갱신은 하루에 한 번, 터미널의 `./bootstrap.sh update`는 매번 확인한다. 저장소가 보류 상태여도 올리고, 네트워크가 없으면 건너뛴다. 새 버전은 따로 설치하고 링크만 바꾸므로 실행 중인 세션은 그대로 쓴다. 실패해도 저장소 반영은 계속하고 `update.log`에 남기며, 한 시간 뒤 다시 시도한다. 단계보다 먼저 올리므로 새 CLI가 필요한 프로필 변경도 같은 실행에서 적용된다. 버전이 바뀐 때만 기록한다.
+- 에이전트 CLI: 저장소와 별개로 Claude Code·Codex CLI·OpenCode를 공식 업데이트 명령(`claude update`, `codex update`, `opencode upgrade`)으로 올린다. 자동 갱신은 하루에 한 번, 터미널의 `./bootstrap.sh update`는 매번 확인한다. 저장소가 보류 상태여도 올리고, 네트워크가 없으면 건너뛴다. 새 버전은 따로 설치하고 링크만 바꾸므로 실행 중인 세션은 그대로 쓴다. 실패해도 저장소 반영은 계속하고 `update.log`에 남기며, 한 시간 뒤 다시 시도한다. 단계보다 먼저 올리므로 새 CLI가 필요한 프로필 변경도 같은 실행에서 적용된다. 버전이 바뀐 때만 기록한다.
 - Paseo 플러그인: 처음 설치할 때 최신본을 받는다. 이후에는 `paseo plugin update --all`에서 후보 버전을 확인하고 승인해 갱신한다. [플러그인 갱신](agents/paseo.md#플러그인-갱신)
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
 - 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
@@ -169,7 +169,7 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 
 ## 새 기기 없이 시험하기
 
-설정 병합·파일 보존·실패 판정은 `node --test scripts/*.test.mjs agents/skills/*/*.test.mjs`로 검사한다. PR마다 같은 테스트를 GitHub Actions(`.github/workflows/test.yml`)가 macOS에서 돌린다. 테스트는 임시 경로와 외부 명령 대역을 사용하며 실제 홈·브라우저·인증을 바꾸지 않는다. 새 Mac의 전체 설치나 실제 브라우저 연결은 별도 검증이다.
+설정 병합·파일 보존·실패 판정은 `node --test scripts/*.test.mjs agents/skills/*/*.test.mjs`로 검사하고, Paseo API 키 스크립트는 `python3 -I scripts/paseo-api-key.test.py`로 검사한다. PR마다 같은 테스트를 GitHub Actions(`.github/workflows/test.yml`)가 macOS에서 돌린다. 테스트는 임시 경로와 외부 명령 대역을 사용하며 실제 홈·브라우저·인증을 바꾸지 않는다. 새 Mac의 전체 설치나 실제 브라우저 연결은 별도 검증이다.
 
 전체 설치 검증에는 별도 Mac이나 macOS 가상 머신을 사용한다. `HOME`만 임시 경로로 바꾸는 방식은 외부 설치 프로그램의 시스템 변경까지 격리하지 못한다.
 

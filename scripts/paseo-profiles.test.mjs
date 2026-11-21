@@ -9,11 +9,11 @@ import { mergeProfiles } from './paseo-profiles.mjs';
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-profiles.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-profiles.mjs', import.meta.url).pathname;
 
-test('총괄·설계는 Opus, 심층 리뷰는 Fable high를 사용한다', () => {
+test('총괄·설계·심층 리뷰는 Opus를 사용한다', () => {
   for (const [name, model, modeId, thinkingOptionId] of [
     ['Supervisor', 'claude-opus-5-5', 'bypassPermissions', 'high'],
     ['Architect', 'claude-opus-5-5', 'plan', 'xhigh'],
-    ['Deep Reviewer', 'claude-fable-5-2', 'plan', 'high'],
+    ['Deep Reviewer', 'claude-opus-5-5', 'plan', 'high'],
   ]) {
     const profile = manifest.profiles.find(p => p.name === name);
     assert.deepEqual([profile.model, profile.modeId, profile.thinkingOptionId],
@@ -21,6 +21,21 @@ test('총괄·설계는 Opus, 심층 리뷰는 Fable high를 사용한다', () =
   }
   const supervisor = manifest.profiles.find(p => p.name === 'Supervisor');
   assert.match(supervisor.notes, /\. Opus 한도 소진·접속 불가 시에만 .*Supervisor \(Astra\)로 인계한다/);
+  // 비용 때문에 Fable은 어떤 프로필에도 쓰지 않는다.
+  assert.deepEqual(manifest.profiles.filter(p => /fable/i.test(p.model ?? '')).map(p => p.name), []);
+});
+
+test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권한 자동 승인을 켜지 않는다', () => {
+  for (const [name, provider, modeId] of [
+    ['Scan Reviewer', 'opencode', 'plan'],
+    ['Bug Hunter', 'opencode', 'plan'],
+    ['Gemini Cross-check', 'antigravity', 'full-access'],  // Antigravity의 유일한 모드
+  ]) {
+    const profile = manifest.profiles.find(p => p.name === name);
+    assert.deepEqual([profile.provider, profile.modeId], [provider, modeId], name);
+    assert.equal(profile.featureValues?.auto_accept, undefined, name);
+    assert.match(profile.notes, /바꾸지 말라고 명시/, name);
+  }
 });
 
 test('chief 교차 모델 예외는 설계·심층 검토 4개 프로필에만 두고 인계 조건과 구분한다', () => {
@@ -30,8 +45,8 @@ test('chief 교차 모델 예외는 설계·심층 검토 4개 프로필에만 �
   ]);
   for (const profile of exceptions) {
     // 제한문이 문장 첫머리에 있어야 한다. "일반 설계에서는 …" 같은 한정어가 붙으면 실패한다.
-    // 대체 조건은 그 역할의 기본 Claude 모델을 가리킨다: 설계는 Opus, 심층 리뷰는 Fable.
-    const model = profile.name.startsWith('Architect') ? 'Opus' : 'Fable';
+    // 대체 조건은 그 역할의 기본 Claude 모델(Opus)을 가리킨다.
+    const model = 'Opus';
     const limit = new RegExp(`${profile.name.endsWith('(Astra)') ? '^' : '\\. '}${model} 한도 소진·접속 불가 시에만 `);
     assert.match(profile.notes, limit);
     assert.match(profile.notes, /예외: yw-chief-supervisor 스킬을 실행 중인 총괄 감독/);
@@ -62,7 +77,7 @@ test('명시적 갱신은 ID·외형을 보존하고 제공자 기능을 교체�
     { id: 'a', name: 'Architect', provider: 'codex', icon: 'hammer', featureValues: { plan_mode: true } },
     { id: 'b', name: 'Cross Reviewer', provider: 'claude', color: 'orange' }
   ];
-  assert.equal(mergeProfiles(existing, manifest).profiles.filter(p => /Reviewer/.test(p.name)).length, 3);
+  assert.equal(mergeProfiles(existing, manifest).profiles.filter(p => ['Reviewer', 'Cross Reviewer', 'Deep Reviewer', 'Deep Reviewer (Astra)'].includes(p.name)).length, 3);
   const result = mergeProfiles(existing, manifest, true);
   assert.equal(result.profiles.length, manifest.profiles.length);
   assert.equal(result.profiles[0].provider, 'claude');

@@ -23,6 +23,16 @@ Gemini 모델은 Paseo 내장 Antigravity provider로 쓴다. `Brewfile`의 `cas
 
 Gemini CLI(`gemini --acp`)를 ACP provider로 붙이는 방법은 쓰지 않는다. 2026-11-21 기준 개인 Google 계정 로그인이 "no longer supported for Gemini Code Assist for individuals"로 거부되고 Antigravity로 이전하라고 안내한다. 공식 문서: [Antigravity provider](https://paseo.sh/docs/supported-providers/antigravity.md).
 
+## OpenRouter 모델 (OpenCode)
+
+Scan Reviewer·Bug Hunter는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 사용자가 한다.
+
+1. `opencode auth login`에서 OpenRouter를 고르고 키를 넣는다. 키는 OpenCode의 `~/.local/share/opencode/auth.json`에 남고 저장소·Paseo 설정에는 넣지 않는다.
+2. Paseo 앱 Settings → 호스트 → Providers에서 OpenCode를 켠다. 기본값은 꺼짐이고, CLI의 `daemon config set`은 provider 하위 경로를 받지 않아 bootstrap이 켜지 않는다.
+3. 확인: `paseo provider diagnostic opencode`(Ready), `paseo provider models opencode`에 프로필의 모델 ID가 있는지.
+
+새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 세 프로필은 공유 프로필로 추가되지만 실행이 실패한다(Gemini Cross-check는 Apple Silicon의 agy 로그인 필요). ZeroSub는 OpenCode·Antigravity 계정을 관리하지 않는다.
+
 ## Claude API 키와 프로필
 
 ### Infisical에서 직접 API 프로필 가져오기
@@ -92,7 +102,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-총괄·중요한 설계와 시각적 완성도가 중요한 UI 구현은 Opus 5.5에, 범위가 정해진 심층 리뷰는 Fable 5.2(high)에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.2 Sol에 맡긴다. 프로필의 Claude 모델(총괄·설계는 Opus, 심층 리뷰는 Fable)이 한도 소진·접속 불가일 때만 Astra 대체 프로필을 선택한다. 예외: [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치) 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Claude 가용 여부와 관계없이 Architect (Astra)·Deep Reviewer (Astra)를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다. 판단 범위와 모델 구성의 원장은 위 스킬이며, Supervisor (Astra)의 총괄 인계 조건은 그대로 적용한다.
+총괄·중요한 설계와 시각적 완성도가 중요한 UI 구현은 Opus 5.5에, 범위가 정해진 심층 리뷰도 Opus 5.5(high)에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.2 Sol에 맡긴다. 프로필의 Claude 모델(Opus)이 한도 소진·접속 불가일 때만 Astra 대체 프로필을 선택한다. 예외: [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치) 스킬을 실행 중인 총괄 감독이 그 스킬의 교차 모델 합의(감사·완료 판정·운영 정책 설계)에 쓸 때는 Claude 가용 여부와 관계없이 Architect (Astra)·Deep Reviewer (Astra)를 선택할 수 있다. yw-supervisor의 리뷰·설계와 총괄 감독 자신의 코드 PR 리뷰에는 적용하지 않는다. 판단 범위와 모델 구성의 원장은 위 스킬이며, Supervisor (Astra)의 총괄 인계 조건은 그대로 적용한다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
@@ -103,8 +113,11 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | Reviewer | GPT-6.2 Sol | xhigh | auto-review + plan |
 | Architect | Claude Opus 5.5 | xhigh | plan |
 | Architect (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
-| Deep Reviewer | Claude Fable 5.2 | high | plan |
+| Deep Reviewer | Claude Opus 5.5 | high | plan |
 | Deep Reviewer (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
+| Scan Reviewer | DeepSeek V4.1 Flash 1017 (OpenRouter) | 모델 기본값 | OpenCode plan |
+| Bug Hunter | Kimi K3.1 Pro (OpenRouter) | high | OpenCode plan |
+| Gemini Cross-check | Gemini 4 Neon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
 
 - Supervisor는 여러 작업·프로젝트의 우선순위·의존성·할당·진행·검증·완료를 관리한다. 직접 구현하지 않고 수정·테스트·통합과 큰 탐색은 Paseo 작업자에게 맡긴다. 내장 서브에이전트는 짧은 읽기 전용 확인에만 쓴다.
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
@@ -112,6 +125,8 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - Astra 프로필과 notes는 선택 지침이며 자동 장애 전환 기능이 아니다. Supervisor를 인계할 때 모든 작업의 상태·의존성·workspace·agent ID·결정·검증·남은 조치를 전달한다. 단순히 작업이 어렵다는 이유로 대체하지 않는다.
 - 구현·총괄 프로필은 권한 확인 없이 실행한다(Claude `bypassPermissions`, Codex `full-access`). 리뷰·설계 프로필은 직접 수정하지 않는 역할이라 plan 계열 모드를 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
+- Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도다.
+- 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고, OpenRouter 두 프로필은 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
 
 ## 총괄 운영 스킬
 
