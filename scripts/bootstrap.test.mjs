@@ -219,7 +219,7 @@ test('browser 단계: 자동 갱신 중 에이전트 Chrome 등록이 바뀌었�
 
 test('paseo 단계: Paseo 에이전트 안에서 직접 실행하면 데몬 등록을 내렸다 올리지 않고 대기로 남긴다', t => {
   // --no-restart 없이 데몬 등록을 다시 올리려 하면 9(데몬과 함께 끝남)로 본다.
-  const mocks = `has() { return 0; }\nis_laptop() { return 1; }\nrun() { :; }
+  const mocks = `has() { return 0; }\nis_laptop() { return 1; }\nrun() { :; }\npaseo() { echo '{"localDaemon": "stopped"}'; }
 node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || return 0; [[ " $* " == *" --no-restart "* ]] && return 2; return 9; }\n`;
   const run = agent => mockStep(t, '65-paseo.sh', mocks,
     { BOOTSTRAP_UNATTENDED: '0', PASEO_AGENT_ID: agent, PASEO_HOME: '/nonexistent/paseo-home' }).result;
@@ -228,6 +228,28 @@ node() { [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || ret
   assert.match(inAgent.stderr, /Paseo 에이전트 안이라 데몬 등록을 다시 올리지 않았습니다/);
   const terminal = run('');
   assert.equal(terminal.status, 1, '터미널에서는 그대로 다시 올린다');
+});
+
+test('paseo 단계: 터미널에서도 실행 중인 에이전트가 있으면 데몬 등록을 내렸다 올리지 않는다', t => {
+  // --no-restart 없이 데몬 등록을 다시 올리려 하면 9(에이전트와 함께 끝남)로 본다.
+  const run = (status, list) => mockStep(t, '65-paseo.sh', [
+    'has() { [[ "$1" != infisical ]]; }', 'is_laptop() { return 1; }', 'run() { :; }',
+    'paseo() { case "$1 $2" in "daemon status") [[ -n "$STATUS" ]] && echo "$STATUS" ;; "ls -g") [[ -n "$LIST" ]] && echo "$LIST" ;; esac; }',
+    'node() { [[ "$1" == -e ]] && { command node "$@"; return; }; [[ "$1" == *launch-agents.mjs && " $* " == *" --only paseo "* ]] || return 0; [[ " $* " == *" --no-restart "* ]] && return 2; return 9; }',
+  ].join('\n'), { BOOTSTRAP_UNATTENDED: '0', PASEO_AGENT_ID: '', PASEO_HOME: '/nonexistent/paseo-home', STATUS: status, LIST: list }).result;
+  const running = '{"localDaemon": "running"}';
+  const busy = run(running, '[{"status": "running"}, {"status": "idle"}]');
+  assert.equal(busy.status, 2, busy.stdout + busy.stderr);
+  assert.match(busy.stderr, /실행 중인 에이전트\(1개\)가 있어 데몬 등록을 다시 올리지 않았습니다.*터미널에서 \.\/bootstrap\.sh update/);
+  for (const [status, list, why] of [[running, '', '목록 조회 실패'], [running, '{"agents": []}', '예상 밖 목록'], ['', '', '상태 조회 실패']]) {
+    const unknown = run(status, list);
+    assert.equal(unknown.status, 2, `${why}면 바쁜 것으로 본다`);
+    assert.match(unknown.stderr, /Paseo 에이전트 목록을 확인할 수 없어/);
+  }
+  const idle = run(running, '[{"status": "idle"}]');
+  assert.equal(idle.status, 1, '한가하면 그대로 다시 올린다');
+  const stopped = run('{"localDaemon": "stopped"}', '');
+  assert.equal(stopped.status, 1, '데몬이 꺼졌다고 확인되면 목록 없이 다시 올린다');
 });
 
 test('paseo 단계: Infisical CLI가 있을 때만 선택적 API 프로필 등록을 시도한다', t => {
