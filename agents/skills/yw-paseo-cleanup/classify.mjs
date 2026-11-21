@@ -110,10 +110,7 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if (a.statusSource === 'store' && protectionGaps.some(g => g.reason === 'live_missing' && g.scope?.agentIds?.includes(a.id))) r.work = 'unknown';
     r.reasons.push(`status:${status ?? 'missing'} (${a.statusSource ?? 'store'})`);
     if (a.pendingCount > 0) r.work = 'waiting_user';
-    if (a.backgroundWorkCount > 0) {
-      waitingForWork(r);
-      hold(r, 'active_lane', 'background work pending');
-    }
+    if (a.backgroundWorkCount > 0) waitingForWork(r);
     r.recentActivityOnly = age !== null && age >= minAgeHours && activityAge !== null && activityAge < minAgeHours;
     if (self.has(a.id) || within(a.cwd, selfCwd)) hold(r, 'self', 'current cleanup scope');
     if (age === null || activityAge === null || age < minAgeHours || activityAge < minAgeHours) hold(r, 'recent', 'recent or unknown activity time');

@@ -7,8 +7,6 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 
 기기 전체의 Paseo 자원을 조사해 **끝난 것만** 정리한다. 기본 정리 단위는 에이전트이고, workspace와 디렉터리 제거에는 조건을 더 붙인다. 조사·분류·계획은 확인 없이 진행한다. 상태를 바꾸는 일은 사용자가 승인한 계획 범위 안에서만 한다.
 
-이 문서는 Paseo 0.16.2에서 확인한 동작을 기준으로 한다. 0.15.4와 그 밖의 버전은 아래 "버전" 규칙을 따른다.
-
 ## 왜 status만으로 판단하지 않는가
 
 - `closed`는 끝났다는 뜻이 아니다. 런타임이 해제됐을 뿐이다. 기본 idle cleanup이 켜져 있고 보류할 작업이 없으면, 마지막 활동 뒤 1시간이 지나 해제될 수 있다. 프롬프트를 보내면 다시 살아난다.
@@ -44,10 +42,10 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 1. **저장소 일치 확인:** `list_hosts`로 현재 `serverId`를 확인한다. MCP 대상 호스트와 저장 파일을 읽는 호스트, 현재 데몬의 Paseo home(기본 `~/.paseo`, `PASEO_HOME`이 있으면 그 값)이 일치하는지 확인하고 경로와 시각을 기록한다. 저장소의 소속과 완전성을 확인하지 못하면, 그 자료만으로 관계·예약이 없다고 판정하지 않는다.
 2. **MCP 조회:** `list_workspaces(includeBackground: true)`, `list_pending_permissions`, `list_terminals(all: true)`를 부르고 결과를 실행 디렉터리에 저장한다. 터미널은 전역 조회 한 번으로 모든 cwd를 관측한 것으로 넘긴다.
 3. **live 상태 수집:**
-   - workspace마다 cwd를 지정해 `list_agents(cwd, includeBackground: true, limit: 200)`를 부른다. cwd를 빼면 호출자 workspace만 보인다. 결과가 200개면 누락이 있다고 기록한다.
+   - workspace마다 cwd를 지정해 `list_agents(cwd, includeBackground: true, limit: 200)`를 부른다. `cwd`는 하위 경로를 포함하며, 생략하면 호출자 cwd가 기본값이다. `includeBackground: true`는 background workspace와 개별 background 에이전트를 포함한다. 결과가 200개면 누락이 있다고 기록한다.
    - 보관된 workspace나 등록되지 않은 cwd에 남은 비보관 에이전트는 수집기가 저장 레코드에서 찾는다. 이들은 live 관측이 없어 판단 불가로 남고, 그 보호가 관계를 따라 조상·소속 workspace·경로로 전파된다.
    - 후보로 좁혀진 에이전트는 `get_agent_status`로 상태와 pending을 확인한다. 목록과 상세 조회에서 `backgroundWork`가 있으면 관측한 값을 live 입력에 남긴다. 상세 조회는 런타임이 없으면 저장값으로 답하므로, 결과가 "저장값 응답"일 수 있다고 기록한다.
-   - 조회 결과를 실행 디렉터리에 저장한다. 형식은 `node scan.mjs --help`에 나온다. live·pending·terminals 입력에는 조회한 `serverId`, 관측 시각, 범위를 함께 적는다. `live.json`의 `daemonVersion`에는 같은 호스트에서 실행 중인 데몬의 버전을 기록한다(호스트 설정 또는 현재 데몬 로그에서 확인). 수집기는 호스트가 다르거나, 관측 시각이 없거나, 오래된 입력(기본 30분 초과)을 미확인으로 처리한다. 이전 실행의 입력을 다시 쓰지 말고, 실행할 때마다 새로 조회한다.
+   - 조회 결과를 실행 디렉터리에 저장한다. 형식은 `node scan.mjs --help`에 나온다. live·pending·terminals 입력에는 조회한 `serverId`, 관측 시각, 범위를 함께 적는다. `live.json`의 `daemonVersion`에는 같은 호스트에 대한 `paseo daemon status --json` 응답의 `daemonVersion`을 보고용으로 기록한다. 수집기는 호스트가 다르거나, 관측 시각이 없거나, 오래된 입력(기본 30분 초과)을 미확인으로 처리한다. 이전 실행의 입력을 다시 쓰지 말고, 실행할 때마다 새로 조회한다.
 4. **수집기 실행:**
 
    ```sh
@@ -59,7 +57,7 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
    - **남은 확인(`remainingChecks`):** 수집기가 원래 확인하지 않는 조건이다. 프로세스 사용, workspace script 실행 상태, teardown 내용과 영향, workspace ID 기준 터미널이 해당한다. 수집기의 터미널 판정은 cwd 기준이므로, workspace 후보에는 목록에 없더라도 workspace ID 기준 터미널 확인이 늘 남는다. 배치 승인 후보에 이 목록이 붙으며, 모델이 실행 직전에 모두 확인하기 전에는 A에 올리지 않는다.
 
 5. **본문 발췌:** 보호와 완료 판정 상속으로 걸러 내고 남은 후보만 고른다. 고른 전체 agent ID 목록을 `--excerpt-ids`로 넘긴다. 불필요한 본문은 읽거나 저장하지 않는다. 새 출력 경로(예: `<실행 디렉터리>/excerpts`)를 주고 `--excerpts`를 붙여 다시 실행한다. 처음 결과는 그대로 둔다. 수집기는 provider 이력 파일(Claude transcript, Codex rollout)을 직접 읽는다. 찾지 못한 세션은 발췌 없음으로 남기고, `get_agent_activity`로 대신 읽지 않는다. 다른 에이전트가 보낸 요청(`<paseo-system kind="agent-message">`)도 요청으로 본다. 요청과 응답의 대응이 불확실하면 `pairUncertain`으로 표시된다.
-6. **누락 확인:** 결과의 메타(호스트, 수집 시각, 옵션)와 `gaps`(파싱 실패, 명령 실패, 누락, 저장값 응답, 발췌 잘림)를 확인한다. 수집이 불완전한 범위는 판단 불가로 둔다.
+6. **누락 확인:** 결과의 메타(호스트, 수집 시각, 옵션)와 `gaps`(파싱 실패, 명령 실패, 누락, 저장값 응답, 발췌 잘림)를 확인한다. 필수 필드가 빠졌거나 형식이 다르면 영향을 받는 범위를 판단 불가로 둔다. worktree 제거는 아래 "디렉터리 제거 공통 조건"으로 판정한다.
 
 수집기 출력은 허용한 필드만 담는다. 경로·ID 같은 구조 값에 비밀 패턴이 있으면 출력에는 `[STRUCT_SHA256:…]`로 표시된다. 분류는 원래 값으로 끝낸 결과이며, 그런 항목을 실행할 때는 저장 레코드나 git에서 원래 경로를 다시 읽어 해시와 대조한다. `~/.paseo/agents/*` 원본에는 토큰이 있으므로 복사하거나 대화·기록에 붙이지 않는다. 발췌한 본문에도 비밀이 있을 수 있으니 보고에는 필요한 만큼만 인용한다.
 
@@ -163,7 +161,7 @@ archive하면 그 에이전트의 heartbeat에 완료 처리가 시도된다. �
 
 디렉터리 처리는 workspace 종류에 따라 다르다.
 
-- **Paseo 소유 worktree:** archive하면 설정과 승인 상태에 따라 teardown이 실행되며, 같은 worktree를 가리키는 활성 workspace가 없으면 `git worktree remove --force`로 제거를 시도한다. 0.16.2는 읽을 수 있는 HEAD를 제거 전에 `refs/paseo/kept-commits/<sha>`에 보존한다. ref 쓰기에 실패하면 workspace가 보관돼도 디렉터리는 남는다. 미커밋 파일에는 이 보존이 적용되지 않으므로 아래 "디렉터리 제거 공통 조건"을 충족해야 한다.
+- **Paseo 소유 worktree:** archive하면 설정과 승인 상태에 따라 teardown이 실행되며, 같은 worktree를 가리키는 활성 workspace가 없으면 `git worktree remove --force`로 제거를 시도한다. Paseo는 읽을 수 있는 HEAD를 제거 전에 `refs/paseo/kept-commits/<sha>`에 보존한다. ref 쓰기에 실패하면 workspace가 보관돼도 디렉터리는 남는다. 미커밋 파일에는 이 보존이 적용되지 않으므로 아래 "디렉터리 제거 공통 조건"을 충족해야 한다.
 - **local 디렉터리 workspace:** 디렉터리는 남는다. 그래서 git·HEAD 조건은 적용하지 않는다. 구성원·보호 관계·터미널 조건은 확인하고, 구성원과 터미널에 대한 archive 효과는 따로 readback한다.
 - **소유 정보 불완전:** 데몬이 디스크에서 소유를 다시 확인하는 경우가 있으므로, 수집기가 worktree 소유·경로를 확정하지 못하면 `gaps`에 기록하고 archive를 보류한다.
 
@@ -298,23 +296,17 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
   - 인계 뒤 현재 소유자가 가리키는 기록
 - **겹칠 때:** 관리 중인 lane과 겹치면 그 lane은 제외하고, 조정이 필요하면 사용자에게 보고한다. 이 스킬만의 잠금은 따로 만들지 않는다.
 
-**버전**
+## 버전
 
-Paseo 0.15.4와 0.16.2를 확인했다. 0.16.2에서 확인한 동작은 다음과 같다.
+확인한 기준 버전은 Paseo 0.16.2다.
 
-- **저장 레코드 형식** — 에이전트 저장 레코드에 `background`가 추가됐고 옵션은 `features`에서 `controls`로 바뀌었다. 보관된 workspace에는 복구용 `head`가 추가됐다. 수집기가 쓰는 ID·경로·관계·보관 필드, workspace·project 목록, schedule의 `target`, 완료 구독 목록 형식은 계속 읽을 수 있다. [에이전트 저장 스키마](https://github.com/getpaseo/paseo/blob/v0.16.2/packages/server/src/server/agent/agent-storage.ts), [workspace 저장 스키마](https://github.com/getpaseo/paseo/blob/v0.16.2/packages/server/src/server/workspace-registry.ts)
-- **`list_agents` 필터** — `includeBackground: true`는 background workspace와 개별 background 에이전트를 포함한다. `cwd`는 하위 경로를 포함한다. `sinceHours`는 보관된 항목에만 적용되고, 최대 200건이며 cursor가 없다. 0.16.2의 목록·상태 응답은 idle 에이전트도 진행 중인 `backgroundWork`를 돌려준다. [MCP 문서](https://paseo.sh/docs/mcp), [0.16.2 필터 구현](https://github.com/getpaseo/paseo/blob/v0.16.2/packages/server/src/server/agent/agent-projections.ts), [0.16.2 변경 내역](https://github.com/getpaseo/paseo/releases/tag/v0.16.2)
-- **archive 연쇄** — 같은 workspace의 일반 하위 에이전트는 저장 상태만 남아도 연쇄 보관되고, 다른 workspace 또는 열린 탭 라벨이 있는 일반 하위는 분리된다. 0.16.2는 연쇄 보관에 부모의 `archivedAt`을 공유하고, 저장 상태로만 있던 자식의 분리도 상태 업데이트로 알린다. [0.16.2 연쇄 구현](https://github.com/getpaseo/paseo/blob/v0.16.2/packages/server/src/server/agent/agent-manager.ts)
-- **heartbeat 완료 처리** — 에이전트 archive 시 대상이 그 에이전트인 미완료 heartbeat를 완료 처리한다. 개별 처리 실패는 로그에 남으므로 실행 뒤 실제 상태를 확인한다. [0.16.2 완료 처리 구현](https://github.com/getpaseo/paseo/blob/v0.16.2/packages/server/src/server/schedule/service.ts)
-- **workspace archive의 worktree 제거** — 소유 확인과 최종 활성 참조 확인 뒤 제거하는 동작은 유지된다. 0.16.2에서 제거 전 HEAD ref 보존과 복구용 checkout 기록이 추가됐다. [Git worktree 문서](https://paseo.sh/docs/worktrees), [HEAD 보존 변경](https://github.com/getpaseo/paseo/pull/10009)
-
-수집기는 유효한 `live.json`의 `daemonVersion`을 설치 메타데이터보다 우선한다. 설치 메타데이터만 수집됐으면 실행 중인 데몬의 버전을 별도로 확인한다. 데몬 버전이 위 두 버전과 다르거나 확인되지 않았거나, 수집기가 형식 차이를 `gaps`로 보고하면 그 동작에 기대는 판정은 판단 불가로 둔다.
+동작 변경이 확인되면 문서와 수집기를 함께 고친다.
 
 ## 보고
 
 보고에는 다음을 담는다.
 
-- 실행 디렉터리 경로와 수집 시각
+- 실행 디렉터리 경로, 수집 시각, 관측한 데몬 버전과 출처
 - A·B·C 집계와 대표 항목
 - 사용자 결정이 필요한 B 표
 - 미완료 중 멈춘 대화와 사용자 대기 목록(원 요청·근거). [chief](../yw-chief-supervisor/SKILL.md#순찰과-재개) 결정 큐나 사용자에게 넘긴다

@@ -62,9 +62,9 @@ for (const status of [undefined, 'unknown-new-status', null]) test(`F8 unknown s
 test('F8 version is read from app plist or home metadata without a subprocess', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cleanup-version-'));
   try {
-    const plist = join(dir, 'Info.plist'); writeFileSync(plist, '<plist><dict><key>CFBundleShortVersionString</key><string>0.15.4</string></dict></plist>');
-    assert.deepEqual(readPaseoVersion(dir, plist), { version: '0.15.4', source: 'app_info_plist' });
-    writeFileSync(join(dir, 'version.json'), '{"version":"0.16.0-beta.1"}'); assert.equal(readPaseoVersion(dir, join(dir, 'missing')).version, '0.16.0-beta.1');
+    const plist = join(dir, 'Info.plist'); writeFileSync(plist, '<plist><dict><key>CFBundleShortVersionString</key><string>0.16.2</string></dict></plist>');
+    assert.deepEqual(readPaseoVersion(dir, plist), { version: '0.16.2', source: 'app_info_plist' });
+    writeFileSync(join(dir, 'version.json'), '{"version":"0.16.2"}'); assert.equal(readPaseoVersion(dir, join(dir, 'missing')).version, '0.16.2');
     rmSync(join(dir, 'version.json')); assert.deepEqual(readPaseoVersion(dir, join(dir, 'missing')), { version: null, source: null });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -117,7 +117,7 @@ test('F6 collector canonicalizes symlinked active workspace roots before orphan 
     const alias = join(dir, 'alias'); symlinkSync(join(dir, 'worktrees/group/outer/nested'), alias, 'dir');
     writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([{ ...workspace({ isPaseoOwnedWorktree: false, worktreeRoot: alias }), cwd: alias }]));
     writeFileSync(join(dir, 'projects/projects.json'), '[]'); writeFileSync(join(dir, 'finish-subscriptions.json'), '[]'); writeFileSync(join(dir, 'server-id'), 'srv_fixture');
-    const s = await collect({ paseoHome: dir, stateHome: join(dir, 'state') });
+    const s = await collect({ paseoHome: dir, paseoInfoPlist: join(dir, 'missing.plist'), stateHome: join(dir, 'state') });
     assert.notEqual(s.workspaces[0].cwd, alias); const o = s.classification.orphans.find(o => o.id.endsWith('/outer')); assert.ok(o.hold.includes('active_lane'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

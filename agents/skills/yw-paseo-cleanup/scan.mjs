@@ -81,7 +81,6 @@ export function parseOptions(argv) {
 const jsonReadFailed = Symbol('json-read-failed');
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(value);
-const verifiedPaseoVersions = new Set(['0.15.4', '0.16.2']);
 export function validateObservation(kind, input, serverId, now, maxAgeMinutes = 30) {
   const metadata = { serverId: typeof input?.serverId === 'string' ? input.serverId : null, observedAt: typeof input?.observedAt === 'string' ? input.observedAt : null, scope: typeof input?.scope === 'string' ? input.scope : null, state: 'unchecked', issues: [] };
   if (!serverId || metadata.serverId !== serverId) metadata.issues.push('input_server_mismatch_or_missing');
@@ -408,10 +407,6 @@ export async function collect(options) {
     ? { version: isVersion(liveInput.input.daemonVersion) ? liveInput.input.daemonVersion : null, source: 'live_observation' }
     : readPaseoVersion(paseoHome, options.paseoInfoPlist);
   snapshot.meta.paseoVersion = version.version; snapshot.meta.paseoVersionSource = version.source;
-  if (!verifiedPaseoVersions.has(version.version)) {
-    const reason = version.version ? 'paseo_version_unverified' : 'paseo_version_unknown';
-    gaps.push({ domain: 'protection', source: 'paseo-version', reason });
-  }
   let live = isRecord(liveInput.input) && ['serverId', 'observedAt', 'scope', 'agents'].some(k => Object.hasOwn(liveInput.input, k)) ? liveInput.input.agents : liveInput.input;
   const liveMapUsable = liveInput.trusted && isRecord(live);
   if (!isRecord(live)) { gaps.push({ source: options.live, reason: 'expected agent status map' }); live = {}; }
@@ -522,8 +517,8 @@ async function main() {
   if (options.help) {
     console.log(`Usage: node scan.mjs [--out DIR] [--paseo-home DIR] [--self-agent ID] [--self-cwd PATH] [--min-age-hours 72] [--max-input-age-minutes 30] [--gh] [--excerpts] [--excerpt-ids FILE] [--live FILE] [--pending FILE] [--terminals FILE]
 Every observation requires serverId matching the local server-id, observedAt (ISO 8601 with Z or an explicit UTC offset), and scope. Inputs older than --max-input-age-minutes (default 30), over one minute in the future, or missing metadata are unchecked. Legacy payloads are accepted as unchecked; live/pending uncertainty blocks all batch candidates.
---live: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"listed_agents","daemonVersion":"0.16.2","agents":{"full-agent-id":{"status":"idle","pendingPermissions":[],"backgroundWork":{"count":1}}}} (scope all is also accepted; missing agents remain scoped unknown)
-Copy daemonVersion from the selected host's running daemon. A trusted live version takes precedence over local app or home metadata.
+--live: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"listed_agents","agents":{"full-agent-id":{"status":"idle","pendingPermissions":[],"backgroundWork":{"count":1}}}} (scope all is also accepted; missing agents remain scoped unknown)
+Record daemonVersion from paseo daemon status --json for the selected host. Version metadata is informational.
 --pending: {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"all","permissions":[{"agentId":"full-agent-id","kind":"question"}]}
 --terminals (all cwd): {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"all","terminals":[{"cwd":"/absolute/path"}]} (absent cwd confirmed_none; terminal cwd inside target path present)
 --terminals (per cwd): {"serverId":"srv_example","observedAt":"2026-01-01T00:00:00Z","scope":"cwd","observations":[{"cwd":"/absolute/path","terminals":[]}]} (unobserved cwd unchecked)
