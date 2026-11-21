@@ -45,17 +45,20 @@ fi
 # 자동 시작 등록이 실패해도 프로필 설정은 계속한다. 실패(1)가 수동 작업 대기(2)보다 우선한다.
 # 자동 갱신 중에는 실행 중인 데몬 등록을 다시 올리지 않는다(바뀌었으면 대기). 데몬과 그 에이전트가 끝나기 때문이다.
 # Paseo 에이전트 안에서 실행해도 같다. 데몬을 내리면 그 에이전트와 이 실행도 함께 끝난다 (paseo-upgrade.sh와 같은 확인).
-# 터미널에서 실행해도 실행 중인 에이전트가 있으면 같다. 목록을 읽지 못하면 바쁜 것으로 본다 (paseo-upgrade.sh와 같은 확인).
+# 터미널에서 실행해도 실행 중인 에이전트가 있으면 같다. 데몬이 꺼졌다고 확인되거나 목록에 실행 중인 에이전트가 0개일 때만
+# 다시 올린다. 상태나 목록을 읽지 못하면 바쁜 것으로 본다. 노트북은 데몬 등록이 없어 확인하지 않는다.
 daemon_restart="$(no_restart_flag)"
 [[ -z "${PASEO_AGENT_ID:-}" ]] || daemon_restart=--no-restart
 busy=0
-if [[ -z "$daemon_restart" && "$DRY_RUN" != 1 ]] && has paseo &&
-  paseo daemon status --json 2>/dev/null | grep -q '"localDaemon": *"running"'; then
-  if list="$(paseo ls -g -a --json 2>/dev/null)"; then
-    busy="$({ grep -o '"status": *"running"' <<<"$list" || true; } | wc -l | tr -d ' ')"
-  else
-    busy='?'
-  fi
+if [[ -z "$daemon_restart" && "$DRY_RUN" != 1 ]] && ! is_laptop && has paseo &&
+  ! { paseo daemon status --json 2>/dev/null || true; } | grep -q '"localDaemon": *"stopped"'; then
+  busy="$(paseo ls -g -a --json 2>/dev/null | node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      const list = JSON.parse(s);
+      if (!Array.isArray(list)) process.exit(1);
+      console.log(list.filter(agent => agent.status === "running").length);
+    });' 2>/dev/null)" || busy='?'
+  [[ "$busy" =~ ^[0-9]+$ ]] || busy='?'
   [[ "$busy" == 0 ]] || daemon_restart=--no-restart
 fi
 autostart=0
@@ -64,7 +67,8 @@ node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only paseo "$(device_flag)" $
 if [[ "$autostart" == 2 && -n "${PASEO_AGENT_ID:-}" ]]; then
   warn 'Paseo 에이전트 안이라 데몬 등록을 다시 올리지 않았습니다(데몬과 함께 끝남) → 터미널에서 ./bootstrap.sh update'
 elif [[ "$autostart" == 2 && "$busy" != 0 ]]; then
-  warn "실행 중인 에이전트(${busy}개)가 있어 데몬 등록을 다시 올리지 않았습니다(내리면 함께 끝남) → 끝난 뒤 ./bootstrap.sh --only paseo"
+  if [[ "$busy" == '?' ]]; then reason='Paseo 에이전트 목록을 확인할 수 없어'; else reason="실행 중인 에이전트(${busy}개)가 있어"; fi
+  warn "${reason} 데몬 등록을 다시 올리지 않았습니다(내리면 함께 끝남) → 에이전트가 끝난 뒤, 또는 paseo daemon stop 후 터미널에서 ./bootstrap.sh update"
 fi
 upgrade=0
 # shellcheck disable=SC2046
