@@ -198,6 +198,8 @@ function releaseOwner(f, x = f.x) {
 
 // ---- verifier 공유 역할 (role add verifier --shared): round-robin은 검증 자리 1개 + 일반 대기열 ----
 const nice = pid => spawnSync('ps', ['-o', 'nice=', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim();
+// 러너마다 기본 nice가 다르다(GitHub macOS 러너는 -10). 바뀌지 않았는지는 이 프로세스 값과 비교한다.
+const baseNice = nice(process.pid);
 // holder 셸: lease를 잡고 stdin 한 줄마다 그 supervisor로 자식 acquire를 실행한다(token 없이, 조상 재진입).
 function holdShell(f, id, sup) {
   return f.start(['-c', `${quote(script)} acquire ${id} nightly-local ${sup} --json --holder $$ || exit
@@ -226,7 +228,7 @@ test('verifier 공유 (round-robin): 검증 lease 중 일반 run은 바로 실�
   await f.wait(() => w.out.trim(), 'work acquired while verifier holds', 10000);
   const wl = leases(w)[0];
   assert.equal(JSON.parse(f.ownerText()).task, 'WORK');
-  assert.equal(nice(w.pid), '0', '일반 holder는 그대로');
+  assert.equal(nice(w.pid), baseNice, '일반 holder는 그대로');
 
   const second = holdShell(f, 'SOFTWARE-SECOND', 'verifier-loop');
   await f.wait(() => read(lq).includes('SOFTWARE-SECOND '), 'second verifier queued');
@@ -276,7 +278,7 @@ test('verifier 공유 (compat): 검증 자리 없이 verifier-loop도 일반 대
   await f.wait(() => v.out.trim(), 'verifier acquired');
   assert.equal(v.out.trim(), 'ACQUIRED VERIFIER-01-software');
   assert.equal(JSON.parse(f.ownerText()).task, 'VERIFIER-01-software');
-  assert.equal(nice(v.pid), '0', 'compat은 검증 자리가 아니라 그대로');
+  assert.equal(nice(v.pid), baseNice, 'compat은 검증 자리가 아니라 그대로');
   const run = f.cli('run', 'ORDINARY', 'w', 'S', '--', '/bin/sh', '-c', 'exit 17');
   await f.wait(() => read(f.q).includes('ORDINARY '), 'ordinary queued, not rejected');
   await pause(200);
