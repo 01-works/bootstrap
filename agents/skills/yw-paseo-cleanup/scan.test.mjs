@@ -195,6 +195,10 @@ const invalidStoreCases = [
   ...[null, {}, false, 0, 'schema-change'].map(value => ['finish-subscriptions.json', value, 'expected-array']),
   ...[null, {}, false, 0].map(value => ['projects/workspaces.json', value, 'expected-array']),
   ...[null, [], {}].map(value => ['finish-subscriptions.json', [value], 'invalid record:0']),
+  ...[null, {}, 'schema-change'].map(value => ['change-request-watches.json', value, 'expected-array']),
+  ...[null, [], {}].map(value => ['change-request-watches.json', [value], 'invalid record:0']),
+  ['change-request-watches.json', [{ url: 'https://example.test/pr/1' }], 'invalid watchers'],
+  ['change-request-watches.json', [{ url: 'https://example.test/pr/1', watchers: [{}] }], 'invalid watcher'],
 ];
 for (const [relative, value, reason] of invalidStoreCases) test(`R3 P1 parsed ${JSON.stringify(value)} in ${relative} creates blocking schema gap`, async () => {
   const { dir, options } = syntheticStore();
@@ -208,6 +212,20 @@ for (const [relative, value, reason] of invalidStoreCases) test(`R3 P1 parsed ${
     const { classify } = await import('./classify.mjs');
     const r = classify({ ...fixture, meta: { ...fixture.meta, gaps: s.meta.gaps }, workspaces: [{ ...oldWorkspace, workspaceId: 'wks_other', cwd: '/fake/other', kind: 'worktree', git: fixture.fixtureGit, checks: fixture.fixtureChecks }] });
     assert.equal(r.workspaces[0].verdict, 'review', 'unknown failed scope blocks another otherwise eligible resource');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('change-request watch protects the watching agent and its workspace', async () => {
+  const { dir, cwd, options } = syntheticStore();
+  try {
+    const baseline = await collect(options); assert.equal(baseline.classification.workspaces[0].verdict, 'batch_candidate', 'no watch file is not a gap');
+    assert.deepEqual(baseline.watches, []);
+    writeFileSync(join(dir, 'agents/fake/watcher.json'), JSON.stringify({ id: 'watcher', cwd, workspaceId: 'wks_fake', lastStatus: 'closed', lastActivityAt: '2026-01-01T00:00:00Z', lastUserMessageAt: '2026-01-01T00:00:00Z', labels: {} }));
+    writeFileSync(join(dir, 'change-request-watches.json'), JSON.stringify([{ url: 'https://example.test/pr/1', snapshot: {}, seenActivity: [], watchers: [{ agentId: 'watcher' }] }]));
+    const s = await collect(options);
+    assert.deepEqual(s.watches, [{ agentId: 'watcher', url: 'https://example.test/pr/1' }]);
+    const agent = s.classification.agents.find(r => r.id === 'watcher');
+    assert.equal(agent.work, 'waiting_schedule'); assert.ok(agent.hold.includes('schedule_dependency'));
+    assert.equal(s.classification.workspaces[0].verdict, 'exclude'); assert.ok(s.classification.workspaces[0].hold.includes('active_lane'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('R3 P1 read and parse failures remain distinguishable from parsed null schema errors', async () => {

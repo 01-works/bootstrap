@@ -388,7 +388,7 @@ export async function collect(options) {
   const home = homedir(), paseoHome = resolve(options.paseoHome ?? process.env.PASEO_HOME ?? join(home, '.paseo'));
   const stateHome = options.stateHome ?? process.env.XDG_STATE_HOME ?? join(home, '.local/state'), gaps = [], sessionIds = new Map();
   const collectedAt = new Date().toISOString();
-  const snapshot = { meta: { paseoHome, serverId: null, paseoVersion: null, collectedAt, options: pick({ maxInputAgeMinutes: 30, ...options }, ['minAgeHours', 'maxInputAgeMinutes', 'gh', 'excerpts', 'excerptIds', 'selfAgentId', 'selfCwd', 'live', 'pending', 'terminals']), gaps, warnings: [], inputObservations: {}, statusSource: options.live ? 'mixed' : 'store', liveCoverage: 0 }, agents: [], workspaces: [], projects: [], schedules: [], subscriptions: [], supervisors: [], orphans: [] };
+  const snapshot = { meta: { paseoHome, serverId: null, paseoVersion: null, collectedAt, options: pick({ maxInputAgeMinutes: 30, ...options }, ['minAgeHours', 'maxInputAgeMinutes', 'gh', 'excerpts', 'excerptIds', 'selfAgentId', 'selfCwd', 'live', 'pending', 'terminals']), gaps, warnings: [], inputObservations: {}, statusSource: options.live ? 'mixed' : 'store', liveCoverage: 0 }, agents: [], workspaces: [], projects: [], schedules: [], subscriptions: [], watches: [], supervisors: [], orphans: [] };
   const read = (file, domain) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { gaps.push({ source: file, ...(domain ? { domain } : {}), reason: e.code ?? 'invalid-json' }); return jsonReadFailed; } };
   const array = (file, required) => { const value = read(file); if (!Array.isArray(value)) { if (value !== jsonReadFailed) gaps.push({ source: file, reason: 'expected-array' }); return []; } return value.filter((v, i) => { const ok = isRecord(v) && required.every(k => typeof v[k] === 'string'); if (!ok) gaps.push({ source: file, reason: `invalid record:${i}` }); return ok; }); };
   try { snapshot.meta.serverId = readFileSync(join(paseoHome, 'server-id'), 'utf8').trim(); } catch (e) { gaps.push({ source: 'server-id', reason: e.code }); }
@@ -451,6 +451,15 @@ export async function collect(options) {
   });
   snapshot.projects = array(join(paseoHome, 'projects/projects.json'), ['projectId', 'rootPath']).map(p => pick(p, ['projectId', 'rootPath', 'kind', 'displayName', 'archivedAt']));
   snapshot.subscriptions = array(join(paseoHome, 'finish-subscriptions.json'), ['callerAgentId', 'childAgentId']).map(s => pick(s, ['callerAgentId', 'childAgentId']));
+  // PR/MR watch (Paseo 0.17+). The file exists only while a watch has been saved; archive removes the watch.
+  const watchFile = join(paseoHome, 'change-request-watches.json');
+  if (existsSync(watchFile)) for (const group of array(watchFile, ['url'])) {
+    if (!Array.isArray(group.watchers)) { gaps.push({ source: watchFile, reason: 'invalid watchers' }); continue; }
+    for (const w of group.watchers) {
+      if (isRecord(w) && typeof w.agentId === 'string') snapshot.watches.push({ agentId: w.agentId, url: group.url });
+      else gaps.push({ source: watchFile, reason: 'invalid watcher' });
+    }
+  }
   const scheduleRoot = join(paseoHome, 'schedules');
   if (!existsSync(scheduleRoot)) gaps.push({ source: scheduleRoot, reason: 'schedule_store_missing' });
   let schedules = []; try { schedules = globSync('*.json', { cwd: scheduleRoot }); } catch (e) { gaps.push({ source: scheduleRoot, reason: e.code }); }
