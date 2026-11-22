@@ -113,12 +113,12 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-총괄·중요한 설계·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 작업량이 많은 일반 구현·테스트·일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
+총괄·중요한 설계·일반 구현·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
 | Supervisor | Claude Opus 5.5 | high | bypassPermissions |
-| Builder | GPT-6.2 Sol | high | full-access |
+| Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Frontend Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Reviewer | GPT-6.2 Sol | xhigh | auto-review + plan |
 | Architect | Claude Opus 5.5 | xhigh | bypassPermissions |
@@ -134,7 +134,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다.
-- Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 구현·총괄은 `full-access`, Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
+- Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 - Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도로, 따로 계산되는 Argon 쿼터를 쓴다. 2026-11-21 같은 범위 비교에서 이전 모델(DeepSeek V4.1 Flash)과 결함 후보 수와 질이 비슷했다. Argon 주간 한도를 다 쓰면 갱신 전까지 실행이 실패한다.
 - 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고, Scan Reviewer와 Bug Hunter는 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
@@ -168,7 +168,7 @@ lane 이름·`tasks.md`·감독 ID·인계·승인·종료는 [감독 계약](sk
 
 총괄은 진행 중인 다른 lane을 인수·중단·정리하거나 작업자에게 직접 지시하지 않는다. 순찰·재개는 스킬 조건을 따르고 누적 사용자 목표의 완료를 교차 모델로 판정한 세션만 안전 대조 뒤 archive한다. `tasks.md`는 현재 상태, `log.md`는 경과이며 직접 배정한 작업의 소유 기록은 `-chief` 없는 폴더에 따로 둔다. local workspace archive 뒤에도 기록 폴더는 보존한다. 세부 발견·합의·정리·인계는 [총괄 스킬](skills/yw-chief-supervisor/SKILL.md)을 따른다.
 
-Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 시각적 선택이 중요한 작업에 사용한다. API 연결·상태 관리·확정된 디자인의 단순 수정은 Builder가 기본이다. 시각 작업과 기능 작업은 나누는 것이 유익할 때만 분리하고, 한 작업자로 충분한 작은 작업을 억지로 쪼개지 않는다. 같은 파일을 동시에 수정하지 않도록 독립 worktree 또는 순차 작업으로 배정한다. 디자인 방향이 없으면 작업자가 기존 제품에서 근거를 찾거나 중요한 선택을 질문하게 하고, 불필요한 재디자인은 피한다. Opus를 못 써서 일반 UI를 Builder에 넘기면 이유를 알리고, 같은 시각 품질을 보장한다고 말하지 않는다. UI 완료 근거에는 실제 브라우저에서 확인한 렌더링·반응형·키보드 조작·주요 흐름이 포함되어야 한다.
+Frontend Builder는 새 화면·레이아웃·타이포그래피·모션처럼 시각적 선택이 중요한 작업에 사용한다. API 연결·상태 관리·확정된 디자인의 단순 수정은 Builder가 기본이다. 시각 작업과 기능 작업은 나누는 것이 유익할 때만 분리하고, 한 작업자로 충분한 작은 작업을 억지로 쪼개지 않는다. 같은 파일을 동시에 수정하지 않도록 독립 worktree 또는 순차 작업으로 배정한다. 디자인 방향이 없으면 작업자가 기존 제품에서 근거를 찾거나 중요한 선택을 질문하게 하고, 불필요한 재디자인은 피한다. UI 완료 근거에는 실제 브라우저에서 확인한 렌더링·반응형·키보드 조작·주요 흐름이 포함되어야 한다.
 
 이 배정은 사용자 선호를 반영한 초기 운영 기준이며, Opus가 모든 프론트엔드에서 Sol보다 우수하다는 비교 결과를 뜻하지 않는다. [Anthropic의 Opus 5.5 가이드](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5#frontend-design-defaults)도 구체적인 디자인 방향이 없으면 기본 스타일로 흐른다고 설명한다. 기존 디자인 시스템과 참고 화면을 함께 전달하고 결과로 배정을 조정한다.
 
