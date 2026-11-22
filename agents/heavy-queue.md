@@ -28,6 +28,7 @@ supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS �
 - `reclaim`은 두 자리를 함께 회수한다. `mode` 전환은 검증 자리의 실행·대기도 drain돼야 한다. `pause` 중에는 검증 자리의 신규 등록도 막는다.
 - 역할(`--shared`·`--dedicated`)을 바꿔도 이미 잡은 lease는 원래 자리에 남는다. 그 사이 새 verifier-loop 요청은 다른 자리에 verifier-loop 실행·대기가 남아 있으면 그 자리에서 기다리므로, verifier-loop 실행은 하나로 유지된다. 그래도 전환은 실행 중 검증이 없을 때 하는 것이 단순하다.
 - 역할 파일은 `${XDG_CONFIG_HOME:-$HOME/.config}`에서 찾는다. 호출자가 이 값을 다르게 넘기면 공유를 모른다. 01-software 루프는 `XDG_CONFIG_HOME`을 넘기지 않으므로 공유 기기는 기본 경로(`~/.config`)를 쓴다.
+- `capabilities`의 `verifier-shared-slot`은 설치본이 검증 자리를 안다는 뜻이다. `role status verifier`가 이것과 `mode`로 실제 적용 여부를 판정한다.
 - `status`는 `verifier 역할: 공유|전용` 한 줄을 보인다. round-robin 공유이거나 검증 자리에 줄·lock이 남아 있으면 `검증 자리:` 아래에 대기 줄과 실행 lock을 따로 보인다.
 - 호스트 프로세스 우선순위: 검증 자리를 직접 얻은 holder가 그 `yw-heavy`의 조상 프로세스면 nice를 10으로 올린다.
   - 대상은 `acquire --holder <루프 PID>`이면 루프, `run`이면 그 `yw-heavy`다.
@@ -59,7 +60,7 @@ yw-heavy release --generation GENERATION --token TOKEN --lease LEASE
 `capabilities` stdout은 JSON 한 줄이다:
 
 ```json
-{"protocol":3,"mode":"compat","paused":false,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl"]}
+{"protocol":3,"mode":"compat","paused":false,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl","verifier-shared-slot"]}
 ```
 
 소비자는 `protocol >= 3`, 필요한 capability, `mode == "round-robin"`을 확인한다. compat의 `acquire --json`은 코드 4로 거절한다. 아직 활성화되지 않았을 때 소비자의 기존 경로·fallback 정책은 소비자가 정한다. 이 저장소는 01-software의 helper를 바꾸지 않는다.

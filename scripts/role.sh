@@ -612,11 +612,13 @@ verifier_status() {
   s_ok "$(shared_label "$shared")"
   # 검증 자리는 round-robin에서만 쓴다. 모드는 /tmp에 있어 재시동하면 compat로 돌아간다.
   if [[ "$shared" == 1 ]]; then
-    r="$("$HEAVY_BIN" mode 2>/dev/null)" || r=''
-    if [[ "$r" == round-robin ]]; then
+    r="$("$HEAVY_BIN" capabilities 2>/dev/null)" || r=''
+    if [[ "$r" != *'"verifier-shared-slot"'* ]]; then
+      s_wait "heavy 설치본이 공유 역할을 모름 (설치 보류 또는 구버전: $(pretty "$HEAVY_BIN")) → 참여자가 끝난 뒤 ./bootstrap.sh --only heavy"
+    elif [[ "$r" == *'"mode":"round-robin"'* ]]; then
       s_ok 'heavy 모드: round-robin (검증 자리 사용)'
     else
-      s_wait "heavy 모드: ${r:-확인 불가}. 검증 자리를 쓰지 않아 동시 실행 안 함 → agents/heavy-queue.md 활성화 절차로 round-robin"
+      s_wait "heavy 모드: round-robin 아님. 검증 자리를 쓰지 않아 동시 실행 안 함 → agents/heavy-queue.md 활성화 절차로 round-robin"
     fi
   fi
   for name in $VERIFIER_AGENTS; do

@@ -90,6 +90,7 @@ verifier_guard() {
   esac
 }
 
+# rr_acquire의 첫 등록에서 편집 잠금 아래에서만 부른다.
 # 검증 자리는 round-robin에서만 쓴다. compat 공유는 verifier-loop도 일반 대기열에서 함께 차례를 받는다
 # (두 v2 대기열의 같은 ID 등록과 ID 해제가 어느 자리인지 모호해지는 것을 피한다).
 # 기존 재진입 계약을 먼저 지킨다: 상속한 token의 세대 → 조상 holder → 새 획득은 supervisor로 정한다.
@@ -827,7 +828,7 @@ mode_heal() {
   note "mode-restore from=missing to=round-robin"
 }
 capabilities() {
-  printf '{"protocol":3,"mode":"%s","paused":%s,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl"]}\n' \
+  printf '{"protocol":3,"mode":"%s","paused":%s,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl","verifier-shared-slot"]}\n' \
     "$(mode_read)" "$(if [ -e "$PAUSED" ]; then echo true; else echo false; fi)"
 }
 control() {
@@ -1030,6 +1031,8 @@ rr_acquire() {
     lock_queue || return $?
     if [ "$(mode_read)" != round-robin ]; then unlock_queue; say "round-robin이 꺼져 있습니다"; return 4; fi
     if [ "$registered" = 0 ]; then
+      # 자리 선택과 첫 등록을 같은 편집 잠금 안에서 한다. 다른 요청의 등록·승격과 갈라지지 않는다.
+      use_main; lane_route
       owner="$(owner_read)"
       try_borrow "$owner"; rc=$?
       if [ "$rc" = 0 ]; then unlock_queue; return 0; fi
@@ -1143,7 +1146,7 @@ main() {
   need_task "$1" "$2" "$3" || return
   ID="$1" WORKER="$2" SUP="$3"
   shift 3
-  case "$cmd" in acquire | run) verifier_guard || return $?; lane_route ;; esac
+  case "$cmd" in acquire | run) verifier_guard || return $? ;; esac
   MYSTART="$(proc_start $$)" || MYSTART=-
   case "$cmd" in
     enqueue)

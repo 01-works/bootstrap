@@ -505,8 +505,9 @@ test('--shared: 상태 파일에 기록해 재적용·apply-active에서 유지,
   // role status가 읽는 설치본 대역: yw-heavy mode의 출력만 흉내 낸다.
   const heavyBin = join(f.home, '.local/bin/yw-heavy'), heavyMode = join(f.mock, 'heavy-mode');
   mkdirSync(join(heavyBin, '..'), { recursive: true });
-  writeFileSync(heavyBin, `#!/bin/sh\n[ "$1" = mode ] && [ $# = 1 ] || exit 99\ncat ${JSON.stringify(heavyMode)}\n`, { mode: 0o755 });
-  writeFileSync(heavyMode, 'round-robin\n');
+  const caps = (mode, extra = ',"verifier-shared-slot"') => `{"protocol":3,"mode":"${mode}","paused":false,"capabilities":["lease-json"${extra}]}\n`;
+  writeFileSync(heavyBin, `#!/bin/sh\n[ "$1" = capabilities ] && [ $# = 1 ] || exit 99\ncat ${JSON.stringify(heavyMode)}\n`, { mode: 0o755 });
+  writeFileSync(heavyMode, caps('round-robin'));
 
   let result = f.role('add', 'verifier', '--ssh-key', f.keyFile, '--shared', '--dry-run');
   assert.equal(result.status, 0, out(result));
@@ -538,11 +539,15 @@ test('--shared: 상태 파일에 기록해 재적용·apply-active에서 유지,
   assert.equal(result.status, 0, out(result));
   assert.match(result.stdout, /heavy 공유: 다른 요청도 허용/);
   assert.match(result.stdout, /heavy 모드: round-robin/);
-  writeFileSync(heavyMode, 'compat\n');
+  writeFileSync(heavyMode, caps('compat'));
   result = f.role('status', 'verifier');
   assert.equal(result.status, 2, out(result));
-  assert.match(result.stderr, /heavy 모드: compat\. 검증 자리를 쓰지 않아/);
-  writeFileSync(heavyMode, 'round-robin\n');
+  assert.match(result.stderr, /heavy 모드: round-robin 아님/);
+  writeFileSync(heavyMode, caps('round-robin', ''));
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 2, out(result));
+  assert.match(result.stderr, /heavy 설치본이 공유 역할을 모름/);
+  writeFileSync(heavyMode, caps('round-robin'));
   for (const name of ['agent-chrome', 'paseo', 'paseo-upgrade']) assert.match(result.stdout, new RegExp(`자동 시작 유지: ${name}`));
   writeFileSync(join(f.mock, 'agents-exit-check-paseo'), '1');
   result = f.role('status', 'verifier');
