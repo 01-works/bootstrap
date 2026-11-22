@@ -4,11 +4,42 @@
 
 ## verifier 역할 기기
 
-`${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier` 파일이 있으면 compat·round-robin 모두 `acquire`·`run`의 supervisor가 정확히 `verifier-loop`일 때만 허용한다. 기존 verifier 호출은 `acquire VERIFIER-01-software nightly-local verifier-loop --holder <루프 PID>`이며, 호출을 바꿀 필요가 없다. 역할이 꺼져 있으면 기존 동작 그대로다. 조회·해제·제어 명령에는 이 제한을 적용하지 않는다.
+`${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier` 파일이 있고 전용 역할이면(아래 공유 역할이 아니면) compat·round-robin 모두 `acquire`·`run`의 supervisor가 정확히 `verifier-loop`일 때만 허용한다. 기존 verifier 호출은 `acquire VERIFIER-01-software nightly-local verifier-loop --holder <루프 PID>`이며, 호출을 바꿀 필요가 없다. 역할이 꺼져 있으면 기존 동작 그대로다. 조회·해제·제어 명령에는 이 제한을 적용하지 않는다.
 
 다른 요청은 대기열에 넣기 전에 코드 **4**로 거절한다. 예외 실행은 `YW_HEAVY_VERIFIER_OVERRIDE_REASON='<사유>' yw-heavy run ...`처럼 명시한다. 제어 문자를 제거한 뒤 비어 있거나 공백뿐인 사유는 거절한다. 사유는 실행 lock의 `owner.txt`에 `verifierOverrideReason`으로, 제출 시 진단 로그(`$YW_HEAVY_LOG`)에도 남긴다. 비밀값을 쓰지 않는다.
 
 supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS 사용자의 식별자 사칭이나 구버전 도구의 직접 lock 사용을 막는 보안 경계가 아니다.
+
+### 공유 역할 (`role add verifier --shared`)
+
+작업 기기가 검증도 맡을 때 쓴다. 역할 상태 파일에 `shared=1` 줄이 있으면 공유 역할이다. 이 줄이 없거나 파일을 읽지 못하면 위의 전용 동작(코드 4 거절)을 그대로 쓴다.
+
+- 다른 요청도 사유 없이 허용하고 일반 대기열에서 기존처럼 차례를 받는다.
+- **round-robin**이면 supervisor가 `verifier-loop`인 새 획득은 **검증 자리**를 쓴다. 그래서 일반 작업 1개와 검증 1개가 동시에 실행된다.
+  - 검증 자리는 일반 자리와 같은 v3 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 대기열은 `$YW_HEAVY_QUEUE.verifier`, 실행 lock은 `$YW_HEAVY_EXEC_LOCK.verifier`, 순환 파일은 `$YW_HEAVY_QUEUE.verifier.rotation`이다. 편집 잠금·기록·이벤트·모드·제출 중지 파일은 일반 자리와 같이 쓴다.
+  - 실행 슬롯은 1개라 검증 요청이 둘이면 나중 요청은 검증 자리에서 기다린다.
+- **compat**이면 검증 자리를 쓰지 않는다. verifier-loop도 일반 대기열에서 함께 차례를 받으므로 동시에 돌지 않는다. 두 v2 대기열에 같은 ID가 등록되면 `release <ID>`가 어느 자리를 풀지 모호해지므로 지원하지 않는다. 모드 파일은 `/tmp`에 있어 재시동하면 compat로 돌아간다. 공유 기기는 재시동이나 재로그인 뒤 [활성화 절차](#활성화와-롤백)로 round-robin을 다시 켠다. `role status verifier`는 공유 역할인데 round-robin이 아니면 수동 작업 대기(2)로 알린다.
+- 자리 선택은 기존 재진입 계약을 먼저 따른다.
+  1. 상속한 token(`YW_HEAVY_GENERATION`·`YW_HEAVY_TOKEN`)은 세대가 같은 자리를 쓴다.
+  2. token이 없으면 호출자가 그 자리 holder의 자손인 자리를 쓴다.
+  3. 둘 다 아니면 supervisor로 정한다.
+
+  그래서 검증 holder의 자식은 감독자가 달라도 검증 자리를 빌리고, 일반 holder의 자식은 `verifier-loop`여도 일반 자리를 빌린다. `release --generation …`도 세대로 자리를 찾으므로 lease를 잡은 뒤 역할을 바꿔도 풀 수 있다.
+- `reclaim`은 두 자리를 함께 회수한다. `mode` 전환은 검증 자리의 실행·대기도 drain돼야 한다. `pause` 중에는 검증 자리의 신규 등록도 막는다.
+- 역할(`--shared`·`--dedicated`)을 바꿔도 이미 잡은 lease는 원래 자리에 남는다. 그 사이 새 verifier-loop 요청은 다른 자리에 verifier-loop 실행·대기가 남아 있으면 그 자리에서 기다리므로, verifier-loop 실행은 하나로 유지된다. 그래도 전환은 실행 중 검증이 없을 때 하는 것이 단순하다.
+- 역할 파일은 `${XDG_CONFIG_HOME:-$HOME/.config}`에서 찾는다. 호출자가 이 값을 다르게 넘기면 공유를 모른다. 01-software 루프는 `XDG_CONFIG_HOME`을 넘기지 않으므로 공유 기기는 기본 경로(`~/.config`)를 쓴다.
+- `capabilities`의 `verifier-shared-slot`은 설치본이 검증 자리를 안다는 뜻이다. `role status verifier`가 이것과 `mode`로 실제 적용 여부를 판정한다.
+- `status`는 `verifier 역할: 공유|전용` 한 줄을 보인다. round-robin 공유이거나 검증 자리에 줄·lock이 남아 있으면 `검증 자리:` 아래에 대기 줄과 실행 lock을 따로 보인다.
+- 호스트 프로세스 우선순위: 검증 자리를 직접 얻은 holder가 그 `yw-heavy`의 조상 프로세스면 nice를 10으로 올린다.
+  - 대상은 `acquire --holder <루프 PID>`이면 루프, `run`이면 그 `yw-heavy`다.
+  - nice는 그 뒤에 생기는 자식이 상속하므로 검증 명령과 호스트 node가 작업 쪽보다 낮은 우선순위로 돈다. 상한이 아니라 우선순위라 남는 CPU는 그대로 쓰고, 기기가 한가할 때 검증이 느려지지 않는다.
+  - 이미 10 이상이면 그대로 두고, 빌린 lease는 바꾸지 않는다.
+  - 낮춘 nice는 root 없이 되돌릴 수 없지만, 01-software 루프는 launchd가 회차마다 새로 띄우는 프로세스라 다음 회차에는 원래 값으로 시작한다.
+  - Colima VM은 루프의 자식이 아니라 영향을 받지 않는다. VM의 CPU 상한은 `colima.yaml`의 `cpu:`다.
+- `taskpolicy -b`(darwin background)는 쓰지 않는다. CPU뿐 아니라 디스크 I/O도 낮은 등급으로 묶고 Apple Silicon에서 효율 코어로 보내서, 기기가 한가해도 95~98분 걸리는 검증이 크게 늘어날 수 있다.
+- 메모리는 새로 막지 않는다. 01-software 검증(`nightly-local-check`)은 시작할 때와 lane마다 여유 메모리 35% 이상·swap 8 GiB 미만을 확인하고, 모자라면 최대 3시간 기다리거나 미룬다.
+
+01-software의 heavy lock(`scripts/heavy-machine-lock.mjs`)은 round-robin에서 작업과 검증을 모두 yw-heavy에 위임하므로, 바꾸지 않아도 공유 역할에서 동시에 돈다. compat에서는 자기 저장소 lock 하나를 쓰고, 역할 파일이 있으면 verifier-loop가 아닌 요청을 스스로 거절한다.
 
 ## 모드와 전환 원칙
 
@@ -29,7 +60,7 @@ yw-heavy release --generation GENERATION --token TOKEN --lease LEASE
 `capabilities` stdout은 JSON 한 줄이다:
 
 ```json
-{"protocol":3,"mode":"compat","paused":false,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl"]}
+{"protocol":3,"mode":"compat","paused":false,"capabilities":["lease-json","generation-release","token-reentry","ancestor-reentry","supervisor-round-robin","events-jsonl","verifier-shared-slot"]}
 ```
 
 소비자는 `protocol >= 3`, 필요한 capability, `mode == "round-robin"`을 확인한다. compat의 `acquire --json`은 코드 4로 거절한다. 아직 활성화되지 않았을 때 소비자의 기존 경로·fallback 정책은 소비자가 정한다. 이 저장소는 01-software의 helper를 바꾸지 않는다.
@@ -83,7 +114,7 @@ CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효�
 
 1. 모든 감독 세션·소비자와 신규 제출 중지를 조율한다. `yw-heavy pause`로 새 구현의 신규 등록을 막는다. 이미 등록된 대기자는 계속 진행하고 기존 차례의 중첩 획득은 허용한다. 구버전 프로세스는 pause를 모르므로 제출 자체를 별도로 멈춰야 한다.
 2. `status`와 소유 세션을 대조해 실행·대기자를 drain한다. 끝난 v3 holder·대기자만 남아 있으면 `yw-heavy reclaim`으로 확정 사망 항목만 회수한다(pause 중에도 가능). 생성 중 종료돼 owner가 없거나 0바이트인 lock은 구형식 줄이 없고 기본 60초 유예가 지난 뒤 회수한다. 실제 삭제 시도가 실패하면 코드 1을 반환한다. 조회 실패 등으로 생존을 판단할 수 없거나 no-reclaim 표지가 있으면 보존한다. 이전 2줄 상한 밖에서 polling하던 v2 프로세스, 구형식 shell·Python 구현도 끝났는지 확인한다. 아직 줄을 쓰지 않은 구버전 프로세스는 상태 파일만으로 검출할 수 없다. `pgrep -f 'yw-heavy|cc-yw-heavy|heavy.sh|R1-heavy'`(PID만 출력, 이름은 `ps -o pid=,ucomm= -p <PID>`)는 후보 조사용이며 소유자와 확인한다. 살아 있거나 판단 불가한 항목을 지우지 않는다.
-3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다. v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
+3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다(검증 자리 포함). v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
 4. `capabilities`·`status`에서 모드를 확인하고 `yw-heavy resume`으로 새 제출을 연다. 두 번의 인계와 이벤트 기록을 확인한다.
 
 모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다.
@@ -95,7 +126,7 @@ macOS `com.apple.tmp_cleaner`는 매일 로컬 0시에 atime·mtime·ctime이 �
 - 갱신은 잠금을 잡는 호출과 실행 중인 `run`만 한다. holder로 `acquire`한 차례(도구 호출을 넘기는 수동 차례·nightly)가 대기자 없이 3일 넘게 이어지고 그동안 다른 호출이 없으면 `owner.txt`와 모드 파일이 지워질 수 있다.
 - 잠금을 기다리던 프로세스는 잠금을 얻은 뒤 `.flock` 경로의 inode가 자기 FD와 같은지 확인하고, 다르면 다시 연다. 그래도 확인을 마친 직후 정리 작업이 오래된 `.flock`을 지우면 다음 프로세스가 새 inode에서 잠가 편집이 겹칠 수 있다. 이 설치본에서는 3일 넘게 아무도 잠그지 않은 `.flock`만 정리 대상이다. 따라서 대기열이 3일 넘게 유휴였다가 0시 정리 작업과 첫 호출(그 호출의 잠금·갱신)이 겹치는 경우와, 갱신이 없는 이전 설치본에서 바꾼 직후에 이런 겹침이 생길 수 있다. 이전 설치본은 inode 확인도 하지 않는다.
 
-롤백은 먼저 새 구현의 compat로 한다. 신규 제출 조율 → `pause` → v3 세대·대기자 drain → `mode compat` → `capabilities` 확인 → `resume`. 바이너리까지 구버전으로 내릴 때는 compat 전환 후 다시 제출을 중지하고, 실행 lock·대기열이 비어 있고 v3 실행 프로세스가 남지 않았으며 구버전이 읽을 상태 형식인지 확인한 뒤 원자적으로 교체한다. 활성 상태에서 파일만 되돌리거나 실행 lock을 지우지 않는다.
+롤백은 먼저 새 구현의 compat로 한다. 신규 제출 조율 → `pause` → v3 세대·대기자 drain → `mode compat` → `capabilities` 확인 → `resume`. 바이너리까지 구버전으로 내릴 때는 compat 전환 후 다시 제출을 중지하고, 실행 lock·대기열(검증 자리 포함)이 비어 있고 v3 실행 프로세스가 남지 않았으며 구버전이 읽을 상태 형식인지 확인한 뒤 원자적으로 교체한다. 활성 상태에서 파일만 되돌리거나 실행 lock을 지우지 않는다.
 
 ## 호환 모드 사용법
 

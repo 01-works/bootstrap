@@ -11,8 +11,12 @@ miss() { fail "$*"; failed=$((failed + 1)); }
 wait_for_user() { warn "$*"; pending=$((pending + 1)); }
 
 # verifier 역할(scripts/role.sh)을 켠 기기는 에이전트 Chrome·Paseo 데몬·Paseo 업그레이드를 자동 시작하지 않는다.
-verifier=0
-[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" ]] && verifier=1
+# 공유(--shared, 상태 파일 shared=1)는 작업 기기를 겸하므로 자동 시작을 일반 기기처럼 검사한다.
+verifier=0 agents_off=0
+if [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" ]]; then
+  verifier=1
+  grep -qx 'shared=1' "${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" 2>/dev/null || agents_off=1
+fi
 # 역할이 끈 자동 시작이 실제로 꺼졌는지: verifier_off <launch-agents 대상> <표시 이름>
 verifier_off() {
   local r=0
@@ -117,7 +121,7 @@ if has node; then
       warn "Paseo 기본 스킬 설치 필요 (./bootstrap.sh --only paseo)"
     fi
   fi
-  if [[ "$verifier" == 1 ]]; then
+  if [[ "$agents_off" == 1 ]]; then
     verifier_off paseo 'Paseo 데몬'
     verifier_off paseo-upgrade 'Paseo 새 버전 확인'
   elif ! is_laptop; then
@@ -147,7 +151,7 @@ if has node && node "$BOOTSTRAP_ROOT/scripts/browser-use-setup.mjs" --check; the
 else
   miss "Browser Use 설치/스킬 확인 필요 (./bootstrap.sh --only homebrew,browser)"
 fi
-if has node && [[ "$verifier" == 1 ]]; then
+if has node && [[ "$agents_off" == 1 ]]; then
   verifier_off agent-chrome '에이전트 Chrome'
 elif has node; then
   if node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only agent-chrome "$(device_flag)"; then

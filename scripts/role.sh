@@ -3,6 +3,7 @@
 # 모든 기기가 같은 세팅이다. 일부 기기에만 필요한 설정은 역할로 켠다 (README "기기 역할"). 지금은 verifier 하나다.
 # verifier: 무거운 검증을 맡는 기기. colima 메모리·로그인 자동 시작을 정하고, 에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작을 끄고,
 #   로그 디렉터리를 만들고, 그 로그만 읽는 SSH 키(강제 명령 verifier-logs)를 등록한다.
+#   --shared: 작업 기기를 겸한다. 자동 시작을 끄지 않고, yw-heavy가 verifier-loop에 별도 검증 자리를 준다 (상태 파일 shared=1).
 # 켠 역할은 상태 파일(~/.config/bootstrap/roles/<역할>)로 남는다. roles 단계가 저장된 값으로 다시 맞춘다(apply-active).
 # 특정 프로젝트를 알지 않는다. 로그 디렉터리 경로(~/.local/state/verifier/logs)만 로그를 남기는 쪽과의 약속이다.
 # 종료 코드: 0 준비 완료, 2 수동 작업 대기, 1 실패·미설정.
@@ -13,8 +14,9 @@ export BOOTSTRAP_ROOT
 usage() {
   cat <<'EOF'
 사용법:
-  ./bootstrap.sh role add verifier [--ssh-key <공개키 파일>] [--colima-memory <GiB>] [--dry-run]
+  ./bootstrap.sh role add verifier [--ssh-key <공개키 파일>] [--colima-memory <GiB>] [--shared|--dedicated] [--dry-run]
                              역할 켜기. 처음에는 --ssh-key가 필요하다 (로그를 읽을 기기의 공개키)
+                             --shared: 작업 기기 겸용 (heavy 검증 자리 분리, 자동 시작 유지). --dedicated: 전용으로 되돌림 (기본)
   ./bootstrap.sh role status [verifier]
                              역할 상태 (0 준비 완료, 2 수동 작업 대기, 1 실패·꺼짐)
   ./bootstrap.sh role remove verifier [--dry-run]
@@ -48,6 +50,7 @@ paths() {
   LOG_DIR="$HOME/.local/state/verifier/logs"
   LOGS_SRC="$BOOTSTRAP_ROOT/scripts/verifier-logs.sh"
   LOGS_BIN="$HOME/.local/bin/verifier-logs"
+  HEAVY_BIN="$HOME/.local/bin/yw-heavy"
   SSH_DIR="$HOME/.ssh"
   AUTH_KEYS="$SSH_DIR/authorized_keys"
 }
@@ -353,9 +356,11 @@ check_paths() {
 # launch-agents.mjs로 세 등록을 맞춘다. 상태 파일이 있으면 끄고, 없으면 이 기기 종류의 원래 등록으로 되돌린다.
 # dry-run은 상태 파일을 아직 바꾸지 않았으므로 바꾼 뒤의 역할을 넘긴다: agents <verifier|none>
 # 수동 작업 대기(2)로 끝난 대상은 AGENTS_PENDING에 남는다.
+# 공유 역할은 두 번째 인자로 --no-restart를 넘긴다. 재적용(자동 갱신의 apply-active 포함)이 실행 중인 Paseo 데몬·Chrome의
+# 바뀐 등록을 내렸다 올리지 않게 한다(감독 세션이 끊긴다). 그때는 대기(2)로 알리고 paseo·browser 단계의 확인에 맡긴다.
 agents() {
-  local name r st=0 extra=''
-  [[ "$DRY_RUN" == 1 ]] && extra="--dry-run --roles $1"
+  local name r st=0 extra="${2:-}"
+  [[ "$DRY_RUN" == 1 ]] && extra="$extra --dry-run --roles $1"
   AGENTS_PENDING=''
   for name in $VERIFIER_AGENTS; do
     r=0
@@ -371,19 +376,26 @@ agents() {
   return "$st"
 }
 
+shared_label() {
+  if [[ "$1" == 1 ]]; then printf 'heavy 공유: 다른 요청도 허용, round-robin이면 verifier-loop는 검증 자리'
+  else printf 'heavy 전용: verifier-loop만 허용'; fi
+}
+
 verifier_state() {
   printf "$@"
   [[ ! -f "$STATE_FILE" ]] || awk '/^clock_override=/' "$STATE_FILE"
 }
 
 verifier_add() {
-  local key_file='' memory='' key saved current before added line others service owner desired r st=0 first=0
+  local key_file='' memory='' shared='' key saved current before added line others service owner desired r st=0 first=0 fmt
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --ssh-key) [[ -n "${2:-}" ]] || { usage; fail '--ssh-key 다음에 공개키 파일이 필요합니다'; return 1; }; key_file="$2"; shift ;;
       --ssh-key=*) key_file="${1#*=}" ;;
       --colima-memory) [[ -n "${2:-}" ]] || { usage; fail '--colima-memory 다음에 GiB 값이 필요합니다'; return 1; }; memory="$2"; shift ;;
       --colima-memory=*) memory="${1#*=}" ;;
+      --shared) shared=1 ;;
+      --dedicated) shared=0 ;;
       --dry-run) DRY_RUN=1 ;;
       *) usage; fail "알 수 없는 인자: $1"; return 1 ;;
     esac
@@ -408,6 +420,9 @@ verifier_add() {
   memory="${memory:-$(state_get colima_memory)}"
   memory="${memory:-$VERIFIER_DEFAULT_MEMORY}"
   [[ "$memory" =~ ^[1-9][0-9]*$ ]] || { fail "--colima-memory는 GiB 단위 양의 정수여야 합니다: $memory"; return 1; }
+  # 선택지를 주지 않으면 저장된 값을 쓴다 (apply-active 재적용).
+  shared="${shared:-$(state_get shared)}"
+  [[ "$shared" == 1 ]] || shared=0
   check_paths || return 1
   if ! others="$(other_key_lines "$key")"; then
     fail "$(pretty "$AUTH_KEYS")를 읽지 못해 고치지 않습니다"
@@ -439,14 +454,15 @@ verifier_add() {
   added="${added:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   if changing; then
     mkdir -p "$ROLE_DIR" || { fail "역할 상태 디렉터리 생성 실패: $(pretty "$ROLE_DIR")"; return 1; }
-    desired="$(verifier_state 'colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\ncolima_service=%s\n' \
-      "$memory" "$before" "$key" "$added" "$owner")" || { fail "역할 상태 내용 생성 실패: $(pretty "$STATE_FILE")"; return 1; }
+    fmt='colima_memory=%s\ncolima_memory_before=%s\nssh_key_line=%s\nadded_at=%s\ncolima_service=%s\n'
+    [[ "$shared" == 0 ]] || fmt="${fmt}shared=1\n"
+    desired="$(verifier_state "$fmt" "$memory" "$before" "$key" "$added" "$owner")" || { fail "역할 상태 내용 생성 실패: $(pretty "$STATE_FILE")"; return 1; }
     if [[ ! -f "$STATE_FILE" || "$(cat "$STATE_FILE")" != "$desired" || "$(perm "$STATE_FILE")" != 600 ]]; then
       write_atomic "$STATE_FILE" 600 printf '%s\n' "$desired" || { fail "상태 파일을 쓰지 못했습니다: $(pretty "$STATE_FILE")"; return 1; }
     fi
-    ok "verifier 켬 ($(pretty "$STATE_FILE"))"
+    ok "verifier 켬 ($(pretty "$STATE_FILE"), $(shared_label "$shared"))"
   else
-    dry "상태 파일 $(pretty "$STATE_FILE") (colima_memory=$memory, colima_service=$owner)"
+    dry "상태 파일 $(pretty "$STATE_FILE") (colima_memory=$memory, colima_service=$owner, $(shared_label "$shared"))"
   fi
 
   # 1. colima 메모리. 인스턴스 설정이 없으면 템플릿 대신 사람에게 맡긴다. colima 0.10은 템플릿을 그대로 쓰므로
@@ -478,15 +494,25 @@ verifier_add() {
   clock_add || r=$?
   case "$r" in 0) ;; 2) [[ "$st" == 1 ]] || st=2 ;; *) st=1 ;; esac
 
-  # 2. 자동 시작 끄기. 이미 떠 있는 Paseo 데몬은 끄지 않는다(이 명령을 Paseo 세션에서 실행 중일 수 있다).
+  # 2. 자동 시작. 전용이면 끈다. 이미 떠 있는 Paseo 데몬은 끄지 않는다(이 명령을 Paseo 세션에서 실행 중일 수 있다).
+  #    공유면 작업 기기와 같이 이 기기 종류의 원래 등록을 유지한다. launch-agents.mjs가 상태 파일의 shared=1을 본다.
   r=0
-  agents verifier || r=$?
-  case "$r" in
-    0) ok '에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작 꺼짐' ;;
-    2) warn "실행 중이라 등록이 남은 자동 시작: ${AGENTS_PENDING}. 끝낸 뒤 다시 실행하거나 다음 로그인부터 꺼집니다"; [[ "$st" == 1 ]] || st=2 ;;
-    *) fail '자동 시작을 끄지 못했습니다 (위 메시지)'; st=1 ;;
-  esac
-  [[ "$first" == 1 ]] && info '이미 떠 있는 Paseo 데몬은 그대로 둡니다. 이 기기에서 쓰지 않으면 paseo daemon stop'
+  if [[ "$shared" == 1 ]]; then
+    agents none --no-restart || r=$?
+    case "$r" in
+      0) ok '에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작 유지 (--shared)' ;;
+      2) warn "실행 중이라 바뀐 등록을 다시 올리지 않은 자동 시작: ${AGENTS_PENDING} → 에이전트가 끝난 뒤 터미널에서 ./bootstrap.sh --only browser,paseo"; [[ "$st" == 1 ]] || st=2 ;;
+      *) fail '자동 시작을 맞추지 못했습니다 (위 메시지)'; st=1 ;;
+    esac
+  else
+    agents verifier || r=$?
+    case "$r" in
+      0) ok '에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작 꺼짐' ;;
+      2) warn "실행 중이라 등록이 남은 자동 시작: ${AGENTS_PENDING}. 끝낸 뒤 다시 실행하거나 다음 로그인부터 꺼집니다"; [[ "$st" == 1 ]] || st=2 ;;
+      *) fail '자동 시작을 끄지 못했습니다 (위 메시지)'; st=1 ;;
+    esac
+    [[ "$first" == 1 ]] && info '이미 떠 있는 Paseo 데몬은 그대로 둡니다. 이 기기에서 쓰지 않으면 paseo daemon stop'
+  fi
 
   # 3. 로그 디렉터리
   if ! changing; then
@@ -536,7 +562,7 @@ verifier_add() {
 }
 
 verifier_status() {
-  local bad=0 wait=0 memory current key line others name service owner r
+  local bad=0 wait=0 memory current key line others name service owner r shared
   s_ok() { ok "$*"; }
   s_bad() { fail "$*"; bad=1; }
   s_wait() { warn "$*"; wait=1; }
@@ -582,9 +608,29 @@ verifier_status() {
 
   clock_status
 
+  shared="$(state_get shared)"
+  s_ok "$(shared_label "$shared")"
+  # 검증 자리는 round-robin에서만 쓴다. 모드는 /tmp에 있어 재시동하면 compat로 돌아간다.
+  if [[ "$shared" == 1 ]]; then
+    r="$("$HEAVY_BIN" capabilities 2>/dev/null)" || r=''
+    if [[ "$r" != *'"verifier-shared-slot"'* ]]; then
+      s_wait "heavy 설치본이 공유 역할을 모름 (설치 보류 또는 구버전: $(pretty "$HEAVY_BIN")) → 참여자가 끝난 뒤 ./bootstrap.sh --only heavy"
+    elif [[ "$r" == *'"mode":"round-robin"'* ]]; then
+      s_ok 'heavy 모드: round-robin (검증 자리 사용)'
+    else
+      s_wait "heavy 모드: round-robin 아님. 검증 자리를 쓰지 않아 동시 실행 안 함 → agents/heavy-queue.md 활성화 절차로 round-robin"
+    fi
+  fi
   for name in $VERIFIER_AGENTS; do
     r=0
     node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only "$name" "$(device_flag)" >/dev/null 2>&1 || r=$?
+    if [[ "$shared" == 1 ]]; then
+      case "$r" in
+        0) s_ok "자동 시작 유지: $name (--shared)" ;;
+        *) s_bad "자동 시작 확인 필요: $name (--shared는 유지) → ./bootstrap.sh role add verifier" ;;
+      esac
+      continue
+    fi
     case "$r" in
       0) s_ok "자동 시작 꺼짐: $name" ;;
       2) s_wait "자동 시작: $name 실행 중이라 등록이 남음 (끝내거나 다음 로그인부터 꺼짐)" ;;

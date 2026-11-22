@@ -491,6 +491,96 @@ test('dry-run은 아무것도 바꾸지 않는다', t => {
     '상태 파일이 남아 있어도 끈 뒤(자동 시작 복구)로 미리 본다');
 });
 
+test('--shared: 상태 파일에 기록해 재적용·apply-active에서 유지, 자동 시작 유지, heavy 일반 요청 허용; --dedicated·remove로 기존 동작', t => {
+  const f = sandbox(t);
+  const heavyEnv = { ...f.env,
+    YW_HEAVY_QUEUE: join(f.root, 'q'), YW_HEAVY_EXEC_LOCK: join(f.root, 'x'),
+    YW_HEAVY_EDIT_LOCK: join(f.root, 'edit'), YW_HEAVY_FLOCK: join(f.root, 'flock'),
+    YW_HEAVY_LOG: join(f.root, 'heavy-log'), YW_HEAVY_NO_RECLAIM: join(f.root, 'no-reclaim'),
+    YW_HEAVY_EVENTS: join(f.root, 'events'), YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '',
+  };
+  const heavy = () => spawnSync('/bin/bash', [join(repo, 'scripts/yw-heavy.sh'), 'run', 'ROLE-CHECK', 'w', 's', '--', 'true'],
+    { env: heavyEnv, encoding: 'utf8' });
+  const agentsOf = suffix => ['agent-chrome', 'paseo', 'paseo-upgrade'].map(name => `--only ${name} --desktop${suffix}`);
+  // role status가 읽는 설치본 대역: yw-heavy mode의 출력만 흉내 낸다.
+  const heavyBin = join(f.home, '.local/bin/yw-heavy'), heavyMode = join(f.mock, 'heavy-mode');
+  mkdirSync(join(heavyBin, '..'), { recursive: true });
+  const caps = (mode, extra = ',"verifier-shared-slot"') => `{"protocol":3,"mode":"${mode}","paused":false,"capabilities":["lease-json"${extra}]}\n`;
+  writeFileSync(heavyBin, `#!/bin/sh\n[ "$1" = capabilities ] && [ $# = 1 ] || exit 99\ncat ${JSON.stringify(heavyMode)}\n`, { mode: 0o755 });
+  writeFileSync(heavyMode, caps('round-robin'));
+
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile, '--shared', '--dry-run');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(existsSync(f.state), false);
+  assert.deepEqual(f.agents(), agentsOf(' --no-restart --dry-run --roles none'), '공유는 켠 뒤에도 자동 시작을 유지하는 것으로 미리 본다');
+
+  result = f.role('add', 'verifier', '--ssh-key', f.keyFile, '--shared');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, '1');
+  assert.match(result.stdout, /자동 시작 유지 \(--shared\)/);
+  assert.doesNotMatch(out(result), /paseo daemon stop/);
+  assert.deepEqual(f.agents(), agentsOf(' --no-restart'), 'launch-agents.mjs가 상태 파일의 shared=1을 보고 유지한다. 실행 중 등록은 내리지 않는다');
+  result = heavy(); assert.equal(result.status, 0, out(result));
+  writeFileSync(join(f.mock, 'agents-exit-paseo'), '2');
+  result = f.role('apply-active');
+  assert.equal(result.status, 2, out(result));
+  assert.match(result.stderr, /바뀐 등록을 다시 올리지 않은 자동 시작: paseo/);
+  rmSync(join(f.mock, 'agents-exit-paseo'));
+  f.agents();
+
+  const snapshot = tree(f.home);
+  for (const args of [['add', 'verifier'], ['add', 'verifier', '--shared'], ['apply-active']]) {
+    result = f.role(...args);
+    assert.equal(result.status, 0, out(result));
+    assert.deepEqual(tree(f.home), snapshot, `${args.join(' ')}: 저장된 값으로 같은 결과`);
+    assert.deepEqual(f.agents(), agentsOf(' --no-restart'));
+  }
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.match(result.stdout, /heavy 공유: 다른 요청도 허용/);
+  assert.match(result.stdout, /heavy 모드: round-robin/);
+  writeFileSync(heavyMode, caps('compat'));
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 2, out(result));
+  assert.match(result.stderr, /heavy 모드: round-robin 아님/);
+  writeFileSync(heavyMode, caps('round-robin', ''));
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 2, out(result));
+  assert.match(result.stderr, /heavy 설치본이 공유 역할을 모름/);
+  writeFileSync(heavyMode, caps('round-robin'));
+  for (const name of ['agent-chrome', 'paseo', 'paseo-upgrade']) assert.match(result.stdout, new RegExp(`자동 시작 유지: ${name}`));
+  writeFileSync(join(f.mock, 'agents-exit-check-paseo'), '1');
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /자동 시작 확인 필요: paseo/);
+  rmSync(join(f.mock, 'agents-exit-check-paseo'));
+  f.agents();
+
+  result = f.role('add', 'verifier', '--dedicated', '--dry-run');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, '1', 'dry-run은 바꾸지 않는다');
+  assert.deepEqual(f.agents(), agentsOf(' --dry-run --roles verifier'));
+  result = f.role('add', 'verifier', '--dedicated');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, undefined);
+  assert.match(result.stdout, /자동 시작 꺼짐/);
+  result = f.role('status', 'verifier');
+  assert.match(result.stdout, /heavy 전용: verifier-loop만 허용/);
+  assert.doesNotMatch(out(result), /heavy 모드/, '전용은 모드를 보지 않는다');
+  result = heavy(); assert.equal(result.status, 4, out(result));
+
+  assert.equal(f.role('add', 'verifier', '--shared').status, 0);
+  result = heavy(); assert.equal(result.status, 0, out(result));
+  f.agents();
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.equal(existsSync(f.state), false);
+  assert.deepEqual(f.agents(), agentsOf(''), '끄면 기기 종류의 원래 자동 시작으로');
+  result = heavy(); assert.equal(result.status, 0, out(result));
+  result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, undefined, '다시 켜면 기본은 전용');
+});
+
 test('apply-active: 켠 역할이 없으면 아무것도 하지 않고, 있으면 저장된 값으로 다시 맞춘다', t => {
   const f = sandbox(t);
   const before = tree(f.home);

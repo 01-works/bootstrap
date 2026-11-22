@@ -113,9 +113,17 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 
 이 역할이 켜져 있으면 `yw-heavy acquire|run`은 감독자 식별자가 `verifier-loop`인 요청만 허용한다. 다른 요청은 사유가 있는 `YW_HEAVY_VERIFIER_OVERRIDE_REASON` 없이는 코드 4로 거절한다. 예외 사유는 실행 owner와 진단 로그에 남는다([공용 heavy 대기열](agents/heavy-queue.md#verifier-역할-기기)).
 
+작업 기기가 검증도 맡으면 `--shared`로 켠다. 상태 파일에 `shared=1`을 기록하고, 다시 적용할 때도 저장된 값을 쓴다. `--dedicated`로 전용으로 되돌린다. 공유 역할은 두 가지가 다르다.
+
+- heavy: 다른 요청도 거절하지 않고 일반 대기열에서 차례를 받는다. round-robin이면 `verifier-loop` 요청은 일반 대기열과 분리된 검증 자리 1개를 써서, 일반 작업 1개와 검증 1개가 동시에 돈다. 검증 holder의 nice는 10으로 올린다. compat이면 검증 자리 없이 함께 차례를 받는다. 모드는 재시동하면 compat로 돌아가므로 다시 켠다([공유 역할](agents/heavy-queue.md#공유-역할-role-add-verifier---shared)).
+- 자동 시작: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 끄지 않고 이 기기 종류의 원래 등록을 유지한다. 작업 기기의 에이전트가 이 기기에서 Paseo와 브라우저 작업을 계속 쓰기 때문이다. 재적용은 실행 중인 등록을 내렸다 올리지 않는다(감독 세션 보호). 내용이 바뀌었으면 수동 작업 대기로 알리고 paseo·browser 단계에 맡긴다.
+
+메모리는 기존 `--colima-memory`로 정한다. VM은 작업과 검증이 같이 쓰므로 `max(지금 값, 6)` 이상을 준다. 선택지 없이 처음 켜면 기본 6 GiB로 줄일 수 있다. 검증 피크는 VM 약 6 GiB, 호스트 node 최대 약 6 GiB다. 01-software 검증은 VM CPU 4개를 요구하는데 role은 `cpu:`를 바꾸지 않으므로 직접 확인한다.
+
 ```sh
 ./bootstrap.sh role add verifier --ssh-key <공개키 파일>   # 처음 한 번. 로그를 읽을 기기의 공개키
 ./bootstrap.sh role add verifier --colima-memory 8        # 값 바꾸기 (키는 저장된 것을 씀)
+./bootstrap.sh role add verifier --shared                 # 작업 기기 겸용 (--dedicated로 되돌림)
 ./bootstrap.sh role status verifier                       # 0 준비 완료, 2 수동 작업 대기, 1 실패·꺼짐
 ./bootstrap.sh role remove verifier                       # 끄기
 ```
@@ -127,7 +135,7 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 - guest 시계: `${COLIMA_HOME:-~/.colima}/_lima/_config/override.yaml` 한 파일에 system provision을 둔다(`LIMA_HOME`이 명시되면 그 아래 `_config/override.yaml`). Lima 전역 override이므로 **그 LIMA_HOME의 모든 Lima 인스턴스**에 적용된다. 기준 디렉터리(명시한 `LIMA_HOME`, 없으면 Colima 디렉터리)가 없으면 생성하지 않고 수동 대기(2)로 알린다. `colima start` 후 `./bootstrap.sh role add verifier`를 다시 실행한다. 파일이 없으면 원자적으로 생성하고, 내용이 같으면 쓰지 않는다. 기존 파일이 다르면 보존하고 clock 항목만 실패로 알리며 다른 role 설정은 계속한다. clock 기능은 colima.yaml을 편집하지 않는다. override는 Colima 0.10.3의 start·stop·update·delete가 덮어쓰거나 지우지 않아, 표준 delete 후 새 VM에도 provision이 적용된다. Lima/Colima home 자체를 수동 삭제한 경우에는 role을 다시 적용한다.
 - guest 즉시 적용: add 때 기본 VM이 실행 중이면 `/etc/systemd/system/lima-guestagent.service.d/10-no-clock-write.conf`를 확인한다. 내용은 정확히 `[Service]\nCapabilityBoundingSet=~CAP_SYS_TIME\n`이다. 같으면 쓰기·reload·재시작 없이 "이미 적용됨"을 표시한다. 없으면 파일을 쓰고 `systemctl daemon-reload`·`systemctl try-restart lima-guestagent`를 실행한다. 다른 수동 파일은 현재 보존하지만 다음 VM 부팅 때 provision이 교체한다고 알린다. 부팅 provision은 파일이 없거나 다를 때 정해진 내용으로 맞춘 뒤에만 reload·재시작한다. 소유자의 기존 수동 조치 기기에서는 첫 add에 override와 소유 메타데이터만 추가되고, 다음부터 변화가 없다. guest marker는 만들지 않으며 VM 전체를 재시작하지 않는다.
 - guest NTP: 기존 `systemd-timesyncd`를 유지하며 chrony를 설치하지 않는다. 소유자가 timesyncd active인 기기에서 이 drop-in만 적용해 역행 0을 확인했다. [upstream 원인·chrony workaround](https://github.com/lima-vm/lima/issues/5543)와 [수정 PR](https://github.com/lima-vm/lima/pull/5565)은 별개로 추적한다. 확인 기준 Lima는 2.2.0이며 수정 버전 도입 후 조치 필요성을 재평가한다. timesyncd는 작은 오차를 서서히 보정하고 큰 오차는 step하므로 장기 drift·절전 복귀·NTP 불통이면 `colima --profile default ssh -- timedatectl timesync-status`로 확인하고 chrony 필요성을 별도 판단한다. `role status`가 limactl 버전과 재평가 안내를 표시한다.
-- 자동 시작 끄기: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 등록하지 않고 있으면 내린다. 이미 떠 있는 Paseo 데몬과 실행 중인 에이전트 Chrome은 끄지 않는다(이 명령을 Paseo 세션에서 실행할 수 있어서). Chrome은 끝내거나 다음 로그인부터 꺼진다.
+- 자동 시작 끄기(`--shared`면 유지): 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 등록하지 않고 있으면 내린다. 이미 떠 있는 Paseo 데몬과 실행 중인 에이전트 Chrome은 끄지 않는다(이 명령을 Paseo 세션에서 실행할 수 있어서). Chrome은 끝내거나 다음 로그인부터 꺼진다.
 - 로그 디렉터리: `~/.local/state/verifier/logs`(권한 700). 검증을 돌리는 쪽이 여기에 로그를 남긴다. 이 경로가 그쪽과의 약속이다.
 - 읽기 전용 SSH: `~/.ssh/authorized_keys`에 `restrict,command="<홈>/.local/bin/verifier-logs" … bootstrap-role-verifier` 한 줄을 넣는다(홈은 절대 경로로 쓴다). 이 키로 접속하면 어떤 명령을 보내도 `verifier-logs`만 실행되고, 로그 디렉터리의 파일을 `ls`, `tail [-n N] <파일>`, `cat <파일>`로만 읽는다. 같은 키가 제한 없는 다른 줄에 있으면 읽기 전용이 되지 않으므로 고치지 않고 실패한다.
 
@@ -140,10 +148,10 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 
 끄면 role이 등록한 colima 서비스만 `brew services stop colima`로 해제한다(서비스로 실행 중인 VM도 멈출 수 있음). 기존 서비스나 소유 기록이 없는 구버전 역할의 서비스는 보존한다. 해제 실패 시 소유 기록을 남겨 다시 실행할 수 있다. colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
 
-`role status`는 **clock override·실행 중인 기본 guest의 drop-in·unit CapabilityBoundingSet**, **colima 자동 시작 설정**, **지금 Docker 응답**을 따로 보고한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
+`role status`는 **clock override·실행 중인 기본 guest의 drop-in·unit CapabilityBoundingSet**, **colima 자동 시작 설정**, **지금 Docker 응답**, **heavy 공유·전용**을 따로 보고한다. 공유 역할은 세 자동 시작이 등록돼 있는지와 heavy 모드가 round-robin인지(아니면 2), 전용 역할은 자동 시작이 꺼졌는지 확인한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
 
 - **0 준비 완료**: 자동 시작 등록·소유 기록, Docker 응답과 기존 역할 검사가 모두 정상이다. 인자 없는 `role status`는 켠 역할이 없어도 기존처럼 0이다.
-- **2 수동 작업 대기**: colima 인스턴스 설정이 없어 최초 준비가 필요하거나(등록 미시도 `pending` 포함), 원격 로그인이 꺼져 있거나, 실행 중인 에이전트의 등록 해제가 대기 중이다.
+- **2 수동 작업 대기**: colima 인스턴스 설정이 없어 최초 준비가 필요하거나(등록 미시도 `pending` 포함), 원격 로그인이 꺼져 있거나, 실행 중인 에이전트의 등록 해제가 대기 중이거나, 공유 역할인데 heavy 모드가 round-robin이 아니다.
 - **1 실패·꺼짐**: 명시한 역할이 꺼져 있거나, 서비스 조회 실패·미등록·소유 기록 누락, 인스턴스가 있는데 Docker 미응답(CLI 없음 포함), 기존 설정 어긋남이다. 등록만으로 실행 준비 완료라고 판정하지 않는다.
 
 사용자 작업:
