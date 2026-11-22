@@ -13,6 +13,7 @@
 #   v3 pending 한도 YW_HEAVY_MAX_PENDING_SUPERVISOR (128), YW_HEAVY_MAX_PENDING (1024)
 #   /tmp 정리 방지 mtime 갱신 주기 YW_HEAVY_KEEP_EVERY (3600초), run 갱신 프로세스의 부모 확인 YW_HEAVY_KEEP_CHECK (20초)
 #   owner 없는 실행 lock 회수까지 YW_HEAVY_OWNERLESS_AGE (60초), 구형식 편집 lock 경고까지 YW_HEAVY_EDIT_WARN (120초)
+#   검증 자리 (verifier --shared) 대기열 $Q.verifier, 실행 lock $XL.verifier, 순환 $Q.verifier.rotation. 나머지 파일은 같이 쓴다
 
 usage() {
   cat <<'EOF'
@@ -32,6 +33,7 @@ usage() {
   yw-heavy release --generation G --token T --lease L    v3 세대별 해제 (빌린 lease는 no-op)
 verifier 역할 기기: acquire·run은 supervisor=verifier-loop만 허용한다.
   예외: YW_HEAVY_VERIFIER_OVERRIDE_REASON='<사유>' (owner와 진단 로그에 기록)
+  공유 역할(role add verifier --shared): verifier-loop는 별도 검증 자리 1개, 다른 요청은 일반 대기열 (제한 없음)
 종료 코드: 0 성공, 1 내부 오류, 2 사용법 오류·holder가 처음부터 끝나 있음,
            4 verifier 역할 거절·제출 중지·모드 비활성·전환 거절, 5 pending 한도 초과, 6 lease·생존 검증 실패,
            3 대기 줄 제거·이어받힘·holder 종료·같은 ID가 이미 차례를 가짐·같은 ID의 구버전 줄
@@ -64,18 +66,51 @@ init() {
   case "$POLL" in 0* | .*) EDIT_POLL="$POLL" ;; *) EDIT_POLL=1 ;; esac
   LOCKF=/usr/bin/lockf
   ID='' WORKER='' SUP='' HOLDER='' HOLDER_START=- MYSTART=- MYMARK='' LOCKED=0 SIG='' HELD=0 KEPT_AT=-1 KEEPER=''
+  ROLE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier"
+  # 검증 자리: 일반 자리와 같은 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 편집 잠금·기록·모드·제출 중지는 공유한다.
+  MQ="$Q" MXL="$XL" LQ="$Q.verifier" LXL="$XL.verifier"
 }
+use_lane() { Q="$LQ" XL="$LXL" RING="$LQ.rotation"; }
+use_main() { Q="$MQ" XL="$MXL" RING="$MQ.rotation"; }
+role_shared() { grep -qx 'shared=1' "$ROLE_FILE" 2>/dev/null; }
+lane_owner() { cat "$LXL/owner.txt" 2>/dev/null; }
 
 # role.sh와 같은 상태 경로·파일 판정. 프로젝트별 ID 대신 기존 verifier 루프의 감독자 식별자를 쓴다.
 verifier_guard() {
-  [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier" ] || return 0
+  [ -f "$ROLE_FILE" ] || return 0
   [ "$SUP" != verifier-loop ] || return 0
+  # 공유 역할은 작업 기기를 겸한다. 다른 요청은 일반 대기열에서 기존처럼 차례를 받는다.
+  ! role_shared || return 0
   # 기록은 한 줄로 유지한다. 제어 문자를 제거한 뒤에도 공백뿐이면 사유가 아니다.
   OVERRIDE_REASON="$(printf '%s' "${YW_HEAVY_VERIFIER_OVERRIDE_REASON:-}" | LC_ALL=C tr -d '\000-\037\177')"
   case "$OVERRIDE_REASON" in
     *[![:space:]]*) note "verifier-override task=$ID worker=$WORKER supervisor=$SUP reason=$OVERRIDE_REASON" ;;
     *) say "verifier 역할 기기는 supervisor=verifier-loop만 허용합니다. 예외에는 YW_HEAVY_VERIFIER_OVERRIDE_REASON에 사유가 필요합니다"; return 4 ;;
   esac
+}
+
+# 공유 역할의 verifier-loop 요청과, 검증 자리 lease의 token을 이어받은 요청은 검증 자리를 쓴다.
+# 역할 파일을 읽지 못하면 공유가 아닌 것으로 본다 (기존 전용 동작).
+lane_route() {
+  if { [ "$SUP" = verifier-loop ] && role_shared; } ||
+    { [ -n "$IN_GEN" ] && [ "$IN_GEN" = "$(json_str "$(lane_owner)" generation)" ]; }; then
+    use_lane
+  fi
+}
+# 해제할 ID가 검증 자리에 있는지 (실행 lock 또는 대기 줄).
+lane_has_id() {
+  [ "$(json_str "$(lane_owner)" task)" = "$ID" ] && return 0
+  [ -n "$(use_lane; q_line "$ID")" ]
+}
+# 검증 쪽 CPU 우선순위를 낮춘다: 검증 자리를 직접 얻은 holder가 이 프로세스의 조상이면 nice 10으로 올린다.
+# 이후 생기는 자식이 상속한다. 이미 10 이상이면 그대로 두고, 낮추지 않는다(낮추려면 root가 필요). 실패해도 차례는 유지한다.
+lane_nice() {
+  local n
+  [ "$Q" = "$LQ" ] && [ -n "$HOLDER" ] && [ "$BORROWED" != true ] || return 0
+  n="$(ps -o nice= -p "$HOLDER" 2>/dev/null | tr -d ' ')"
+  case "$n" in '' | *[!0-9-]*) return 0 ;; esac
+  [ "$n" -lt 10 ] && is_ancestor "$HOLDER" "$HOLDER_START" || return 0
+  renice 10 -p "$HOLDER" >/dev/null 2>&1 || say "검증 holder ${HOLDER}의 우선순위를 낮추지 못했습니다"
 }
 
 override_owner_field() {
@@ -596,6 +631,7 @@ do_run() {
   HOLDER="$$"
   HOLDER_START="$MYSTART"
   do_acquire || return $?
+  lane_nice
   say "ACQUIRED $ID"
   if [ -n "$SIG" ]; then
     finish_release
@@ -619,13 +655,10 @@ do_run() {
   return "$rc"
 }
 
-do_status() {
-  local l n=0 legacy=0 id pid start st owner task holder hs target age
-  printf '모드: %s, 신규 제출: ' "$(mode_read)"
-  if [ -e "$PAUSED" ]; then printf '중지\n'; else printf '허용\n'; fi
-  if [ "$(mode_read)" = round-robin ]; then printf '감독자 순환: %s\n' "$(ring_read | tr '\n' ' ')"; fi
-  last_mode_change
-  printf '대기열: %s\n' "$Q"
+# 현재 자리(Q·XL)의 대기 줄과 실행 lock을 보인다. 구형식 줄 수는 LEGACY에 남긴다.
+status_slot() {
+  local l n=0 id pid start st owner task holder hs
+  LEGACY=0
   while IFS= read -r l; do
     [ -n "$l" ] || continue
     n=$((n + 1))
@@ -636,7 +669,7 @@ do_status() {
       if [ "${pid:--}" = - ]; then st='holder 없음 (자동 회수 안 함)'; else st="pid $pid $(proc_state "$pid" "${start:--}")"; fi
       printf '  %d. %s  v%s  %s  [%s]\n' "$n" "$id" "$(lf "$l" v)" "$(lf "$l" supervisor)" "$st"
     else
-      legacy=$((legacy + 1))
+      LEGACY=$((LEGACY + 1))
       printf '  %d. %s  구형식  %s  [생존 판정 불가]\n' "$n" "$id" "$(lf "$l" supervisor)"
     fi
   done <<EOF
@@ -665,6 +698,19 @@ EOF
   else
     printf '실행 lock: 없음\n'
   fi
+}
+
+do_status() {
+  local pid target age owner legacy
+  printf '모드: %s, 신규 제출: ' "$(mode_read)"
+  if [ -e "$PAUSED" ]; then printf '중지\n'; else printf '허용\n'; fi
+  if [ "$(mode_read)" = round-robin ]; then printf '감독자 순환: %s\n' "$(ring_read | tr '\n' ' ')"; fi
+  last_mode_change
+  if role_shared; then printf 'verifier 역할: 공유 (verifier-loop는 검증 자리, 다른 요청은 일반 대기열)\n'
+  elif [ -f "$ROLE_FILE" ]; then printf 'verifier 역할: 전용 (verifier-loop만 허용)\n'; fi
+  printf '대기열: %s\n' "$Q"
+  status_slot
+  legacy="$LEGACY"
 
   if [ -L "$EL" ] || { [ -f "$EL" ] && [ ! -d "$EL" ]; }; then
     target="$(mark_read)"
@@ -691,6 +737,10 @@ EOF
     printf '관문: 닫힘 (구형식 줄 %d개). 실행 lock은 자동 회수하지 않음\n' "$legacy"
   else
     printf '관문: 열림\n'
+  fi
+  if role_shared || [ -s "$LQ" ] || [ -e "$LXL" ]; then
+    printf '검증 자리: %s\n' "$LQ"
+    use_lane; status_slot; use_main
   fi
   if [ -s "$LOG" ]; then
     printf '최근 기록 (%s):\n' "$LOG"
@@ -730,9 +780,11 @@ last_mode_change() {
   }'
 }
 # compat 전환은 빈 대기열·실행 lock 부재에서만 하므로 v3 줄·owner가 남아 있으면 모드 파일만 사라진 것이다.
+# 어느 자리에서 불러도 같은 판단이 되도록 일반 자리와 검증 자리를 함께 본다.
 v3_active() {
-  [ "$(json_num "$(owner_read)" v)" = 3 ] && return 0
-  q_lines | awk '{for (i = 2; i <= NF; i++) if ($i == "v=3") f = 1} END {exit !f}'
+  [ "$(json_num "$(cat "$MXL/owner.txt" 2>/dev/null)" v)" = 3 ] && return 0
+  [ "$(json_num "$(lane_owner)" v)" = 3 ] && return 0
+  { use_main; q_lines; use_lane; q_lines; } | awk '{for (i = 2; i <= NF; i++) if ($i == "v=3") f = 1} END {exit !f}'
 }
 # 파일이 있어도 읽지 못하거나 비어 있으면 없는 것과 같이 판단한다.
 # 일반 파일이 아니면(FIFO 등) 읽다가 멈추지 않도록 읽지 않는다.
@@ -763,25 +815,29 @@ control() {
   lock_queue || return $?
   case "$cmd" in
     reclaim)
-      if [ "$(mode_read)" = round-robin ]; then rr_reclaim && ring_sync; else reclaim_dead; fi
+      prev="$(mode_read)"
+      slot_reclaim "$prev" && { use_lane; slot_reclaim "$prev"; }
       ;;
     pause) (umask 077; touch "$PAUSED") ;;
     resume) rm -f "$PAUSED" ;;
     mode)
-      if [ ! -e "$PAUSED" ] || [ -n "$(q_lines)" ] || [ -e "$XL" ]; then
-        unlock_queue; say "전환 거절: pause 후 실행·대기자(구버전 포함)를 모두 drain해야 합니다"; return 4
+      if [ ! -e "$PAUSED" ] || [ -n "$(q_lines)" ] || [ -e "$XL" ] || [ -n "$(use_lane; q_lines)" ] || [ -e "$LXL" ]; then
+        unlock_queue; say "전환 거절: pause 후 실행·대기자(구버전·검증 자리 포함)를 모두 drain해야 합니다"; return 4
       fi
       prev="$(mode_read)"
       # 순환 파일을 먼저 지운다. 실패하면 기존 모드를 유지한다.
-      rm -f "$RING" || { unlock_queue; return 1; }
+      rm -f "$RING" "$LQ.rotation" || { unlock_queue; return 1; }
       mode_write "$target" || { unlock_queue; return 1; }
       note "mode-change from=$prev to=$target parent=$PPID:$(ps -o ucomm= -p "$PPID" 2>/dev/null | tr -d ' ')"
       ;;
   esac
   local rc=$?
+  use_main
   unlock_queue
   return "$rc"
 }
+# 확정 사망 항목 회수. 모드는 일반 자리에서 읽은 값을 쓴다.
+slot_reclaim() { if [ "$1" = round-robin ]; then rr_reclaim && ring_sync; else reclaim_dead; fi; }
 random_id() { /usr/bin/openssl rand -hex 24; }
 # 검증에는 시작 시각이 반드시 필요하다. 조회 실패를 재진입 허용으로 바꾸지 않는다.
 verified_process() {
@@ -1047,11 +1103,13 @@ main() {
     release)
       if [ $# = 6 ] && [ "$1" = --generation ] && [ "$3" = --token ] && [ "$5" = --lease ]; then
         GEN="$2" TOKEN="$4" LEASE="$6"
+        [ -z "$GEN" ] || [ "$GEN" != "$(json_str "$(lane_owner)" generation)" ] || use_lane
         rr_release; return
       fi
       [ $# = 1 ] || { usage >&2; return 2; }
       need_task "$1" || return
       ID="$1"
+      ! lane_has_id || use_lane
       release_id
       st=$?
       echo "released $ID"
@@ -1062,7 +1120,7 @@ main() {
   need_task "$1" "$2" "$3" || return
   ID="$1" WORKER="$2" SUP="$3"
   shift 3
-  case "$cmd" in acquire | run) verifier_guard || return $? ;; esac
+  case "$cmd" in acquire | run) verifier_guard || return $?; lane_route ;; esac
   MYSTART="$(proc_start $$)" || MYSTART=-
   case "$cmd" in
     enqueue)
@@ -1088,6 +1146,7 @@ main() {
         trap 'SIG=TERM' TERM; trap 'SIG=INT' INT; trap 'SIG=HUP' HUP
       fi
       do_acquire || return $?
+      lane_nice
       if [ -n "$GEN" ]; then lease_response; else echo "ACQUIRED $ID"; fi
       ;;
     run)

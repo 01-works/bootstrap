@@ -23,10 +23,12 @@ export const PASEO_UPGRADE_INTERVAL = 3600;
 export const ROLE_DISABLED = { verifier: ['agent-chrome', 'paseo', 'paseo-upgrade'] };
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-// 켠 역할: 상태 파일(~/.config/bootstrap/roles/<역할>)이 있는 역할.
+// 자동 시작을 끄는 켠 역할: 상태 파일(~/.config/bootstrap/roles/<역할>)이 있는 역할.
+// shared=1(role add verifier --shared)은 작업 기기를 겸하므로 끄지 않는다. 읽지 못하면 끄는 쪽(기존 동작)으로 본다.
+const sharedRole = path => { try { return /^shared=1$/m.test(readFileSync(path, 'utf8')); } catch { return false; } };
 export function activeRoles({ home, env = {} }) {
   const dir = join(env.XDG_CONFIG_HOME || join(home, '.config'), 'bootstrap/roles');
-  return Object.keys(ROLE_DISABLED).filter(role => existsSync(join(dir, role)));
+  return Object.keys(ROLE_DISABLED).filter(role => existsSync(join(dir, role)) && !sharedRole(join(dir, role)));
 }
 const disabledBy = (name, roles) => roles.find(role => ROLE_DISABLED[role].includes(name));
 

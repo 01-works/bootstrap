@@ -10,6 +10,21 @@
 
 supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS 사용자의 식별자 사칭이나 구버전 도구의 직접 lock 사용을 막는 보안 경계가 아니다.
 
+### 공유 역할 (`role add verifier --shared`)
+
+작업 기기가 검증도 맡을 때 쓴다. 역할 상태 파일에 `shared=1`이 있으면 다음과 같이 동작한다. 이 줄이 없거나 파일을 읽지 못하면 위의 전용 동작(코드 4 거절)을 그대로 쓴다.
+
+- supervisor가 `verifier-loop`인 `acquire`·`run`은 **검증 자리**를 쓴다. 검증 자리는 일반 자리와 같은 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 대기열은 `$YW_HEAVY_QUEUE.verifier`, 실행 lock은 `$YW_HEAVY_EXEC_LOCK.verifier`, 순환 파일은 `$YW_HEAVY_QUEUE.verifier.rotation`이다. 실행 슬롯은 1개라 검증 요청이 둘이면 나중 요청은 검증 자리에서 차례를 기다린다. 편집 잠금·기록·이벤트·모드·제출 중지 파일은 일반 자리와 같이 쓴다.
+- 다른 요청은 사유 없이 허용하고 일반 대기열에서 기존처럼 차례를 받는다. 그래서 일반 작업 1개와 검증 1개가 동시에 실행된다.
+- compat와 round-robin을 모두 지원한다. 검증 자리도 활성 모드를 따른다. compat는 v2 FIFO로 `ACQUIRED <ID>`를 출력하고 `release <ID>`로 해제한다. round-robin은 v3 JSON lease를 주고 세대·token·lease로 해제한다. compat에서 `--json`은 일반 자리처럼 코드 4로 거절한다.
+- 해제할 자리는 요청에 담긴 값으로 찾는다. `release <ID>`는 그 ID가 검증 자리에 있으면 검증 자리를 푼다. `release --generation …`와 token 재진입(`YW_HEAVY_GENERATION`·`YW_HEAVY_TOKEN`)은 세대가 검증 자리 owner와 같으면 검증 자리를 쓴다. 역할을 그 사이에 바꿔도 이미 잡은 lease는 풀 수 있다.
+- `reclaim`은 두 자리를 함께 회수한다. `mode` 전환은 검증 자리의 실행·대기도 drain돼야 한다. `pause` 중에는 검증 자리의 신규 등록도 막는다.
+- `status`는 `verifier 역할: 공유|전용` 한 줄을 보인다. 공유 역할이거나 검증 자리에 줄·lock이 남아 있으면 `검증 자리:` 아래에 대기 줄과 실행 lock을 따로 보인다.
+- CPU: 검증 자리를 직접 얻은 holder가 그 `yw-heavy`의 조상 프로세스면 nice를 10으로 올린다. `acquire --holder <루프 PID>`이면 루프가, `run`이면 그 `yw-heavy`가 대상이다. nice는 그 뒤에 생기는 자식이 상속하므로 검증 명령과 호스트 node가 작업 쪽보다 낮은 우선순위로 돈다. 남는 CPU는 그대로 쓰므로 기기가 한가할 때 검증이 느려지지 않는다. 이미 10 이상이면 그대로 두고, 조상이 아닌 holder나 빌린 lease는 바꾸지 않는다. 낮춘 nice는 root 없이 되돌릴 수 없으므로 그 프로세스가 끝날 때까지 남는다. Colima VM은 루프의 자식이 아니라 영향을 받지 않는다. VM의 CPU 상한은 `colima.yaml`의 `cpu:`다.
+- `taskpolicy -b`(darwin background)는 쓰지 않는다. CPU뿐 아니라 디스크 I/O도 낮은 등급으로 묶고 Apple Silicon에서 효율 코어로 보내서, 기기가 한가해도 95~98분 걸리는 검증이 크게 늘어날 수 있다.
+
+01-software의 heavy lock(`scripts/heavy-machine-lock.mjs`)은 compat에서 yw-heavy 대신 자기 저장소 lock 하나를 쓴다. 역할 파일이 있으면 verifier-loop가 아닌 요청도 스스로 거절한다. 그래서 compat 기기에서는 01-software가 `shared=1`을 알 때까지 작업 heavy와 검증이 동시에 돌지 않는다. round-robin에서는 작업과 검증을 모두 yw-heavy에 위임하므로 01-software를 바꾸지 않아도 동시에 돈다. 공유 기기는 round-robin으로 운영한다.
+
 ## 모드와 전환 원칙
 
 설치·자동 갱신의 기본은 **compat**다. 기존 FIFO, 감독자당 2줄, v2 출력·파일 형식을 유지한다. 재진입·라운드로빈·작업 이벤트는 감독자가 기기에서 **round-robin**을 명시적으로 켠 뒤에만 동작한다. `capabilities`의 기능 목록은 설치된 구현의 지원 목록이고, 소비자는 `mode`도 반드시 확인한다.
@@ -83,7 +98,7 @@ CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효�
 
 1. 모든 감독 세션·소비자와 신규 제출 중지를 조율한다. `yw-heavy pause`로 새 구현의 신규 등록을 막는다. 이미 등록된 대기자는 계속 진행하고 기존 차례의 중첩 획득은 허용한다. 구버전 프로세스는 pause를 모르므로 제출 자체를 별도로 멈춰야 한다.
 2. `status`와 소유 세션을 대조해 실행·대기자를 drain한다. 끝난 v3 holder·대기자만 남아 있으면 `yw-heavy reclaim`으로 확정 사망 항목만 회수한다(pause 중에도 가능). 생성 중 종료돼 owner가 없거나 0바이트인 lock은 구형식 줄이 없고 기본 60초 유예가 지난 뒤 회수한다. 실제 삭제 시도가 실패하면 코드 1을 반환한다. 조회 실패 등으로 생존을 판단할 수 없거나 no-reclaim 표지가 있으면 보존한다. 이전 2줄 상한 밖에서 polling하던 v2 프로세스, 구형식 shell·Python 구현도 끝났는지 확인한다. 아직 줄을 쓰지 않은 구버전 프로세스는 상태 파일만으로 검출할 수 없다. `pgrep -f 'yw-heavy|cc-yw-heavy|heavy.sh|R1-heavy'`(PID만 출력, 이름은 `ps -o pid=,ucomm= -p <PID>`)는 후보 조사용이며 소유자와 확인한다. 살아 있거나 판단 불가한 항목을 지우지 않는다.
-3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다. v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
+3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다(검증 자리 포함). v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
 4. `capabilities`·`status`에서 모드를 확인하고 `yw-heavy resume`으로 새 제출을 연다. 두 번의 인계와 이벤트 기록을 확인한다.
 
 모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다.

@@ -491,6 +491,72 @@ test('dry-run은 아무것도 바꾸지 않는다', t => {
     '상태 파일이 남아 있어도 끈 뒤(자동 시작 복구)로 미리 본다');
 });
 
+test('--shared: 상태 파일에 기록해 재적용·apply-active에서 유지, 자동 시작 유지, heavy 일반 요청 허용; --dedicated·remove로 기존 동작', t => {
+  const f = sandbox(t);
+  const heavyEnv = { ...f.env,
+    YW_HEAVY_QUEUE: join(f.root, 'q'), YW_HEAVY_EXEC_LOCK: join(f.root, 'x'),
+    YW_HEAVY_EDIT_LOCK: join(f.root, 'edit'), YW_HEAVY_FLOCK: join(f.root, 'flock'),
+    YW_HEAVY_LOG: join(f.root, 'heavy-log'), YW_HEAVY_NO_RECLAIM: join(f.root, 'no-reclaim'),
+    YW_HEAVY_EVENTS: join(f.root, 'events'), YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '',
+  };
+  const heavy = () => spawnSync('/bin/bash', [join(repo, 'scripts/yw-heavy.sh'), 'run', 'ROLE-CHECK', 'w', 's', '--', 'true'],
+    { env: heavyEnv, encoding: 'utf8' });
+  const agentsOf = suffix => ['agent-chrome', 'paseo', 'paseo-upgrade'].map(name => `--only ${name} --desktop${suffix}`);
+
+  let result = f.role('add', 'verifier', '--ssh-key', f.keyFile, '--shared', '--dry-run');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(existsSync(f.state), false);
+  assert.deepEqual(f.agents(), agentsOf(' --dry-run --roles none'), '공유는 켠 뒤에도 자동 시작을 유지하는 것으로 미리 본다');
+
+  result = f.role('add', 'verifier', '--ssh-key', f.keyFile, '--shared');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, '1');
+  assert.match(result.stdout, /자동 시작 유지 \(--shared\)/);
+  assert.doesNotMatch(out(result), /paseo daemon stop/);
+  assert.deepEqual(f.agents(), agentsOf(''), 'launch-agents.mjs가 상태 파일의 shared=1을 보고 유지한다');
+  result = heavy(); assert.equal(result.status, 0, out(result));
+
+  const snapshot = tree(f.home);
+  for (const args of [['add', 'verifier'], ['add', 'verifier', '--shared'], ['apply-active']]) {
+    result = f.role(...args);
+    assert.equal(result.status, 0, out(result));
+    assert.deepEqual(tree(f.home), snapshot, `${args.join(' ')}: 저장된 값으로 같은 결과`);
+    assert.deepEqual(f.agents(), agentsOf(''));
+  }
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 0, out(result));
+  assert.match(result.stdout, /heavy 공유: verifier-loop는 검증 자리/);
+  for (const name of ['agent-chrome', 'paseo', 'paseo-upgrade']) assert.match(result.stdout, new RegExp(`자동 시작 유지: ${name}`));
+  writeFileSync(join(f.mock, 'agents-exit-check-paseo'), '1');
+  result = f.role('status', 'verifier');
+  assert.equal(result.status, 1, out(result));
+  assert.match(result.stderr, /자동 시작 확인 필요: paseo/);
+  rmSync(join(f.mock, 'agents-exit-check-paseo'));
+  f.agents();
+
+  result = f.role('add', 'verifier', '--dedicated', '--dry-run');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, '1', 'dry-run은 바꾸지 않는다');
+  assert.deepEqual(f.agents(), agentsOf(' --dry-run --roles verifier'));
+  result = f.role('add', 'verifier', '--dedicated');
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, undefined);
+  assert.match(result.stdout, /자동 시작 꺼짐/);
+  assert.match(f.role('status', 'verifier').stdout, /heavy 전용: verifier-loop만 허용/);
+  result = heavy(); assert.equal(result.status, 4, out(result));
+
+  assert.equal(f.role('add', 'verifier', '--shared').status, 0);
+  result = heavy(); assert.equal(result.status, 0, out(result));
+  f.agents();
+  assert.equal(f.role('remove', 'verifier').status, 0);
+  assert.equal(existsSync(f.state), false);
+  assert.deepEqual(f.agents(), agentsOf(''), '끄면 기기 종류의 원래 자동 시작으로');
+  result = heavy(); assert.equal(result.status, 0, out(result));
+  result = f.role('add', 'verifier', '--ssh-key', f.keyFile);
+  assert.equal(result.status, 0, out(result));
+  assert.equal(f.stateOf().shared, undefined, '다시 켜면 기본은 전용');
+});
+
 test('apply-active: 켠 역할이 없으면 아무것도 하지 않고, 있으면 저장된 값으로 다시 맞춘다', t => {
   const f = sandbox(t);
   const before = tree(f.home);

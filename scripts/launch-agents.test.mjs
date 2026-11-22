@@ -161,6 +161,23 @@ test('verifier 역할: 세 정의는 null이고 자동 갱신은 그대로다', 
   assert.deepEqual(activeRoles({ home: '/elsewhere', env: { XDG_CONFIG_HOME: join(f.home, '.config') } }), ['verifier']);
 });
 
+test('verifier 공유 역할(shared=1)은 자동 시작을 끄지 않고, 전용으로 바꾸면 다시 끈다', t => {
+  const f = fixture(t);
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  f.setRole(true);
+  const roleFile = join(f.home, '.config/bootstrap/roles/verifier');
+  writeFileSync(roleFile, 'colima_memory=6\nshared=1\n');
+  assert.deepEqual(activeRoles({ home: f.home }), []);
+  f.calls.length = 0;
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  assert.equal(f.calls.filter(call => call === 'bootout').length, 0, '공유는 내리지 않는다');
+  for (const name of ROLE_DISABLED.verifier) assert.equal(apply({ ...f.options, laptop: false, only: name, check: true }), 0, `${name} 유지`);
+  writeFileSync(roleFile, 'colima_memory=6\nshared=0\n');
+  assert.deepEqual(activeRoles({ home: f.home }), ['verifier']);
+  assert.equal(apply({ ...f.options, laptop: false }), 0);
+  for (const name of ROLE_DISABLED.verifier) assert.equal(f.loaded.has(LABELS[name]), false, `${name} 전용은 끔`);
+});
+
 test('verifier 역할: 등록이 있으면 내리고 plist를 지운다. --check는 없을 때 0, 있을 때 1. 끄면 다시 등록한다', t => {
   const f = fixture(t);
   assert.equal(apply({ ...f.options, laptop: false }), 0);
