@@ -122,6 +122,11 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if (!['active', 'waiting_user'].includes(r.work)) r.work = 'waiting_schedule';
     hold(r, 'schedule_dependency', `heartbeat:${s.id}`);
   }
+  for (const w of snapshot.watches ?? []) if (records.has(w.agentId)) {
+    const r = records.get(w.agentId);
+    if (!['active', 'waiting_user'].includes(r.work)) r.work = 'waiting_schedule';
+    hold(r, 'schedule_dependency', `change-request-watch:${w.url}`);
+  }
   for (const scope of supervisors) {
     const unknownOwner = !scope.ownerIds?.length || scope.ownerIds.some(id => !byId.has(id));
     if (unknownOwner || scope.ownerIds.some(id => byId.has(id) && !byId.get(id).archivedAt)) {
@@ -216,6 +221,8 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     else if (local) { r.deleteDirectory = false; r.reasons.push('local directory remains'); }
     else hold(r, 'data', 'workspace directory removal unverified');
     observationChecks(r, w, local);
+    // MCP archive_workspace runs teardown without the untrusted-source approval check (Paseo 0.17.1).
+    if (w.untrusted && w.checks?.teardown !== 'confirmed_none') hold(r, 'data', 'untrusted source with teardown');
     r.remainingChecks.push('workspace_owned_terminals');
     r.work = r.hold.length ? 'unknown' : 'candidate';
     for (const path of workspacePaths(w)) applyGaps(r, { id: w.workspaceId, path, memberIds: members.map(a => a.id) });

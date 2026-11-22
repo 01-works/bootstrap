@@ -388,9 +388,9 @@ export async function collect(options) {
   const home = homedir(), paseoHome = resolve(options.paseoHome ?? process.env.PASEO_HOME ?? join(home, '.paseo'));
   const stateHome = options.stateHome ?? process.env.XDG_STATE_HOME ?? join(home, '.local/state'), gaps = [], sessionIds = new Map();
   const collectedAt = new Date().toISOString();
-  const snapshot = { meta: { paseoHome, serverId: null, paseoVersion: null, collectedAt, options: pick({ maxInputAgeMinutes: 30, ...options }, ['minAgeHours', 'maxInputAgeMinutes', 'gh', 'excerpts', 'excerptIds', 'selfAgentId', 'selfCwd', 'live', 'pending', 'terminals']), gaps, warnings: [], inputObservations: {}, statusSource: options.live ? 'mixed' : 'store', liveCoverage: 0 }, agents: [], workspaces: [], projects: [], schedules: [], subscriptions: [], supervisors: [], orphans: [] };
-  const read = (file, domain) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { gaps.push({ source: file, ...(domain ? { domain } : {}), reason: e.code ?? 'invalid-json' }); return jsonReadFailed; } };
-  const array = (file, required) => { const value = read(file); if (!Array.isArray(value)) { if (value !== jsonReadFailed) gaps.push({ source: file, reason: 'expected-array' }); return []; } return value.filter((v, i) => { const ok = isRecord(v) && required.every(k => typeof v[k] === 'string'); if (!ok) gaps.push({ source: file, reason: `invalid record:${i}` }); return ok; }); };
+  const snapshot = { meta: { paseoHome, serverId: null, paseoVersion: null, collectedAt, options: pick({ maxInputAgeMinutes: 30, ...options }, ['minAgeHours', 'maxInputAgeMinutes', 'gh', 'excerpts', 'excerptIds', 'selfAgentId', 'selfCwd', 'live', 'pending', 'terminals']), gaps, warnings: [], inputObservations: {}, statusSource: options.live ? 'mixed' : 'store', liveCoverage: 0 }, agents: [], workspaces: [], projects: [], schedules: [], subscriptions: [], watches: [], supervisors: [], orphans: [] };
+  const read = (file, domain, missing) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { if (missing !== undefined && e.code === 'ENOENT') return missing; gaps.push({ source: file, ...(domain ? { domain } : {}), reason: e.code ?? 'invalid-json' }); return jsonReadFailed; } };
+  const array = (file, required, optional = false) => { const value = read(file, undefined, optional ? [] : undefined); if (!Array.isArray(value)) { if (value !== jsonReadFailed) gaps.push({ source: file, reason: 'expected-array' }); return []; } return value.filter((v, i) => { const ok = isRecord(v) && required.every(k => typeof v[k] === 'string'); if (!ok) gaps.push({ source: file, reason: `invalid record:${i}` }); return ok; }); };
   try { snapshot.meta.serverId = readFileSync(join(paseoHome, 'server-id'), 'utf8').trim(); } catch (e) { gaps.push({ source: 'server-id', reason: e.code }); }
   const observationInput = kind => {
     const input = options[kind] ? read(options[kind], kind === 'terminals' ? 'terminals' : undefined) : undefined;
@@ -447,10 +447,19 @@ export async function collect(options) {
       const paths = [w.cwd, w.worktreeRoot].filter(path => typeof path === 'string' && path.startsWith('/')).map(canonical);
       gaps.push({ domain: 'protection', source: wfile, reason: 'invalid workspace ownership schema', scope: { workspaceIds: [w.workspaceId], paths } });
     }
-    return { ...pick(w, ['workspaceId', 'projectId', 'cwd', 'kind', 'displayName', 'title', 'branch', 'worktreeRoot', 'mainRepoRoot', 'createdAt', 'updatedAt', 'archivedAt', 'isPaseoOwnedWorktree']), cwd: canonical(w.cwd), ...Object.fromEntries(['worktreeRoot', 'mainRepoRoot'].filter(k => typeof w[k] === 'string' && w[k]).map(k => [k, canonical(w[k])])) };
+    return { ...pick(w, ['workspaceId', 'projectId', 'cwd', 'kind', 'displayName', 'title', 'branch', 'worktreeRoot', 'mainRepoRoot', 'createdAt', 'updatedAt', 'archivedAt', 'isPaseoOwnedWorktree']), untrusted: Boolean(w.untrustedSource), cwd: canonical(w.cwd), ...Object.fromEntries(['worktreeRoot', 'mainRepoRoot'].filter(k => typeof w[k] === 'string' && w[k]).map(k => [k, canonical(w[k])])) };
   });
   snapshot.projects = array(join(paseoHome, 'projects/projects.json'), ['projectId', 'rootPath']).map(p => pick(p, ['projectId', 'rootPath', 'kind', 'displayName', 'archivedAt']));
   snapshot.subscriptions = array(join(paseoHome, 'finish-subscriptions.json'), ['callerAgentId', 'childAgentId']).map(s => pick(s, ['callerAgentId', 'childAgentId']));
+  // PR/MR watch (Paseo 0.17+). The file is absent until a watch is saved; archive removes the watch.
+  const watchFile = join(paseoHome, 'change-request-watches.json');
+  for (const group of array(watchFile, ['url'], true)) {
+    if (!Array.isArray(group.watchers)) { gaps.push({ source: watchFile, reason: 'invalid watchers' }); continue; }
+    for (const w of group.watchers) {
+      if (isRecord(w) && typeof w.agentId === 'string') snapshot.watches.push({ agentId: w.agentId, url: group.url });
+      else gaps.push({ source: watchFile, reason: 'invalid watcher' });
+    }
+  }
   const scheduleRoot = join(paseoHome, 'schedules');
   if (!existsSync(scheduleRoot)) gaps.push({ source: scheduleRoot, reason: 'schedule_store_missing' });
   let schedules = []; try { schedules = globSync('*.json', { cwd: scheduleRoot }); } catch (e) { gaps.push({ source: scheduleRoot, reason: e.code }); }

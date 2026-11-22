@@ -70,6 +70,7 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
   - 이어받기 체인: `zerosub.continued-from`·`handoff.from`·`agent-list.continued-from`
   - 완료 알림 구독: Paseo home의 `finish-subscriptions.json`. 라벨 없이 완료 알림만 기다리는 관계도 있다.
   - heartbeat 대상: `schedules/*.json`에서 `target.type: "agent"`인 항목. MCP `list_schedules`에는 나오지 않는다.
+  - PR·MR 감시 대상: Paseo home의 `change-request-watches.json`에 있는 `watchers[].agentId`. 감시를 건 적이 없으면 파일이 없다.
   - schedule의 cwd
   - yw-supervisor 기록(`tasks.md`)의 소유 관계
 
@@ -79,8 +80,8 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 |---|---|
 | 활성 | live `running`·`initializing`, 활성 턴 |
 | 사용자 대기 | `pendingPermissions`(보관된 세션 포함), 또는 현재 요청을 끝내려면 답이 필요한 질문으로 끝난 발췌 |
-| 작업 대기 | 다음 중 하나: 활성·대기 중인 후손, 완료 알림 구독, live `backgroundWork.count`가 1 이상, 기록에 적힌 백그라운드 대기·재개 조건 |
-| 예약 대기 | active 또는 paused 상태인 heartbeat·schedule의 대상 |
+| 작업 대기 | 다음 중 하나: 활성·대기 중인 후손, 완료 알림 구독, live `backgroundWork.count`가 1 이상, 기록에 적힌 백그라운드 대기·재개 조건. `count`에는 heartbeat와 PR·MR 감시도 들어가고, 보관된 에이전트에는 `backgroundWork`가 나오지 않는다 |
+| 예약 대기 | active 또는 paused 상태인 heartbeat·schedule의 대상, PR·MR 감시 대상 |
 | 최근 | 다음 중 하나가 보호 기간 안에 있음: 기준 시각(`lastUserMessageAt`, 없으면 `lastActivityAt`), 응답·인계·작업 결과 같은 의미 있는 활동. 필요한 시각이 없거나 출처가 불확실한 경우도 포함 |
 | 감독 관리 범위 | 비보관 감독(chief 포함)이 지금 소유하거나 열린 감사·정리 범위로 관리하는 lane. 그 감독이 idle·질문 대기·heartbeat 대기여도 보호한다. 과거에 언급만 된 항목은 완료나 관리 종료가 명시됐는지 확인하고, 구분할 수 없으면 보호한다 |
 | 허브 | 서로 무관한 lane과 대화가 쌓인 "홈" workspace. workspace는 남기고 안의 세션만 하나씩 본다 |
@@ -142,9 +143,9 @@ description: 이 기기(또는 사용자가 지정한 Paseo 호스트)의 끝난
 
 - 완료 후보이고 보존 사유가 없다.
 - [공통 안전 대조](../yw-supervisor/SKILL.md#archive-전-공통-안전-대조)의 후손 전체가 같은 계획 안에서 완료·소유 확인됐다.
-- 걸려 있는 heartbeat, 완료 알림 구독, 알림 중계가 없다.
+- 걸려 있는 heartbeat, PR·MR 감시, 완료 알림 구독, 알림 중계가 없다.
 
-archive하면 그 에이전트의 heartbeat에 완료 처리가 시도된다. 그래서 사용자가 요청한 감시가 걸린 세션은 정리하지 않는다.
+archive하면 그 에이전트의 heartbeat에 완료 처리가 시도되고 PR·MR 감시는 지워진다. 그래서 사용자가 요청한 감시가 걸린 세션은 정리하지 않는다.
 
 보관된 세션은 정리 대상이 아니다. 표시된 status만 보고 런타임을 끄지(kill) 않고, pending이 관측되면 사용자 대기로 보고한다.
 
@@ -161,7 +162,7 @@ archive하면 그 에이전트의 heartbeat에 완료 처리가 시도된다. �
 
 디렉터리 처리는 workspace 종류에 따라 다르다.
 
-- **Paseo 소유 worktree:** archive하면 설정과 승인 상태에 따라 teardown이 실행되며, 같은 worktree를 가리키는 활성 workspace가 없으면 `git worktree remove --force`로 제거를 시도한다. Paseo는 읽을 수 있는 HEAD를 제거 전에 `refs/paseo/kept-commits/<sha>`에 보존한다. ref 쓰기에 실패하면 workspace가 보관돼도 디렉터리는 남는다. 미커밋 파일에는 이 보존이 적용되지 않으므로 아래 "디렉터리 제거 공통 조건"을 충족해야 한다.
+- **Paseo 소유 worktree:** archive하면 설정에 따라 teardown이 실행되며, 같은 worktree를 가리키는 활성 workspace가 없으면 `git worktree remove --force`로 제거를 시도한다. Paseo는 읽을 수 있는 HEAD를 제거 전에 `refs/paseo/kept-commits/<sha>`에 보존한다. ref 쓰기에 실패하거나 teardown이 실패·시간 초과(기본 60초)되면 workspace가 보관돼도 디렉터리는 남고, teardown이 끝나지 않으면 HEAD 보존 ref도 쓰지 않고 git 등록도 남는다. 남은 디렉터리는 다음 수집에서 연결이 끊긴 worktree로 다룬다. MCP `archive_workspace`는 외부 PR 등에서 만든 workspace(`untrustedSource`)의 승인 여부를 확인하지 않고 teardown을 실행하므로, 이런 workspace에 teardown이 정의돼 있으면 보류한다. 미커밋 파일에는 이 보존이 적용되지 않으므로 아래 "디렉터리 제거 공통 조건"을 충족해야 한다.
 - **local 디렉터리 workspace:** 디렉터리는 남는다. 그래서 git·HEAD 조건은 적용하지 않는다. 구성원·보호 관계·터미널 조건은 확인하고, 구성원과 터미널에 대한 archive 효과는 따로 readback한다.
 - **소유 정보 불완전:** 데몬이 디스크에서 소유를 다시 확인하는 경우가 있으므로, 수집기가 worktree 소유·경로를 확정하지 못하면 `gaps`에 기록하고 archive를 보류한다.
 
@@ -238,7 +239,7 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
 1. **실행 직전 재확인:** 승인된 계획과 현재 상태를 다시 대조한다.
    - 새 요청, 턴, pending, 오류
    - 후손·이어받기·구독의 추가와 변경
-   - heartbeat·schedule
+   - heartbeat·schedule, PR·MR 감시(대상과 영향받는 후손)
    - workspace 구성원과 터미널
    - git HEAD, 변경, untracked, ignored, 등록, 잠금
    - teardown 정의와 내용
@@ -298,7 +299,7 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
 
 ## 버전
 
-확인한 기준 버전은 Paseo 0.16.2다.
+확인한 기준 버전은 Paseo 0.17.1이다.
 
 동작 변경이 확인되면 문서와 수집기를 함께 고친다.
 
