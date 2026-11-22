@@ -115,10 +115,10 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 
 작업 기기가 검증도 맡으면 `--shared`로 켠다. 상태 파일에 `shared=1`을 기록하고, 다시 적용할 때도 저장된 값을 쓴다. `--dedicated`로 전용으로 되돌린다. 공유 역할은 두 가지가 다르다.
 
-- heavy: `verifier-loop` 요청은 일반 대기열과 분리된 검증 자리 1개를 쓴다. 다른 요청은 거절하지 않고 일반 대기열에서 차례를 받는다. 그래서 일반 작업 1개와 검증 1개가 동시에 돈다. 검증 holder의 nice는 10으로 올린다. compat·round-robin을 모두 지원한다. 01-software 작업 heavy와 동시에 돌리려면 round-robin으로 운영한다([공유 역할](agents/heavy-queue.md#공유-역할-role-add-verifier---shared)).
-- 자동 시작: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 끄지 않고 이 기기 종류의 원래 등록을 유지한다. 작업 기기의 에이전트가 이 기기에서 Paseo와 브라우저 작업을 계속 쓰기 때문이다.
+- heavy: 다른 요청도 거절하지 않고 일반 대기열에서 차례를 받는다. round-robin이면 `verifier-loop` 요청은 일반 대기열과 분리된 검증 자리 1개를 써서, 일반 작업 1개와 검증 1개가 동시에 돈다. 검증 holder의 nice는 10으로 올린다. compat이면 검증 자리 없이 함께 차례를 받는다. 모드는 재시동하면 compat로 돌아가므로 다시 켠다([공유 역할](agents/heavy-queue.md#공유-역할-role-add-verifier---shared)).
+- 자동 시작: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 끄지 않고 이 기기 종류의 원래 등록을 유지한다. 작업 기기의 에이전트가 이 기기에서 Paseo와 브라우저 작업을 계속 쓰기 때문이다. 재적용은 실행 중인 등록을 내렸다 올리지 않는다(감독 세션 보호). 내용이 바뀌었으면 수동 작업 대기로 알리고 paseo·browser 단계에 맡긴다.
 
-메모리는 기존 `--colima-memory`로 정한다. VM은 작업과 검증이 같이 쓰므로, 이미 작업용으로 정한 값보다 작게 바꾸지 않는다. 검증 피크는 VM 약 6 GiB, 호스트 node 최대 약 6 GiB다.
+메모리는 기존 `--colima-memory`로 정한다. VM은 작업과 검증이 같이 쓰므로 `max(지금 값, 6)` 이상을 준다. 선택지 없이 처음 켜면 기본 6 GiB로 줄일 수 있다. 검증 피크는 VM 약 6 GiB, 호스트 node 최대 약 6 GiB다. 01-software 검증은 VM CPU 4개를 요구하는데 role은 `cpu:`를 바꾸지 않으므로 직접 확인한다.
 
 ```sh
 ./bootstrap.sh role add verifier --ssh-key <공개키 파일>   # 처음 한 번. 로그를 읽을 기기의 공개키
@@ -148,10 +148,10 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 
 끄면 role이 등록한 colima 서비스만 `brew services stop colima`로 해제한다(서비스로 실행 중인 VM도 멈출 수 있음). 기존 서비스나 소유 기록이 없는 구버전 역할의 서비스는 보존한다. 해제 실패 시 소유 기록을 남겨 다시 실행할 수 있다. colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
 
-`role status`는 **clock override·실행 중인 기본 guest의 drop-in·unit CapabilityBoundingSet**, **colima 자동 시작 설정**, **지금 Docker 응답**, **heavy 공유·전용**을 따로 보고한다. 공유 역할은 세 자동 시작이 등록돼 있는지, 전용 역할은 꺼졌는지 확인한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
+`role status`는 **clock override·실행 중인 기본 guest의 drop-in·unit CapabilityBoundingSet**, **colima 자동 시작 설정**, **지금 Docker 응답**, **heavy 공유·전용**을 따로 보고한다. 공유 역할은 세 자동 시작이 등록돼 있는지와 heavy 모드가 round-robin인지(아니면 2), 전용 역할은 자동 시작이 꺼졌는지 확인한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
 
 - **0 준비 완료**: 자동 시작 등록·소유 기록, Docker 응답과 기존 역할 검사가 모두 정상이다. 인자 없는 `role status`는 켠 역할이 없어도 기존처럼 0이다.
-- **2 수동 작업 대기**: colima 인스턴스 설정이 없어 최초 준비가 필요하거나(등록 미시도 `pending` 포함), 원격 로그인이 꺼져 있거나, 실행 중인 에이전트의 등록 해제가 대기 중이다.
+- **2 수동 작업 대기**: colima 인스턴스 설정이 없어 최초 준비가 필요하거나(등록 미시도 `pending` 포함), 원격 로그인이 꺼져 있거나, 실행 중인 에이전트의 등록 해제가 대기 중이거나, 공유 역할인데 heavy 모드가 round-robin이 아니다.
 - **1 실패·꺼짐**: 명시한 역할이 꺼져 있거나, 서비스 조회 실패·미등록·소유 기록 누락, 인스턴스가 있는데 Docker 미응답(CLI 없음 포함), 기존 설정 어긋남이다. 등록만으로 실행 준비 완료라고 판정하지 않는다.
 
 사용자 작업:

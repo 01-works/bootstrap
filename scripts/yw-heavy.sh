@@ -33,7 +33,7 @@ usage() {
   yw-heavy release --generation G --token T --lease L    v3 세대별 해제 (빌린 lease는 no-op)
 verifier 역할 기기: acquire·run은 supervisor=verifier-loop만 허용한다.
   예외: YW_HEAVY_VERIFIER_OVERRIDE_REASON='<사유>' (owner와 진단 로그에 기록)
-  공유 역할(role add verifier --shared): verifier-loop는 별도 검증 자리 1개, 다른 요청은 일반 대기열 (제한 없음)
+  공유 역할(role add verifier --shared): 다른 요청도 허용. round-robin이면 verifier-loop는 별도 검증 자리 1개
 종료 코드: 0 성공, 1 내부 오류, 2 사용법 오류·holder가 처음부터 끝나 있음,
            4 verifier 역할 거절·제출 중지·모드 비활성·전환 거절, 5 pending 한도 초과, 6 lease·생존 검증 실패,
            3 대기 줄 제거·이어받힘·holder 종료·같은 ID가 이미 차례를 가짐·같은 ID의 구버전 줄
@@ -72,7 +72,8 @@ init() {
 }
 use_lane() { Q="$LQ" XL="$LXL" RING="$LQ.rotation"; }
 use_main() { Q="$MQ" XL="$MXL" RING="$MQ.rotation"; }
-role_shared() { grep -qx 'shared=1' "$ROLE_FILE" 2>/dev/null; }
+# 일반 파일만 읽는다 (FIFO 등에서 멈추지 않게).
+role_shared() { [ -f "$ROLE_FILE" ] && grep -qx 'shared=1' "$ROLE_FILE" 2>/dev/null; }
 lane_owner() { cat "$LXL/owner.txt" 2>/dev/null; }
 
 # role.sh와 같은 상태 경로·파일 판정. 프로젝트별 ID 대신 기존 verifier 루프의 감독자 식별자를 쓴다.
@@ -89,11 +90,30 @@ verifier_guard() {
   esac
 }
 
-# 공유 역할의 verifier-loop 요청과, 검증 자리 lease의 token을 이어받은 요청은 검증 자리를 쓴다.
+# 검증 자리는 round-robin에서만 쓴다. compat 공유는 verifier-loop도 일반 대기열에서 함께 차례를 받는다
+# (두 v2 대기열의 같은 ID 등록과 ID 해제가 어느 자리인지 모호해지는 것을 피한다).
+# 기존 재진입 계약을 먼저 지킨다: 상속한 token의 세대 → 조상 holder → 새 획득은 supervisor로 정한다.
 # 역할 파일을 읽지 못하면 공유가 아닌 것으로 본다 (기존 전용 동작).
 lane_route() {
-  if { [ "$SUP" = verifier-loop ] && role_shared; } ||
-    { [ -n "$IN_GEN" ] && [ "$IN_GEN" = "$(json_str "$(lane_owner)" generation)" ]; }; then
+  local lo mo
+  [ "$(mode_read)" = round-robin ] || return 0
+  lo="$(lane_owner)"
+  if [ -n "$IN_GEN" ]; then
+    [ "$IN_GEN" != "$(json_str "$lo" generation)" ] || use_lane
+    return 0
+  fi
+  if [ "$(json_num "$lo" v)" = 3 ] && is_ancestor "$(json_num "$lo" holder)" "$(json_str "$lo" holderStart)"; then
+    use_lane; return 0
+  fi
+  mo="$(cat "$MXL/owner.txt" 2>/dev/null)"
+  if [ "$(json_num "$mo" v)" = 3 ] && is_ancestor "$(json_num "$mo" holder)" "$(json_str "$mo" holderStart)"; then
+    return 0
+  fi
+  [ "$SUP" = verifier-loop ] || return 0
+  # 역할을 바꾸는 동안에도 verifier-loop 실행은 하나다. 다른 자리에 verifier-loop 실행·대기가 남아 있으면 그 자리에서 기다린다.
+  if role_shared; then
+    [ "$(json_str "$mo" supervisor)" = verifier-loop ] || (use_main; q_lines) | grep -q ' supervisor=verifier-loop ' || use_lane
+  elif [ -n "$lo" ] || [ -s "$LQ" ]; then
     use_lane
   fi
 }
@@ -310,7 +330,9 @@ lock_queue() {
 # macOS tmp_cleaner는 매일 0시에 atime·mtime·ctime이 모두 3일 넘은 /tmp 파일을 지운다(#114).
 # APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않아 읽기만 하는 상태 파일과 flock 파일이 지워진다.
 # 잠금을 잡은 프로세스와 실행 중인 run이 주기마다 mtime을 갱신한다. 없는 파일은 만들지 않는다.
-keep_paths() { touch -c "$FL" "$Q" "$XL/owner.txt" "$MODE" "$PAUSED" "$RING" "$NR" "$LOG" "$EVENTS" 2>/dev/null 9>&- || true; }
+keep_paths() {
+  touch -c "$FL" "$MQ" "$MXL/owner.txt" "$MQ.rotation" "$LQ" "$LXL/owner.txt" "$LQ.rotation" "$MODE" "$PAUSED" "$NR" "$LOG" "$EVENTS" 2>/dev/null 9>&- || true
+}
 state_keep() {
   [ "$KEPT_AT" -lt 0 ] || [ $((SECONDS - KEPT_AT)) -ge "${KEEP_SECS:-0}" ] || return 0
   KEPT_AT="$SECONDS"
@@ -706,7 +728,8 @@ do_status() {
   if [ -e "$PAUSED" ]; then printf '중지\n'; else printf '허용\n'; fi
   if [ "$(mode_read)" = round-robin ]; then printf '감독자 순환: %s\n' "$(ring_read | tr '\n' ' ')"; fi
   last_mode_change
-  if role_shared; then printf 'verifier 역할: 공유 (verifier-loop는 검증 자리, 다른 요청은 일반 대기열)\n'
+  if role_shared && [ "$(mode_read)" = round-robin ]; then printf 'verifier 역할: 공유 (verifier-loop는 검증 자리, 다른 요청은 일반 대기열)\n'
+  elif role_shared; then printf 'verifier 역할: 공유, 그러나 compat이라 검증 자리 없음 (verifier-loop도 일반 대기열, 동시 실행 안 함)\n'
   elif [ -f "$ROLE_FILE" ]; then printf 'verifier 역할: 전용 (verifier-loop만 허용)\n'; fi
   printf '대기열: %s\n' "$Q"
   status_slot
@@ -738,7 +761,7 @@ do_status() {
   else
     printf '관문: 열림\n'
   fi
-  if role_shared || [ -s "$LQ" ] || [ -e "$LXL" ]; then
+  if { role_shared && [ "$(mode_read)" = round-robin ]; } || [ -s "$LQ" ] || [ -e "$LXL" ]; then
     printf '검증 자리: %s\n' "$LQ"
     use_lane; status_slot; use_main
   fi

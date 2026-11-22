@@ -50,6 +50,7 @@ paths() {
   LOG_DIR="$HOME/.local/state/verifier/logs"
   LOGS_SRC="$BOOTSTRAP_ROOT/scripts/verifier-logs.sh"
   LOGS_BIN="$HOME/.local/bin/verifier-logs"
+  HEAVY_BIN="$HOME/.local/bin/yw-heavy"
   SSH_DIR="$HOME/.ssh"
   AUTH_KEYS="$SSH_DIR/authorized_keys"
 }
@@ -355,9 +356,11 @@ check_paths() {
 # launch-agents.mjs로 세 등록을 맞춘다. 상태 파일이 있으면 끄고, 없으면 이 기기 종류의 원래 등록으로 되돌린다.
 # dry-run은 상태 파일을 아직 바꾸지 않았으므로 바꾼 뒤의 역할을 넘긴다: agents <verifier|none>
 # 수동 작업 대기(2)로 끝난 대상은 AGENTS_PENDING에 남는다.
+# 공유 역할은 두 번째 인자로 --no-restart를 넘긴다. 재적용(자동 갱신의 apply-active 포함)이 실행 중인 Paseo 데몬·Chrome의
+# 바뀐 등록을 내렸다 올리지 않게 한다(감독 세션이 끊긴다). 그때는 대기(2)로 알리고 paseo·browser 단계의 확인에 맡긴다.
 agents() {
-  local name r st=0 extra=''
-  [[ "$DRY_RUN" == 1 ]] && extra="--dry-run --roles $1"
+  local name r st=0 extra="${2:-}"
+  [[ "$DRY_RUN" == 1 ]] && extra="$extra --dry-run --roles $1"
   AGENTS_PENDING=''
   for name in $VERIFIER_AGENTS; do
     r=0
@@ -374,7 +377,7 @@ agents() {
 }
 
 shared_label() {
-  if [[ "$1" == 1 ]]; then printf 'heavy 공유: verifier-loop는 검증 자리, 다른 요청은 일반 대기열'
+  if [[ "$1" == 1 ]]; then printf 'heavy 공유: 다른 요청도 허용, round-robin이면 verifier-loop는 검증 자리'
   else printf 'heavy 전용: verifier-loop만 허용'; fi
 }
 
@@ -495,10 +498,10 @@ verifier_add() {
   #    공유면 작업 기기와 같이 이 기기 종류의 원래 등록을 유지한다. launch-agents.mjs가 상태 파일의 shared=1을 본다.
   r=0
   if [[ "$shared" == 1 ]]; then
-    agents none || r=$?
+    agents none --no-restart || r=$?
     case "$r" in
       0) ok '에이전트 Chrome·Paseo 데몬·Paseo 업그레이드 자동 시작 유지 (--shared)' ;;
-      2) warn "수동 작업 대기인 자동 시작: ${AGENTS_PENDING} (위 메시지)"; [[ "$st" == 1 ]] || st=2 ;;
+      2) warn "실행 중이라 바뀐 등록을 다시 올리지 않은 자동 시작: ${AGENTS_PENDING} → 에이전트가 끝난 뒤 터미널에서 ./bootstrap.sh --only browser,paseo"; [[ "$st" == 1 ]] || st=2 ;;
       *) fail '자동 시작을 맞추지 못했습니다 (위 메시지)'; st=1 ;;
     esac
   else
@@ -607,6 +610,15 @@ verifier_status() {
 
   shared="$(state_get shared)"
   s_ok "$(shared_label "$shared")"
+  # 검증 자리는 round-robin에서만 쓴다. 모드는 /tmp에 있어 재시동하면 compat로 돌아간다.
+  if [[ "$shared" == 1 ]]; then
+    r="$("$HEAVY_BIN" mode 2>/dev/null)" || r=''
+    if [[ "$r" == round-robin ]]; then
+      s_ok 'heavy 모드: round-robin (검증 자리 사용)'
+    else
+      s_wait "heavy 모드: ${r:-확인 불가}. 검증 자리를 쓰지 않아 동시 실행 안 함 → agents/heavy-queue.md 활성화 절차로 round-robin"
+    fi
+  fi
   for name in $VERIFIER_AGENTS; do
     r=0
     node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --check --only "$name" "$(device_flag)" >/dev/null 2>&1 || r=$?

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { AGENT_CHROME_URL, LABELS, PASEO_UPGRADE_INTERVAL, ROLE_DISABLED, UPDATE_INTERVAL, activeRoles, apply, definitions, harnessEnvPath, plist } from './launch-agents.mjs';
 
 function fixture(t) {
@@ -174,6 +175,10 @@ test('verifier 공유 역할(shared=1)은 자동 시작을 끄지 않고, 전용
   for (const name of ROLE_DISABLED.verifier) assert.equal(apply({ ...f.options, laptop: false, only: name, check: true }), 0, `${name} 유지`);
   writeFileSync(roleFile, 'colima_memory=6\nshared=0\n');
   assert.deepEqual(activeRoles({ home: f.home }), ['verifier']);
+  rmSync(roleFile);
+  assert.equal(spawnSync('mkfifo', [roleFile]).status, 0);
+  assert.deepEqual(activeRoles({ home: f.home }), ['verifier'], 'FIFO는 읽지 않고 기존 동작(끔)으로 본다');
+  rmSync(roleFile); writeFileSync(roleFile, 'colima_memory=6\n');
   assert.equal(apply({ ...f.options, laptop: false }), 0);
   for (const name of ROLE_DISABLED.verifier) assert.equal(f.loaded.has(LABELS[name]), false, `${name} 전용은 끔`);
 });

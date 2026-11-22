@@ -1,7 +1,7 @@
 // 사용자 LaunchAgent: 에이전트 전용 Chrome, (늘 켜두는 기기) Paseo 데몬·Paseo 업그레이드, (모든 기기) 저장소 자동 갱신.
 // plist에는 이 기기의 절대 경로가 들어가므로 저장소에 두지 않고 여기서 만든다.
 // 기기 역할(scripts/role.sh)이 끈 등록은 만들지 않고, 있으면 내린다.
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +25,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // 자동 시작을 끄는 켠 역할: 상태 파일(~/.config/bootstrap/roles/<역할>)이 있는 역할.
 // shared=1(role add verifier --shared)은 작업 기기를 겸하므로 끄지 않는다. 읽지 못하면 끄는 쪽(기존 동작)으로 본다.
-const sharedRole = path => { try { return /^shared=1$/m.test(readFileSync(path, 'utf8')); } catch { return false; } };
+const sharedRole = path => { try { return statSync(path).isFile() && /^shared=1$/m.test(readFileSync(path, 'utf8')); } catch { return false; } };
 export function activeRoles({ home, env = {} }) {
   const dir = join(env.XDG_CONFIG_HOME || join(home, '.config'), 'bootstrap/roles');
   return Object.keys(ROLE_DISABLED).filter(role => existsSync(join(dir, role)) && !sharedRole(join(dir, role)));

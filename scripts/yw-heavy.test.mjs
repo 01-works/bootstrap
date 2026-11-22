@@ -196,103 +196,159 @@ function releaseOwner(f, x = f.x) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-// ---- verifier 공유 역할 (role add verifier --shared): 검증 자리 1개 + 일반 대기열 ----
+// ---- verifier 공유 역할 (role add verifier --shared): round-robin은 검증 자리 1개 + 일반 대기열 ----
 const nice = pid => spawnSync('ps', ['-o', 'nice=', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim();
-for (const mode of ['compat', 'round-robin']) {
-  test(`verifier 공유 (${mode}): 검증 lease 중 일반 run은 바로 실행, 검증 자리는 하나, ID·세대로 해제, 검증 holder만 nice 10`, async t => {
-    const f = fixture(t);
-    if (mode === 'round-robin') enable(f);
-    enableVerifierRole(f, { shared: true });
-    const lx = f.x + '.verifier', lq = f.q + '.verifier';
-    const json = mode === 'round-robin' ? ' --json' : '';
-    // compat은 verifier-loop.mjs의 FIFO 호출, round-robin은 heavy-machine-lock.mjs의 위임 호출과 같다.
-    const hold = (id, sup) => f.start(['-c', `${quote(script)} acquire ${id} nightly-local ${sup}${json} --holder $$ && read -r _`]);
-    const v = hold('VERIFIER-01-software', 'verifier-loop');
-    await f.wait(() => v.out.trim(), 'verifier acquired');
-    if (mode === 'compat') assert.equal(v.out.trim(), 'ACQUIRED VERIFIER-01-software');
-    else assert.equal(JSON.parse(v.out).borrowed, false);
-    const owner = JSON.parse(read(join(lx, 'owner.txt')));
-    assert.equal(owner.task, 'VERIFIER-01-software'); assert.equal(owner.supervisor, 'verifier-loop'); assert.equal(owner.holder, v.pid);
-    assert.equal(existsSync(f.x), false, '일반 실행 lock은 비어 있다');
-    assert.equal(nice(v.pid), '10', '검증 holder는 nice 10');
-
-    const run = f.cli('run', 'ORDINARY', 'w', 'S', '--', '/bin/sh', '-c', 'exit 17');
-    assert.equal(await f.finish(run, 10000), 17, run.err);
-    assert.doesNotMatch(f.log(), /verifier-override/, '사유 없이 허용된다');
-    const w = hold('WORK', 'S');
-    await f.wait(() => w.out.trim(), 'work acquired while verifier holds', 10000);
-    assert.equal(JSON.parse(f.ownerText()).task, 'WORK');
-    assert.equal(nice(w.pid), '0', '일반 holder는 그대로');
-
-    const second = hold('VERIFIER-SECOND', 'verifier-loop');
-    await f.wait(() => read(lq).includes('VERIFIER-SECOND '), 'second verifier queued');
-    await pause(300);
-    assert.equal(second.out, '', '검증 자리는 하나다');
-    assert.equal(JSON.parse(read(join(lx, 'owner.txt'))).task, 'VERIFIER-01-software');
-    assert.doesNotMatch(read(f.q), /VERIFIER/, '검증 요청은 일반 대기열에 들어가지 않는다');
-
-    if (mode === 'round-robin') {
-      // 검증 lease의 token을 이어받은 자식은 감독자가 달라도 검증 자리를 빌린다.
-      const lease = JSON.parse(v.out);
-      const child = f.cliEnv({ YW_HEAVY_GENERATION: lease.generation, YW_HEAVY_TOKEN: lease.token }, 'acquire', 'CHILD', 'w', 'T', '--json');
-      assert.equal(await f.finish(child), 0, child.err);
-      const borrowed = JSON.parse(child.out);
-      assert.equal(borrowed.borrowed, true); assert.equal(borrowed.generation, lease.generation);
-      assert.equal(releaseLease(f, borrowed).status, 0);
-      assert.equal(JSON.parse(read(join(lx, 'owner.txt'))).generation, lease.generation);
-    }
-    const st = f.sync('status');
-    assert.equal(st.status, 0);
-    assert.match(st.stdout, /verifier 역할: 공유/);
-    const lane = st.stdout.slice(st.stdout.indexOf('검증 자리: '));
-    assert.match(lane, /^검증 자리: .*q\.verifier\n(  \d+\. .*\n)*실행 lock: task=VERIFIER-01-software holder=\d+ alive\n/);
-    assert.match(lane, /VERIFIER-SECOND {2}v[23] {2}verifier-loop/);
-
-    releaseOwner(f, lx);
-    await f.wait(() => second.out.trim(), 'second verifier acquired after release');
-    assert.equal(JSON.parse(read(join(lx, 'owner.txt'))).task, 'VERIFIER-SECOND');
-    assert.equal(JSON.parse(f.ownerText()).task, 'WORK', '일반 lease는 그대로');
-    releaseOwner(f, lx); releaseOwner(f);
-    for (const p of [v, w, second]) { p.stdin.end('done\n'); assert.equal(await f.finish(p), 0, p.err); }
-    assert.equal(existsSync(lx), false); assert.equal(existsSync(f.x), false);
-  });
+// holder 셸: lease를 잡고 stdin 한 줄마다 그 supervisor로 자식 acquire를 실행한다(token 없이, 조상 재진입).
+function holdShell(f, id, sup) {
+  return f.start(['-c', `${quote(script)} acquire ${id} nightly-local ${sup} --json --holder $$ || exit
+while read -r s; do ${quote(script)} acquire CHILD-$s w $s --json || echo "rc=$?"; done`]);
 }
+const leases = p => p.out.trim().split('\n').filter(Boolean).map(l => l.startsWith('rc=') ? l : JSON.parse(l));
 
-test('verifier 공유: shared=1이 없으면 기존 거절(코드 4), compat 검증 자리도 --json은 거절', t => {
+test('verifier 공유 (round-robin): 검증 lease 중 일반 run은 바로 실행, 검증 자리는 하나, 세대로 해제, 검증 holder만 nice 10', async t => {
+  const f = fixture(t); enable(f);
+  enableVerifierRole(f, { shared: true });
+  const lx = f.x + '.verifier', lq = f.q + '.verifier';
+  // heavy-machine-lock.mjs의 위임 호출과 같다: acquire SOFTWARE-<uuid> <worker> verifier-loop --json --holder <루프 PID>.
+  const v = holdShell(f, 'SOFTWARE-VERIFY', 'verifier-loop');
+  await f.wait(() => v.out.trim(), 'verifier acquired');
+  const vl = leases(v)[0];
+  assert.equal(vl.borrowed, false);
+  const owner = JSON.parse(read(join(lx, 'owner.txt')));
+  assert.equal(owner.task, 'SOFTWARE-VERIFY'); assert.equal(owner.supervisor, 'verifier-loop'); assert.equal(owner.holder, v.pid);
+  assert.equal(existsSync(f.x), false, '일반 실행 lock은 비어 있다');
+  assert.equal(nice(v.pid), '10', '검증 holder는 nice 10');
+
+  const run = f.cli('run', 'ORDINARY', 'w', 'S', '--', '/bin/sh', '-c', 'exit 17');
+  assert.equal(await f.finish(run, 10000), 17, run.err);
+  assert.doesNotMatch(f.log(), /verifier-override/, '사유 없이 허용된다');
+  const w = holdShell(f, 'WORK', 'S');
+  await f.wait(() => w.out.trim(), 'work acquired while verifier holds', 10000);
+  const wl = leases(w)[0];
+  assert.equal(JSON.parse(f.ownerText()).task, 'WORK');
+  assert.equal(nice(w.pid), '0', '일반 holder는 그대로');
+
+  const second = holdShell(f, 'SOFTWARE-SECOND', 'verifier-loop');
+  await f.wait(() => read(lq).includes('SOFTWARE-SECOND '), 'second verifier queued');
+  await pause(300);
+  assert.equal(second.out, '', '검증 자리는 하나다');
+  assert.doesNotMatch(read(f.q), /SOFTWARE-/, '검증 요청은 일반 대기열에 들어가지 않는다');
+
+  // 재진입은 supervisor보다 먼저: 조상 holder와 상속 token의 세대가 자리를 정한다.
+  v.stdin.write('T\n');
+  await f.wait(() => leases(v).length === 2, 'verifier child');
+  assert.deepEqual([leases(v)[1].borrowed, leases(v)[1].generation], [true, vl.generation], '검증 holder의 자식은 감독자가 달라도 검증 자리를 빌린다');
+  w.stdin.write('verifier-loop\n');
+  await f.wait(() => leases(w).length === 2, 'work child');
+  assert.deepEqual([leases(w)[1].borrowed, leases(w)[1].generation], [true, wl.generation], '일반 holder의 자식은 verifier-loop여도 일반 자리를 빌린다');
+  for (const [lease, sup] of [[vl, 'T'], [wl, 'verifier-loop']]) {
+    const child = f.cliEnv({ YW_HEAVY_GENERATION: lease.generation, YW_HEAVY_TOKEN: lease.token }, 'acquire', 'TOKEN', 'w', sup, '--json');
+    assert.equal(await f.finish(child), 0, child.err);
+    const borrowed = JSON.parse(child.out);
+    assert.deepEqual([borrowed.borrowed, borrowed.generation], [true, lease.generation], `token 세대로 자리를 찾는다 (${sup})`);
+    assert.equal(releaseLease(f, borrowed).status, 0);
+  }
+  assert.equal(JSON.parse(read(join(lx, 'owner.txt'))).generation, vl.generation);
+  assert.equal(JSON.parse(f.ownerText()).generation, wl.generation);
+
+  const st = f.sync('status');
+  assert.equal(st.status, 0);
+  assert.match(st.stdout, /verifier 역할: 공유 \(verifier-loop는 검증 자리/);
+  const lane = st.stdout.slice(st.stdout.indexOf('검증 자리: '));
+  assert.match(lane, /^검증 자리: .*q\.verifier\n(  \d+\. .*\n)*실행 lock: task=SOFTWARE-VERIFY holder=\d+ alive\n/);
+  assert.match(lane, /SOFTWARE-SECOND {2}v3 {2}verifier-loop/);
+
+  assert.equal(releaseLease(f, vl).status, 0);
+  await f.wait(() => second.out.trim(), 'second verifier acquired after release');
+  assert.equal(JSON.parse(read(join(lx, 'owner.txt'))).task, 'SOFTWARE-SECOND');
+  assert.equal(JSON.parse(f.ownerText()).task, 'WORK', '일반 lease는 그대로');
+  assert.equal(releaseLease(f, leases(second)[0]).status, 0);
+  assert.equal(releaseLease(f, wl).status, 0);
+  for (const p of [v, w, second]) { p.stdin.end(); assert.equal(await f.finish(p), 0, p.err); }
+  assert.equal(existsSync(lx), false); assert.equal(existsSync(f.x), false);
+});
+
+test('verifier 공유 (compat): 검증 자리 없이 verifier-loop도 일반 대기열에서 차례, 다른 요청은 허용되어 뒤에서 기다린다', async t => {
   const f = fixture(t);
   enableVerifierRole(f, { shared: true });
-  const file = join(f.env.XDG_CONFIG_HOME, 'bootstrap/roles/verifier');
-  assert.equal(f.sync('run', 'ORDINARY', 'w', 'S', '--', 'true').status, 0);
-  for (const text of ['colima_memory=6\n', 'shared=0\n', '#shared=1\n']) {
-    writeFileSync(file, text);
-    const result = f.sync('run', 'ORDINARY', 'w', 'S', '--', 'true');
-    assert.equal(result.status, 4, text);
-    assert.match(result.stderr, /YW_HEAVY_VERIFIER_OVERRIDE_REASON/);
-    assert.doesNotMatch(f.sync('status').stdout, /검증 자리/);
-  }
-  writeFileSync(file, 'shared=1\n');
-  const result = f.sync('acquire', 'VERIFIER-01-software', 'nightly-local', 'verifier-loop', '--json');
-  assert.equal(result.status, 4, result.stderr);
+  // verifier-loop.mjs의 compat FIFO 호출과 같다.
+  const v = f.start(['-c', `${quote(script)} acquire VERIFIER-01-software nightly-local verifier-loop --holder $$ && read -r _`]);
+  await f.wait(() => v.out.trim(), 'verifier acquired');
+  assert.equal(v.out.trim(), 'ACQUIRED VERIFIER-01-software');
+  assert.equal(JSON.parse(f.ownerText()).task, 'VERIFIER-01-software');
+  assert.equal(nice(v.pid), '0', 'compat은 검증 자리가 아니라 그대로');
+  const run = f.cli('run', 'ORDINARY', 'w', 'S', '--', '/bin/sh', '-c', 'exit 17');
+  await f.wait(() => read(f.q).includes('ORDINARY '), 'ordinary queued, not rejected');
+  await pause(200);
+  assert.equal(run.result, undefined, '같은 자리라 기다린다');
+  assert.match(f.sync('status').stdout, /compat이라 검증 자리 없음/);
+  assert.doesNotMatch(f.sync('status').stdout, /검증 자리: /);
+  assert.equal(f.sync('acquire', 'VERIFIER-JSON', 'nightly-local', 'verifier-loop', '--json').status, 4);
+  releaseOwner(f);
+  assert.equal(await f.finish(run), 17, run.err);
+  v.stdin.end('done\n'); assert.equal(await f.finish(v), 0, v.err);
   assert.equal(existsSync(f.q + '.verifier'), false); assert.equal(existsSync(f.x + '.verifier'), false);
 });
 
-test('verifier 공유: 검증 자리가 차 있으면 모드 전환 거절, 죽은 검증 holder는 reclaim이 회수, 조상이 아닌 holder는 renice 안 함', async t => {
-  const f = fixture(t);
+for (const mode of ['compat', 'round-robin']) {
+  test(`verifier 공유 (${mode}): shared=1이 없으면 기존 거절(코드 4)`, t => {
+    const f = fixture(t);
+    if (mode === 'round-robin') enable(f);
+    enableVerifierRole(f, { shared: true });
+    const file = join(f.env.XDG_CONFIG_HOME, 'bootstrap/roles/verifier');
+    assert.equal(f.sync('run', 'ORDINARY', 'w', 'S', '--', 'true').status, 0);
+    for (const text of ['colima_memory=6\n', 'shared=0\n', '#shared=1\n']) {
+      writeFileSync(file, text);
+      const result = f.sync('run', 'ORDINARY', 'w', 'S', '--', 'true');
+      assert.equal(result.status, 4, text);
+      assert.match(result.stderr, /YW_HEAVY_VERIFIER_OVERRIDE_REASON/);
+      assert.match(f.sync('status').stdout, /verifier 역할: 전용/);
+      assert.doesNotMatch(f.sync('status').stdout, /검증 자리/);
+    }
+  });
+}
+
+test('verifier 공유 (round-robin): 역할을 바꾸는 동안에도 verifier-loop 실행은 하나, 상태 경로가 FIFO여도 멈추지 않는다', async t => {
+  const f = fixture(t); enable(f);
+  enableVerifierRole(f);
+  const file = join(f.env.XDG_CONFIG_HOME, 'bootstrap/roles/verifier'), lx = f.x + '.verifier';
+  for (const [first, second, slot] of [['', 'shared=1\n', f.x], ['shared=1\n', '', lx]]) {
+    writeFileSync(file, first);
+    const a = holdShell(f, 'SOFTWARE-A', 'verifier-loop');
+    await f.wait(() => a.out.trim(), 'first verifier acquired');
+    assert.equal(JSON.parse(read(join(slot, 'owner.txt'))).task, 'SOFTWARE-A');
+    writeFileSync(file, second);
+    const b = holdShell(f, 'SOFTWARE-B', 'verifier-loop');
+    await pause(400);
+    assert.equal(b.out, '', `역할을 바꿔도 같은 자리에서 기다린다 (${first ? '공유→전용' : '전용→공유'})`);
+    assert.equal(existsSync(slot === lx ? f.x : lx), false, '다른 자리는 비어 있다');
+    assert.equal(releaseLease(f, leases(a)[0]).status, 0);
+    await f.wait(() => b.out.trim(), 'second verifier acquired after release');
+    assert.equal(JSON.parse(read(join(slot, 'owner.txt'))).task, 'SOFTWARE-B');
+    assert.equal(releaseLease(f, leases(b)[0]).status, 0);
+    for (const p of [a, b]) { p.stdin.end(); assert.equal(await f.finish(p), 0, p.err); }
+  }
+  rmSync(file);
+  assert.equal(spawnSync('mkfifo', [file]).status, 0);
+  const st = spawnSync('/bin/bash', [script, 'status'], { env: f.env, encoding: 'utf8', timeout: 10000 });
+  assert.equal(st.status, 0, 'FIFO를 읽으려다 멈추지 않는다');
+});
+
+test('verifier 공유 (round-robin): 검증 자리가 차 있으면 모드 전환 거절, 죽은 검증 holder는 reclaim이 회수', async t => {
+  const f = fixture(t); enable(f);
   enableVerifierRole(f, { shared: true });
-  const holder = f.live();
-  const result = f.sync('acquire', 'VERIFIER-01-software', 'nightly-local', 'verifier-loop', '--holder', String(holder.pid));
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(nice(holder.pid), '0');
+  const v = holdShell(f, 'SOFTWARE-VERIFY', 'verifier-loop');
+  await f.wait(() => v.out.trim(), 'verifier acquired');
   const lx = f.x + '.verifier';
   assert.ok(existsSync(join(lx, 'owner.txt')));
   assert.equal(f.sync('pause').status, 0);
-  const refused = f.sync('mode', 'round-robin');
+  const refused = f.sync('mode', 'compat');
   assert.equal(refused.status, 4); assert.match(refused.stderr, /검증 자리/);
-  process.kill(holder.pid, 'SIGKILL'); await holder.done;
+  process.kill(-v.pid, 'SIGKILL'); await v.done;
   assert.equal(f.sync('reclaim').status, 0);
   assert.equal(existsSync(lx), false);
-  assert.match(f.log(), /reclaim kind=exec task=VERIFIER-01-software/);
-  assert.equal(f.sync('mode', 'round-robin').status, 0);
+  assert.ok(events(f).some(e => e.event === 'reclaim' && e.requestId === 'SOFTWARE-VERIFY'));
+  assert.equal(f.sync('mode', 'compat').status, 0);
   assert.equal(f.sync('resume').status, 0);
 });
 
