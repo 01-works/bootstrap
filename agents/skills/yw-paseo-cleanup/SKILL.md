@@ -162,7 +162,7 @@ archive하면 그 에이전트의 heartbeat에 완료 처리가 시도되고 PR�
 
 디렉터리 처리는 workspace 종류에 따라 다르다.
 
-- **Paseo 소유 worktree:** archive하면 설정과 승인 상태에 따라 teardown이 실행되며, 같은 worktree를 가리키는 활성 workspace가 없으면 `git worktree remove --force`로 제거를 시도한다. Paseo는 읽을 수 있는 HEAD를 제거 전에 `refs/paseo/kept-commits/<sha>`에 보존한다. ref 쓰기에 실패하거나 teardown이 실패·시간 초과(기본 60초)되면 workspace가 보관돼도 디렉터리는 남고, teardown이 끝나지 않으면 HEAD 보존 ref도 쓰지 않고 git 등록도 남는다. 남은 디렉터리는 다음 수집에서 연결이 끊긴 worktree로 다룬다. 미커밋 파일에는 이 보존이 적용되지 않으므로 아래 "디렉터리 제거 공통 조건"을 충족해야 한다.
+- **Paseo 소유 worktree:** archive하면 설정에 따라 teardown이 실행되며, 같은 worktree를 가리키는 활성 workspace가 없으면 `git worktree remove --force`로 제거를 시도한다. Paseo는 읽을 수 있는 HEAD를 제거 전에 `refs/paseo/kept-commits/<sha>`에 보존한다. ref 쓰기에 실패하거나 teardown이 실패·시간 초과(기본 60초)되면 workspace가 보관돼도 디렉터리는 남고, teardown이 끝나지 않으면 HEAD 보존 ref도 쓰지 않고 git 등록도 남는다. 남은 디렉터리는 다음 수집에서 연결이 끊긴 worktree로 다룬다. MCP `archive_workspace`는 외부 PR 등에서 만든 workspace(`untrustedSource`)의 승인 여부를 확인하지 않고 teardown을 실행하므로, 이런 workspace에 teardown이 정의돼 있으면 보류한다. 미커밋 파일에는 이 보존이 적용되지 않으므로 아래 "디렉터리 제거 공통 조건"을 충족해야 한다.
 - **local 디렉터리 workspace:** 디렉터리는 남는다. 그래서 git·HEAD 조건은 적용하지 않는다. 구성원·보호 관계·터미널 조건은 확인하고, 구성원과 터미널에 대한 archive 효과는 따로 readback한다.
 - **소유 정보 불완전:** 데몬이 디스크에서 소유를 다시 확인하는 경우가 있으므로, 수집기가 worktree 소유·경로를 확정하지 못하면 `gaps`에 기록하고 archive를 보류한다.
 
@@ -239,7 +239,7 @@ B의 결정은 보존할지, 추가 작업을 어디까지 할지를 정하는 �
 1. **실행 직전 재확인:** 승인된 계획과 현재 상태를 다시 대조한다.
    - 새 요청, 턴, pending, 오류
    - 후손·이어받기·구독의 추가와 변경
-   - heartbeat·schedule
+   - heartbeat·schedule, PR·MR 감시(대상과 영향받는 후손)
    - workspace 구성원과 터미널
    - git HEAD, 변경, untracked, ignored, 등록, 잠금
    - teardown 정의와 내용

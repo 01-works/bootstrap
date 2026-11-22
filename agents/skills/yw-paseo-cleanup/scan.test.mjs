@@ -228,6 +228,22 @@ test('change-request watch protects the watching agent and its workspace', async
     assert.equal(s.classification.workspaces[0].verdict, 'exclude'); assert.ok(s.classification.workspaces[0].hold.includes('active_lane'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('unreadable change-request watch file is a gap, untrusted workspace with teardown is held', async () => {
+  const { dir, cwd, options } = syntheticStore();
+  try {
+    const watchFile = join(dir, 'change-request-watches.json');
+    mkdirSync(watchFile);
+    const s = await collect(options);
+    assert.ok(s.meta.gaps.some(g => g.source === watchFile && g.reason === 'EISDIR')); assert.notEqual(s.classification.workspaces[0].verdict, 'batch_candidate');
+    rmSync(watchFile, { recursive: true });
+    const ws = JSON.parse(readFileSync(join(dir, 'projects/workspaces.json'), 'utf8'));
+    writeFileSync(join(dir, 'projects/workspaces.json'), JSON.stringify([{ ...ws[0], untrustedSource: { kind: 'pull-request' } }]));
+    const trustedTeardownFree = await collect(options); assert.equal(trustedTeardownFree.classification.workspaces[0].verdict, 'batch_candidate', 'no teardown defined');
+    writeFileSync(join(cwd, 'paseo.json'), JSON.stringify({ worktree: { teardown: ['echo done'] } }));
+    const held = await collect(options);
+    assert.ok(held.classification.workspaces[0].hold.includes('data')); assert.ok(held.classification.workspaces[0].reasons.some(x => x.includes('untrusted source with teardown')));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 test('R3 P1 read and parse failures remain distinguishable from parsed null schema errors', async () => {
   const { dir, options } = syntheticStore(), file = join(dir, 'finish-subscriptions.json');
   try {
