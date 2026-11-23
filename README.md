@@ -186,7 +186,7 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 ## 설정 파일
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
-- `.seed`로 끝나는 파일은 대상이 없을 때만 복사하고 기존 일반 파일은 그대로 둔다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용. Claude Code는 예외 경로 `home/claude/.claude/settings.json`을 같은 방식으로 처리한다. 저장소의 `settings.json`은 새 기기 초기값이며 링크하지 않는다. 전환 이후 변경은 기기 로컬에만 남으며 기기 사이 자동 설정 동기화는 끝난다.
+- `.seed`로 끝나는 파일은 대상이 없을 때만 복사하고 기존 일반 파일은 그대로 둔다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용. Claude Code는 예외 경로 `home/claude/.claude/settings.json`을 같은 방식으로 처리한다. 저장소의 `settings.json`은 새 기기 초기값이며 링크하지 않는다. 전환 이후 변경은 기기 로컬에만 남으며 기기 사이 자동 설정 동기화는 끝난다. 기존 파일에 적용하는 값은 [메모리 끄기](agents/README.md#메모리)뿐이다.
 - 기존 Claude Code `settings.json` 링크는 자동 갱신·일반 설치·기본 `--only dotfiles`에서 교체하지 않고 수동 작업 대기(pending)로 남긴다. 다른 단계와 갱신은 계속한다. 기존 기기는 Claude Code를 모두 종료하고 새로 실행하지 않는 동안 `./bootstrap.sh --only dotfiles --migrate-claude-settings`를 한 번 실행해야 한다. 명령은 `claude` 프로세스가 있거나 프로세스 조회에 실패하면 거부한다. 같은 디렉터리의 임시 파일에 현재 내용을 복사하고 아래 백업 경로에 보존한 뒤 링크와 내용을 재확인해 교체하며, 전환 후 내용도 검증한다. 전환 후 `./bootstrap.sh update`로 남은 pending을 정리한다. 전환 전에는 링크를 통한 설정 저장 때문에 갱신 보류가 다시 생길 수 있고, 같은 저장소 파일의 원격 값 변경도 기존 링크에 반영된다. 백업을 로컬 파일에 복사하면 내용을 복구할 수 있다 ([상세·실행 조건·롤백](agents/claude-code.md#설정)).
 - 같은 내용을 두 도구가 쓰는 파일은 저장소 안에서 링크한다. Codex `AGENTS.md`는 Claude Code `CLAUDE.md`를 가리킨다.
 - Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 설정이 없으면 같은 단계가 앱 없이 첫 설정부터 한다([새 기기에서](agents/paseo.md#새-기기에서)). 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.
