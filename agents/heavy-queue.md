@@ -39,7 +39,7 @@ supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS �
 - `taskpolicy -b`(darwin background)는 쓰지 않는다. CPU뿐 아니라 디스크 I/O도 낮은 등급으로 묶고 Apple Silicon에서 효율 코어로 보내서, 기기가 한가해도 95~98분 걸리는 검증이 크게 늘어날 수 있다.
 - 메모리는 새로 막지 않는다. 01-software 검증(`nightly-local-check`)은 시작할 때와 lane마다 여유 메모리 35% 이상·swap 8 GiB 미만을 확인하고, 모자라면 최대 3시간 기다리거나 미룬다.
 
-01-software의 heavy lock(`scripts/heavy-machine-lock.mjs`)은 round-robin에서 작업과 검증을 모두 yw-heavy에 위임하므로, 바꾸지 않아도 공유 역할에서 동시에 돈다. compat에서는 자기 저장소 lock 하나를 쓰고, 역할 파일이 있으면 verifier-loop가 아닌 요청을 스스로 거절한다.
+01-software의 heavy lock(`scripts/heavy-machine-lock.mjs`)은 round-robin에서 작업과 검증을 모두 yw-heavy에 위임하므로, 바꾸지 않아도 공유 역할에서 동시에 돈다. compat에서는 자기 저장소 lock 하나를 쓴다. 전용 역할이면 verifier-loop가 아닌 요청을 스스로 거절하고, 공유 역할이면 작업과 검증을 그 lock으로 차례대로 실행한다.
 
 ## 모드와 전환 원칙
 
