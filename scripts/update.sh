@@ -9,6 +9,7 @@
 #   4. 결과를 상태 파일에 남기고, --auto는 결과가 바뀔 때만 알린다 (macOS 알림, 설정했으면 휴대폰).
 #   5. 실패해도 적용 기록은 앞으로 옮기고, 실패한 단계만 이어서 다시 시도한다 (같은 커밋은 한 시간 뒤).
 #   6. 저장소와 별개로 에이전트 CLI(Claude Code·Codex·OpenCode)를 단계보다 먼저 올린다. --auto는 하루에 한 번, 터미널에서는 매번 확인한다.
+#   7. 받은 뒤 매번 저장소 밖 개인 배치표로 Paseo host의 work 값을 맞춘다 (scripts/paseo-host-work.mjs).
 # pull로 이 파일이 바뀌어도 읽던 내용이 섞이지 않도록 전체를 함수로 정의한 뒤 맨 끝에서 부른다.
 
 BOOTSTRAP_ROOT="${BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -219,6 +220,18 @@ update_clis() {
   export BOOTSTRAP_CLIS_CHECKED=1
 }
 
+# 개인 배치표대로 Paseo host의 work 값을 맞춘다 (scripts/paseo-host-work.mjs). 배치표가 저장소 밖이라 바뀐 파일과 관계없이
+# 매번 확인한다. 결과는 단계 성공·실패에 넣지 않고 자기 상태 파일에 남긴다. 출력이 있을 때만 기록한다.
+sync_host_work() {
+  has node || return 0
+  local out line flag=''
+  [[ "$AUTO" != 1 ]] || flag=--auto
+  out="$(node "$BOOTSTRAP_ROOT/scripts/paseo-host-work.mjs" ${flag:+"$flag"} 2>&1)"
+  [[ -n "$out" ]] || return 0
+  header
+  while IFS= read -r line; do info "$line"; done <<<"$out"
+}
+
 main() {
   set -uo pipefail
   # shellcheck source=scripts/lib.sh
@@ -343,6 +356,7 @@ main() {
     fi
   fi
   target="$(git_ rev-parse "$target")"
+  sync_host_work
 
   # 다시 실행할 단계: 마지막 적용 이후 바뀐 파일 + 실패했던 단계 + (터미널에서) 대기로 남은 단계.
   local applied steps='' prev_failed prev_pending

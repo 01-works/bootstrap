@@ -67,6 +67,10 @@ esac
     'scripts/doctor.sh': 'exit 0\n',
     'scripts/paseo-plugins.mjs': "import { appendFileSync } from 'node:fs';\n" +
       "appendFileSync(process.env.MOCK + '/plugins', process.argv.slice(2).join(' ') + '\\n');\n",
+    // host work 맞춤 대역: 인자를 남기고, $MOCK/host-work-out이 있으면 그 내용을 출력한다.
+    'scripts/paseo-host-work.mjs': "import { appendFileSync, existsSync, readFileSync } from 'node:fs';\n" +
+      "appendFileSync(process.env.MOCK + '/host-work', `run ${process.argv.slice(2).join(' ')}\\n`);\n" +
+      "if (existsSync(process.env.MOCK + '/host-work-out')) process.stdout.write(readFileSync(process.env.MOCK + '/host-work-out'));\n",
     'scripts/paseo-profiles.mjs': "import { appendFileSync } from 'node:fs';\n" +
       "appendFileSync(process.env.MOCK + '/calls', `paseo-profiles ${process.argv.slice(2).join(' ')}\\n`);\n",
     'README.md': 'readme\n', 'Brewfile': 'brew "git"\n', 'home/zsh/.zshrc': '# zsh\n', 'agents/paseo-profiles.json': '[]\n',
@@ -634,6 +638,26 @@ test('전체 설치의 실패·대기는 상태로 남겨 터미널의 update가
   assert.equal(result.status, 0, output(result));
   assert.deepEqual(f.calls(), ['homebrew 0', 'power 0', 'dotfiles 0', 'paseo 0', 'autoupdate 0']);
   assert.equal(f.status().result, 'ok');
+});
+
+test('host work 맞춤은 바뀐 파일과 관계없이 매번 실행하고, 출력이 있을 때만 기록하며 결과에 넣지 않는다', t => {
+  const f = fixture(t);
+  const runs = join(f.mock, 'host-work');
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  rmSync(runs);
+  let result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.equal(readFileSync(runs, 'utf8'), 'run --auto\n', '실행할 단계가 없어도 확인한다');
+  assert.equal(result.stdout, '', '출력이 없으면 기록하지 않는다');
+  writeFileSync(join(f.mock, 'host-work-out'), 'host work 맞춤 실패: 데몬 응답 없음\n');
+  result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.match(result.stdout, /^\n\[[0-9-]+ [0-9:]+\]\n {4}host work 맞춤 실패: 데몬 응답 없음\n$/);
+  assert.equal(f.status().result, 'ok', '단계 결과에 넣지 않는다');
+  assert.deepEqual(f.notifications().length, 1, '알림은 처음 적용 한 번뿐');
+  assert.equal(f.update().status, 0);
+  assert.match(readFileSync(runs, 'utf8'), /run \n$/, '터미널에서는 --auto 없이');
 });
 
 test('에이전트 CLI는 자동 갱신에서 하루에 한 번, 터미널에서는 매번 올리고 바뀐 버전만 기록한다', t => {
