@@ -43,20 +43,28 @@ test('Opus (agy)는 역할 없이 사용자가 직접 고르는 선택용 프로
 });
 
 test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권한 자동 승인을 켜지 않는다', () => {
-  // Scan Reviewer(Argon)와 Gemini Cross-check(Neon)는 서로 다른 Antigravity 쿼터를 쓴다.
   for (const [name, provider, model, modeId] of [
-    ['Scan Reviewer', 'antigravity', 'gemini-4-argon-high', 'full-access'],
-    ['Bug Hunter', 'opencode', 'openrouter/moonshotai/kimi-k3.1-pro', 'plan'],
-    ['Gemini Cross-check', 'antigravity', 'gemini-4-neon-high', 'full-access'],  // Antigravity의 유일한 모드
+    ['Scan Reviewer', 'antigravity', 'gemini-4-neon-high', 'full-access'],  // Antigravity의 유일한 모드
+    ['Gemini Cross-check', 'antigravity', 'gemini-4-neon-high', 'full-access'],
+    ['Helper', 'opencode', 'openrouter/deepseek/deepseek-v4.1-flash-1017', 'plan'],
   ]) {
     const profile = manifest.profiles.find(p => p.name === name);
     assert.deepEqual([profile.provider, profile.model, profile.modeId], [provider, model, modeId], name);
     assert.equal(profile.featureValues?.auto_accept, undefined, name);
     assert.match(profile.notes, /바꾸지 말라고 명시/, name);
   }
-  for (const name of ['Scan Reviewer', 'Bug Hunter']) {
-    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않는다/, name);
+  for (const name of ['Scan Reviewer', 'Helper']) {
+    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않/, name);
   }
+  // 없앤 프로필은 기기에서 지우도록 removed에만 남긴다.
+  for (const { id, name } of manifest.removed ?? []) {
+    assert.ok(!manifest.profiles.some(p => p.id === id || p.name === name), name);
+  }
+  // 이전에 설치된 Bug Hunter는 명시적 갱신에서 지워진다.
+  const old = [{ id: 'bootstrap-bug-hunter', name: 'Bug Hunter', provider: 'opencode', model: 'openrouter/moonshotai/kimi-k3.1-pro' }];
+  const updated = mergeProfiles(old, manifest, true);
+  assert.ok(updated.changes.includes('제거: Bug Hunter'));
+  assert.equal(updated.profiles.some(p => p.id === 'bootstrap-bug-hunter'), false);
 });
 
 test('기존 개인 설정 유지, 누락 추가, 반복 실행 시 중복 없음', () => {
