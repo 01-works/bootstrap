@@ -1,11 +1,12 @@
 // 개인 배치표대로 이 기기 데몬에 등록된 Paseo host의 metadata.work를 맞춘다 (agents/paseo.md "작업 배치").
-// 배치표: ${XDG_CONFIG_HOME:-~/.config}/bootstrap/host-work. 줄마다 "serverId work값", #부터 줄 끝은 주석. 저장소에 두지 않는다.
+// 배치표: Infisical bootstrap 프로젝트 prod /paseo-hosts의 HOST_WORK. 줄마다 "serverId work값", #부터 줄 끝은 주석인 여러 줄 값.
+// 로그인한 Infisical CLI 프로필로 읽는다(scripts/paseo-api-key.py와 같은 방식). 값은 출력·로그·명령 인자에 남기지 않는다.
 // 등록된 host 중 배치표에 있는 것만, 값이 다를 때만 paseo host update <등록 ID> --meta work=<값>.
 // host 추가·삭제·켜고 끄기, work 밖의 metadata, 데몬 시작은 하지 않는다. Paseo CLI의 --meta는 조회한 metadata 전체에 넘긴 키를
 // 합쳐 통째로 바꾸므로, work 밖의 키가 있는 host는 동시에 바뀐 그 키를 되돌리지 않도록 자동으로 쓰지 않는다.
-// 배치표 없음·형식 오류·데몬 응답 실패는 알리고 0으로 끝난다(자동 갱신을 막지 않는다). 결과 한 줄을 상태 파일에 남긴다.
+// 배치표 조회 실패·형식 오류·데몬 응답 실패는 짧은 코드로 알리고 0으로 끝난다(자동 갱신을 막지 않는다). 결과 한 줄을 상태 파일에 남긴다.
 // 자동 갱신(scripts/update.sh)이 바뀐 파일과 관계없이 매번 부른다. --auto는 바꾼 것과 바뀐 결과만 출력한다.
-// Paseo 호출 전체는 20초 안에 끝낸다. 넘기면 SIGKILL로 끝내고 다음 주기에 다시 본다.
+// Infisical·Paseo 호출 전체는 20초 안에 끝낸다. 넘기면 SIGKILL로 끝내고 다음 주기에 다시 본다.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -17,6 +18,7 @@ const SERVER_ID = /^[A-Za-z0-9_-]+$/;
 const WORK = /^[가-힣A-Za-z0-9_-]+(,[가-힣A-Za-z0-9_-]+)*$/;
 const WORK_MAX = 256;  // Paseo는 metadata 값을 4096자까지 받는다
 const TIMEOUT_MS = 20_000;
+export const INFISICAL = { domain: 'https://app.infisical.com/api', projectId: '3ce526b3-d09b-4c7e-b116-873ce8a9cd2f', env: 'prod', path: '/paseo-hosts', key: 'HOST_WORK' };
 // host ls --json은 stderr에 JSON 오류를, host update는 "Error: <메시지>" 텍스트를 낸다. 텍스트에서는 알려진 코드만 뽑는다.
 const KNOWN_ERRORS = [['DAEMON_NOT_RUNNING', /DAEMON_NOT_RUNNING|Daemon is not running/], ['permission_denied', /permission_denied/i]];
 
@@ -64,22 +66,41 @@ function why(result) {
   return known ? known[0] : `종료 ${result.status ?? result.signal}`;
 }
 
-function sync(tablePath, home, deadline) {
-  const paseo = args => {
+// Infisical에서 배치표 값을 읽는다. { text } 또는 { code }(짧은 건너뜀 이유). 키가 없으면 CLI는 종료 0에 빈 값을 낸다.
+function readTable(run) {
+  const env = { ...process.env };
+  delete env.INFISICAL_TOKEN;  // 로그인 프로필로만 읽는다
+  const infisical = args => run('infisical', [...args, '--silent'], { cwd: '/', env });
+  const login = infisical(['profile', 'current', '--plain']);
+  const cliCode = result => result.error?.code === 'ENOENT' ? 'infisical 없음' : result.error?.code === 'ETIMEDOUT' ? '시간 초과' : null;
+  if (cliCode(login)) return { code: cliCode(login) };
+  const profile = login.stdout.trim();
+  if (login.status !== 0 || !profile || profile.includes('\n')) return { code: 'infisical 미로그인' };
+  const scope = ['--profile', profile, '--domain', INFISICAL.domain];
+  const got = infisical(['secrets', 'get', INFISICAL.key, ...scope, '--projectId', INFISICAL.projectId,
+    '--env', INFISICAL.env, '--path', INFISICAL.path, '--plain', '--expand=false']);
+  if (cliCode(got)) return { code: cliCode(got) };
+  if (got.status === 0) return got.stdout.trim() ? { text: got.stdout } : { code: '키 없음' };
+  const status = infisical(['login', 'status', ...scope]);
+  if (cliCode(status)) return { code: cliCode(status) };
+  return { code: status.status !== 0 ? 'infisical 미로그인' : `조회 실패(종료 ${got.status ?? got.signal})` };
+}
+
+function sync(home, deadline) {
+  const run = (command, args, options = {}) => {
     const timeout = deadline - Date.now();
     if (timeout <= 0) return { error: { code: 'ETIMEDOUT' } };
-    return spawnSync('paseo', [...args, '--home', home], { encoding: 'utf8', timeout, killSignal: 'SIGKILL' });
+    return spawnSync(command, args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'], ...options });
   };
-  let text;
-  try { text = readFileSync(tablePath, 'utf8'); } catch (error) {
-    const reason = error.code === 'ENOENT' ? '배치표 없음' : `배치표를 읽을 수 없음 (${error.code})`;
-    return { result: `host work 맞춤 건너뜀: ${reason} (${pretty(tablePath)})`, lines: [] };
-  }
+  const paseo = args => run('paseo', [...args, '--home', home]);
+  const source = `Infisical ${INFISICAL.path}/${INFISICAL.key}`;
+  const { text, code } = readTable(run);
+  if (code) return { result: `host work 맞춤 건너뜀: 배치표 조회 안 됨 (${code})`, lines: [] };
   let table;
   try { table = parseTable(text); } catch (error) {
-    return { result: `host work 맞춤 건너뜀: 배치표 형식 오류 (${pretty(tablePath)} ${error.message})`, lines: [] };
+    return { result: `host work 맞춤 건너뜀: 배치표 형식 오류 (${source} ${error.message})`, lines: [] };
   }
-  if (!table.size) return { result: `host work 맞춤 건너뜀: 배치표가 비어 있음 (${pretty(tablePath)})`, lines: [] };
+  if (!table.size) return { result: `host work 맞춤 건너뜀: 배치표가 비어 있음 (${source})`, lines: [] };
 
   const listed = paseo(['host', 'ls', '--json']);
   let hosts = null;
@@ -102,10 +123,9 @@ function sync(tablePath, home, deadline) {
 
 function main() {
   const auto = process.argv.includes('--auto');
-  const config = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
   const state = join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'bootstrap/update/host-work');
   const home = process.env.PASEO_HOME || join(homedir(), '.paseo');
-  const { result, lines } = sync(join(config, 'bootstrap/host-work'), home, Date.now() + TIMEOUT_MS);
+  const { result, lines } = sync(home, Date.now() + TIMEOUT_MS);
   let previous = null;
   try { previous = readFileSync(state, 'utf8').trim(); } catch {}
   for (const line of lines) console.log(line);

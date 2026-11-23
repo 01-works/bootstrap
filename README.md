@@ -85,7 +85,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 - 사람이 필요한 일: 자동 갱신은 관리자 비밀번호(전원 설정·자동 로그인·Homebrew 설치), 설치 창(Xcode 명령줄 도구), GitHub 로그인, 배경화면 제어 허용 창을 띄우지 않고 "수동 작업 대기"로 남긴다. 터미널에서 `./bootstrap.sh update`를 실행하면 대기 단계까지 다시 실행한다. 관리자 비밀번호가 필요한 cask는 자동 갱신에서 실패로 표시된다.
 - 실패: 적용 기록은 앞으로 옮기고, 실패한 단계만 `status`의 `failed`에 남겨 다음 실행 때 다시 실행한다. 자동 갱신은 같은 커밋이면 한 시간 뒤, 새 커밋이 오면 바로 다시 시도한다. 전체 설치(`./bootstrap.sh`)의 실패·대기도 같은 상태에 남아 `./bootstrap.sh update`가 이어서 실행한다. 전체 설치는 실패가 있으면 적용 기록을 옮기지 않는다.
 - 에이전트 CLI: 저장소와 별개로 Claude Code·Codex CLI·OpenCode를 공식 업데이트 명령(`claude update`, `codex update`, `opencode upgrade`)으로 올린다. 자동 갱신은 하루에 한 번, 터미널의 `./bootstrap.sh update`는 매번 확인한다. 저장소가 보류 상태여도 올리고, 네트워크가 없으면 건너뛴다. 새 버전은 따로 설치하고 링크만 바꾸므로 실행 중인 세션은 그대로 쓴다. 실패해도 저장소 반영은 계속하고 `update.log`에 남기며, 한 시간 뒤 다시 시도한다. 단계보다 먼저 올리므로 새 CLI가 필요한 프로필 변경도 같은 실행에서 적용된다. 버전이 바뀐 때만 기록한다.
-- 개인 배치표로 Paseo host의 `work`도 매 주기 맞춘다([작업 배치](agents/paseo.md#작업-배치) 참조). 기록을 공개 이슈에 붙일 때는 배치를 가린다.
+- Infisical 배치표로 Paseo host의 `work`도 매 주기 맞춘다([작업 배치](agents/paseo.md#작업-배치) 참조). 기록을 공개 이슈에 붙일 때는 배치를 가린다.
 - Paseo 플러그인: 처음 설치할 때 최신본을 받는다. 이후에는 `paseo plugin update --all`에서 후보 버전을 확인하고 승인해 갱신한다. [플러그인 갱신](agents/paseo.md#플러그인-갱신)
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
 - 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
