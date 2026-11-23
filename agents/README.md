@@ -18,3 +18,12 @@
 
 - **앱**: Codex 데스크톱 앱은 2026-07부터 ChatGPT 앱에 합쳐졌다. ChatGPT 앱 하나만 설치하면 된다.
 - **터미널용 Codex CLI는 따로 설치한다.** ChatGPT 앱 안에도 `codex` 실행 파일이 있지만 앱 내부용이라 터미널에서 쓸 수 없다. 공식 문서도 CLI 설치를 따로 안내한다. 터미널에서 `codex`를 쓰거나 Paseo가 Codex를 돌릴 때는 이 CLI가 필요하다.
+
+## 메모리
+
+Claude Code 자동 메모리와 Codex 메모리는 모든 기기에서 끈다. 기기마다 따로 쌓이고 두 도구가 공유하지 않아 같은 작업의 규칙이 달라진다. 기억할 내용은 해당 저장소의 지침·문서나 이슈에 남긴다(공통 지시에 같은 규칙).
+
+- 끄기: `agents` 단계가 `scripts/agent-memory.mjs`로 `~/.claude/settings.json`의 `autoMemoryEnabled`를 `false`로 바꾸고 `codex features disable memories`를 실행한다. 이미 있는 설정 파일에서도 이 값만 바꾼다. Claude Code는 이 값이 `false`이면 메모리를 읽지도 쓰지도 않는다. 새 기기 초기값도 같다.
+- ZeroSub 계정 홈: `settings.json`은 `~/.claude/settings.json`에서 생성되고 Codex `config.toml`은 링크라 따로 고치지 않는다. 계정별 설정(`settings.account.json`)에서 켠 값은 우선하므로 켜지 않는다.
+- 적용 시점: 새 세션부터. 다시 켜진 기기는 `doctor`가 알리고 `./bootstrap.sh --only agents`로 끈다.
+- 기존 메모리 파일은 지우지 않는다. 필요한 내용은 확인해서 저장소로 옮긴다.

@@ -9,6 +9,7 @@
     ]
   },
   "model": "opus[1m]",
+  "autoMemoryEnabled": false,
   "enabledPlugins": {},
   "extraKnownMarketplaces": {},
   "tui": "fullscreen",
