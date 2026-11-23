@@ -56,7 +56,7 @@ steps_for_paths() {
       agents/paseo-plugins.json) out="$out paseo" ;;
       Brewfile) out="$out homebrew" ;;
       bootstrap.sh | scripts/lib.sh) out="$out $(auto_steps)" ;;
-      scripts/launch-agents.mjs) out="$out browser paseo autoupdate" ;;
+      scripts/launch-agents.mjs) out="$out browser paseo auth autoupdate" ;;
       scripts/skill-paths.mjs) out="$out browser paseo" ;;
       scripts/agent-skills.mjs | scripts/paseo-profiles.mjs | scripts/paseo-plugins.mjs | scripts/paseo-skills.mjs | scripts/paseo-skills-client.mjs | scripts/paseo-plugins-settings-client.mjs) out="$out paseo" ;;
       scripts/paseo-api-key.py | scripts/paseo-infisical-provider.sh) out="$out paseo" ;;

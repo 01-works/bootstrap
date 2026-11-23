@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 직접 입력이 필요한 인증: GitHub 로그인, 데스크톱 자동 로그인, 남은 로그인 안내. 그래서 설치 단계 중 마지막이다 (뒤의 autoupdate·roles는 등록·설정만 한다).
+# 직접 입력이 필요한 인증: GitHub 로그인, 데스크톱 자동 로그인·Tailscale 자동 시작, 남은 로그인 안내. 그래서 설치 단계 중 마지막이다 (뒤의 autoupdate·roles는 등록·설정만 한다).
 # SSH 키는 만들지 않는다. git은 https를 쓰고, 다른 기기로 SSH 접속할 때만 필요하다 (development/git.md).
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/scripts/lib.sh"
@@ -37,6 +37,20 @@ if ! is_laptop; then
     info '자동 로그인을 켭니다. 이 계정의 로그인 비밀번호를 입력하세요'
     run sudo sysadminctl -autologin set -userName "$(id -un)" -password -
     ok "자동 로그인 켬 ($(id -un))"
+  fi
+  # 로그인한 뒤 Tailscale 앱을 연다. 앱의 "로그인 시 실행"은 bootstrap이 켤 수 없는 앱 내부 설정이라 LaunchAgent로 대신한다.
+  # 앱이 이미 떠 있으면 아무것도 하지 않으므로 자동 갱신 중에 다시 올려도 된다.
+  if ! has node; then
+    warn 'Node 없음. Tailscale 자동 시작은 ./bootstrap.sh --only runtimes,auth 로 등록하세요'
+    pending=2
+  elif [[ ! -x "$TAILSCALE_APP_CLI" ]]; then
+    warn 'Tailscale 앱 없음 → ./bootstrap.sh --only homebrew,auth'
+    pending=2
+  else
+    node "$BOOTSTRAP_ROOT/scripts/launch-agents.mjs" --only tailscale --desktop || {
+      warn 'Tailscale 자동 시작 등록 실패 (위 메시지)'
+      exit 1
+    }
   fi
 fi
 
