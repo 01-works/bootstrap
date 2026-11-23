@@ -1,16 +1,17 @@
 // 개인 배치표대로 이 기기 데몬에 등록된 Paseo host의 metadata.work를 맞춘다 (agents/paseo.md "작업 배치").
 // 배치표: Infisical bootstrap 프로젝트 prod /paseo-hosts의 HOST_WORK. 줄마다 "serverId work값", #부터 줄 끝은 주석인 여러 줄 값.
-// 로그인한 Infisical CLI 프로필로 읽는다(scripts/paseo-api-key.py와 같은 방식). 값은 출력·로그·명령 인자에 남기지 않는다.
+// 로그인한 Infisical CLI 프로필로 읽는다(scripts/paseo-api-key.py와 같은 방식). 배치표 원문은 출력·로그·명령 인자에 남기지 않고,
+// 기록에는 건수와 오류 코드만 남긴다.
 // 등록된 host 중 배치표에 있는 것만, 값이 다를 때만 paseo host update <등록 ID> --meta work=<값>.
 // host 추가·삭제·켜고 끄기, work 밖의 metadata, 데몬 시작은 하지 않는다. Paseo CLI의 --meta는 조회한 metadata 전체에 넘긴 키를
 // 합쳐 통째로 바꾸므로, work 밖의 키가 있는 host는 동시에 바뀐 그 키를 되돌리지 않도록 자동으로 쓰지 않는다.
 // 배치표 조회 실패·형식 오류·데몬 응답 실패는 짧은 코드로 알리고 0으로 끝난다(자동 갱신을 막지 않는다). 결과 한 줄을 상태 파일에 남긴다.
 // 자동 갱신(scripts/update.sh)이 바뀐 파일과 관계없이 매번 부른다. --auto는 바꾼 것과 바뀐 결과만 출력한다.
-// Infisical·Paseo 호출 전체는 20초 안에 끝낸다. 넘기면 SIGKILL로 끝내고 다음 주기에 다시 본다.
+// Infisical·Paseo 호출 전체는 20초 안에 끝낸다. 넘기면 프로세스 그룹째 SIGKILL로 끝내고 다음 주기에 다시 본다.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const pretty = path => path.startsWith(`${homedir()}/`) ? `~/${path.slice(homedir().length + 1)}` : path;
@@ -52,8 +53,6 @@ export function plan(hosts, table) {
   return { changes, skipped };
 }
 
-const name = host => `${host.label || host.registrationId} (${host.serverId})`;
-
 // 오류는 코드만 남긴다(메시지에는 경로 등이 들어간다). 코드를 못 찾으면 종료 코드만.
 function why(result) {
   if (result.error?.code === 'ENOENT') return 'paseo 없음';
@@ -66,43 +65,68 @@ function why(result) {
   return known ? known[0] : `종료 ${result.status ?? result.signal}`;
 }
 
+// 자식을 새 프로세스 그룹으로 띄운다. 끝나거나 시간이 지나면 그룹 전체를 SIGKILL로 끝낸다
+// (만료된 Infisical 세션이 띄우는 브라우저 재로그인 같은 손자 프로세스를 남기지 않는다).
+function runGroup(command, args, options, deadline) {
+  return new Promise(resolvePromise => {
+    const timeout = deadline - Date.now();
+    if (timeout <= 0) return resolvePromise({ error: { code: 'ETIMEDOUT' } });
+    let stdout = '', stderr = '', timedOut = false, error = null;
+    const child = spawn(command, args, { ...options, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const killGroup = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} };
+    const timer = setTimeout(() => { timedOut = true; killGroup(); }, timeout);
+    child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+    child.on('error', spawnError => { error = spawnError; });
+    child.on('exit', killGroup);
+    child.on('close', (status, signal) => {
+      clearTimeout(timer);
+      if (timedOut) resolvePromise({ error: { code: 'ETIMEDOUT' } });
+      else if (error) resolvePromise({ error });
+      else resolvePromise({ status, signal, stdout, stderr });
+    });
+  });
+}
+
 // Infisical에서 배치표 값을 읽는다. { text } 또는 { code }(짧은 건너뜀 이유). 키가 없으면 CLI는 종료 0에 빈 값을 낸다.
-function readTable(run) {
+// 읽기 전에 scripts/paseo-api-key.py의 active_infisical_project와 같이 로그인·프로젝트 접근을 확인한다. 만료된 세션에서
+// secrets get이 재로그인을 띄우지 않게 하고, 오프라인이면 CLI의 백업 값 대신 건너뛴다.
+async function readTable(run) {
   const env = { ...process.env };
   delete env.INFISICAL_TOKEN;  // 로그인 프로필로만 읽는다
   const infisical = args => run('infisical', [...args, '--silent'], { cwd: '/', env });
-  const login = infisical(['profile', 'current', '--plain']);
   const cliCode = result => result.error?.code === 'ENOENT' ? 'infisical 없음' : result.error?.code === 'ETIMEDOUT' ? '시간 초과' : null;
+  const login = await infisical(['profile', 'current', '--plain']);
   if (cliCode(login)) return { code: cliCode(login) };
   const profile = login.stdout.trim();
   if (login.status !== 0 || !profile || profile.includes('\n')) return { code: 'infisical 미로그인' };
   const scope = ['--profile', profile, '--domain', INFISICAL.domain];
-  const got = infisical(['secrets', 'get', INFISICAL.key, ...scope, '--projectId', INFISICAL.projectId,
-    '--env', INFISICAL.env, '--path', INFISICAL.path, '--plain', '--expand=false']);
+  const checks = [[['login', 'status'], 'infisical 미로그인'], [['secrets-manager', 'projects', 'get', INFISICAL.projectId], '프로젝트 접근 안 됨']];
+  for (const [command, code] of checks) {
+    const checked = await infisical([...command, ...scope]);
+    if (cliCode(checked)) return { code: cliCode(checked) };
+    if (checked.status !== 0) return { code };
+  }
+  const got = await infisical(['secrets', 'get', INFISICAL.key, ...scope, '--projectId', INFISICAL.projectId,
+    '--env', INFISICAL.env, '--path', INFISICAL.path, '--plain', '--expand=false', '--secret-overriding=false', '--include-imports=false']);
   if (cliCode(got)) return { code: cliCode(got) };
-  if (got.status === 0) return got.stdout.trim() ? { text: got.stdout } : { code: '키 없음' };
-  const status = infisical(['login', 'status', ...scope]);
-  if (cliCode(status)) return { code: cliCode(status) };
-  return { code: status.status !== 0 ? 'infisical 미로그인' : `조회 실패(종료 ${got.status ?? got.signal})` };
+  if (got.status !== 0) return { code: `조회 실패(종료 ${got.status ?? got.signal})` };
+  return got.stdout.trim() ? { text: got.stdout } : { code: '키 없음' };
 }
 
-function sync(home, deadline) {
-  const run = (command, args, options = {}) => {
-    const timeout = deadline - Date.now();
-    if (timeout <= 0) return { error: { code: 'ETIMEDOUT' } };
-    return spawnSync(command, args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'], ...options });
-  };
+// 기록(update.log·상태 파일)에는 serverId·host 이름·work 값 없이 건수와 오류 코드만 남긴다.
+async function sync(home, deadline) {
+  const run = (command, args, options = {}) => runGroup(command, args, options, deadline);
   const paseo = args => run('paseo', [...args, '--home', home]);
-  const source = `Infisical ${INFISICAL.path}/${INFISICAL.key}`;
-  const { text, code } = readTable(run);
+  const { text, code } = await readTable(run);
   if (code) return { result: `host work 맞춤 건너뜀: 배치표 조회 안 됨 (${code})`, lines: [] };
   let table;
   try { table = parseTable(text); } catch (error) {
-    return { result: `host work 맞춤 건너뜀: 배치표 형식 오류 (${source} ${error.message})`, lines: [] };
+    return { result: `host work 맞춤 건너뜀: 배치표 형식 오류 (${error.message})`, lines: [] };
   }
-  if (!table.size) return { result: `host work 맞춤 건너뜀: 배치표가 비어 있음 (${source})`, lines: [] };
+  if (!table.size) return { result: 'host work 맞춤 건너뜀: 배치표가 비어 있음', lines: [] };
 
-  const listed = paseo(['host', 'ls', '--json']);
+  const listed = await paseo(['host', 'ls', '--json']);
   let hosts = null;
   try { hosts = JSON.parse(listed.stdout); } catch {}
   if (listed.status !== 0 || !Array.isArray(hosts)) {
@@ -110,22 +134,27 @@ function sync(home, deadline) {
   }
 
   const { changes, skipped } = plan(hosts, table);
-  const lines = [];
-  const problems = skipped.map(({ host, others }) => `${name(host)} work 밖 metadata(${others.join(',')})가 있어 수동으로 맞춤`);
-  for (const { host, from, to } of changes) {
-    const updated = paseo(['host', 'update', host.registrationId, '--meta', `work=${to}`]);
-    if (updated.status === 0) lines.push(`host work 맞춤: ${name(host)} ${from || '(없음)'} → ${to}`);
-    else problems.push(`${name(host)} 실패 (${why(updated)})`);
+  let changed = 0;
+  const failures = [];
+  for (const { host, to } of changes) {
+    // work 값은 비밀이 아닌 배치 정보이고, CLI에 값을 인자 밖으로 넘기는 경로가 없다.
+    const updated = await paseo(['host', 'update', host.registrationId, '--meta', `work=${to}`]);
+    if (updated.status === 0) changed++;
+    else failures.push(why(updated));
   }
+  const lines = changed ? [`host work ${changed}개 변경`] : [];
+  const problems = [];
+  if (skipped.length) problems.push(`work 밖 metadata ${skipped.length}개는 수동으로 맞춤`);
+  if (failures.length) problems.push(`실패 ${failures.length}개 (${[...new Set(failures)].join(', ')})`);
   if (problems.length) return { result: `host work 맞춤 남음: ${problems.join(', ')}`, lines };
   return { result: 'host work 일치', lines };
 }
 
-function main() {
+async function main() {
   const auto = process.argv.includes('--auto');
   const state = join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'bootstrap/update/host-work');
   const home = process.env.PASEO_HOME || join(homedir(), '.paseo');
-  const { result, lines } = sync(home, Date.now() + TIMEOUT_MS);
+  const { result, lines } = await sync(home, Date.now() + TIMEOUT_MS);
   let previous = null;
   try { previous = readFileSync(state, 'utf8').trim(); } catch {}
   for (const line of lines) console.log(line);
@@ -139,4 +168,4 @@ function main() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

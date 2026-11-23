@@ -35,7 +35,10 @@ test('계획: 등록된 host 중 배치표에 있고 값이 다른 것만, work 
 });
 
 // 임시 HOME과 PATH 앞의 가짜 infisical·paseo. 가짜는 쓰는 명령만 알고 호출을 기록한다. 실제 Infisical·데몬은 건드리지 않는다.
-// 가짜 infisical: $FAKE/table이 HOST_WORK 값이다(없으면 실제 CLI처럼 종료 0에 빈 값). logged-out·expired·denied·infisical-hang 파일로 실패를 흉내 낸다.
+// 가짜 infisical: $FAKE/table이 HOST_WORK 값이다(없으면 실제 CLI처럼 종료 0에 빈 값). logged-out·expired·noproject·denied·infisical-hang
+// 파일로 실패를 흉내 낸다. 만료(expired)와 멈춤(infisical-hang)은 실제 CLI의 브라우저 재로그인처럼 손자 login 프로세스를 띄운다.
+const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'bootstrap-host-work-test-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -48,24 +51,36 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${f('infisical-calls')}, args.join(' ') + '\\n');
 if (process.env.INFISICAL_TOKEN || process.cwd() !== '/' || args.at(-1) !== '--silent') process.exit(7);
+const relogin = () => {
+  const login = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  fs.appendFileSync(${f('login-pids')}, login.pid + '\\n');
+  login.unref();
+};
 if (fs.existsSync(${f('infisical-hang')})) {
   fs.writeFileSync(${f('infisical-hang-pid')}, String(process.pid));
+  relogin();
   process.on('SIGTERM', () => {});
   setInterval(() => {}, 1000);
   return;
 }
 const opt = name => args[args.indexOf(name) + 1];
+const scoped = opt('--profile') === 'test-profile' && opt('--domain') === ${JSON.stringify(INFISICAL.domain)};
 const sub = args.slice(0, 2).join(' ');
 if (sub === 'profile current') {
   if (fs.existsSync(${f('logged-out')})) { console.error('error: no profile'); process.exit(1); }
   console.log('test-profile');
-} else if (sub === 'secrets get') {
-  if (opt('--profile') !== 'test-profile' || opt('--projectId') !== ${JSON.stringify(INFISICAL.projectId)} || opt('--env') !== 'prod' ||
-      opt('--path') !== ${JSON.stringify(INFISICAL.path)} || args[2] !== 'HOST_WORK' || !args.includes('--plain')) process.exit(6);
-  if (fs.existsSync(${f('expired')}) || fs.existsSync(${f('denied')})) { console.error('error: request failed'); process.exit(1); }
-  if (fs.existsSync(${f('table')})) process.stdout.write(fs.readFileSync(${f('table')}, 'utf8') + '\\n');
 } else if (sub === 'login status') {
-  process.exit(fs.existsSync(${f('expired')}) ? 1 : 0);
+  if (!scoped) process.exit(6);
+  if (fs.existsSync(${f('expired')})) { relogin(); process.exit(1); }
+} else if (sub === 'secrets-manager projects') {
+  if (!scoped || args[2] !== 'get' || args[3] !== ${JSON.stringify(INFISICAL.projectId)}) process.exit(6);
+  if (fs.existsSync(${f('noproject')})) process.exit(1);
+} else if (sub === 'secrets get') {
+  if (!scoped || opt('--projectId') !== ${JSON.stringify(INFISICAL.projectId)} || opt('--env') !== 'prod' || opt('--path') !== ${JSON.stringify(INFISICAL.path)} ||
+      args[2] !== 'HOST_WORK' || !args.includes('--plain') || !args.includes('--secret-overriding=false') || !args.includes('--include-imports=false')) process.exit(6);
+  if (fs.existsSync(${f('expired')})) { relogin(); setInterval(() => {}, 1000); return; }  // 실제 CLI: 만료 세션이면 브라우저 재로그인을 기다린다
+  if (fs.existsSync(${f('denied')})) { console.error('error: request failed'); process.exit(1); }
+  if (fs.existsSync(${f('table')})) process.stdout.write(fs.readFileSync(${f('table')}, 'utf8') + '\\n');
 } else process.exit(9);
 `, { mode: 0o755 });
   writeFileSync(join(bin, 'paseo'), `#!${process.execPath}
@@ -115,6 +130,7 @@ process.exit(9);
     fake, bin, infisicalBin, statePath: state,
     run: (args = [], extra = {}) => spawnSync(process.execPath, [script, ...args], { env: { ...env, ...extra }, encoding: 'utf8' }),
     writeTable(text) { writeFileSync(join(fake, 'table'), text); },
+    loginPids: () => read(join(fake, 'login-pids')).split('\n').filter(Boolean).map(Number),
     infisicalCalls() { const lines = read(join(fake, 'infisical-calls')).split('\n').filter(Boolean); rmSync(join(fake, 'infisical-calls'), { force: true }); return lines; },
     calls() { const lines = read(join(fake, 'calls')).split('\n').filter(Boolean); rmSync(join(fake, 'calls'), { force: true }); return lines; },
     hosts: () => JSON.parse(read(hostsFile)),
@@ -128,8 +144,8 @@ test('CLI: 배치표에 있는 등록 host만 바꾸고, work 밖 metadata가 �
   let result = f.run(['--auto']);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(f.calls(), ['host ls --json', 'host update reg-a --meta work=외주,01-software']);
-  assert.match(result.stdout, /host work 맞춤: A \(srv_a\) 실험 → 외주,01-software/);
-  assert.match(result.stdout, /host work 맞춤 남음: D \(srv_d\) work 밖 metadata\(team\)가 있어 수동으로 맞춤/);
+  assert.equal(result.stdout, 'host work 1개 변경\nhost work 맞춤 남음: work 밖 metadata 1개는 수동으로 맞춤\n');
+  assert.doesNotMatch(result.stdout + f.state(), /srv_|외주|verifier|reg-|\bA\b|\bD\b/, '기록에는 serverId·host 이름·work 값을 남기지 않는다');
   assert.deepEqual(f.hosts().map(host => host.metadata), [
     { work: '외주,01-software' }, { work: 'verifier' }, { work: '실험' }, { work: '실험', team: 'x' },
   ]);
@@ -138,13 +154,13 @@ test('CLI: 배치표에 있는 등록 host만 바꾸고, work 밖 metadata가 �
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(f.calls(), ['host ls --json'], '같은 값이면 update를 부르지 않는다');
   assert.equal(result.stdout, '', '자동 갱신은 결과가 같으면 기록하지 않는다');
-  assert.match(f.state(), /^host work 맞춤 남음: D/);
+  assert.equal(f.state(), 'host work 맞춤 남음: work 밖 metadata 1개는 수동으로 맞춤');
 
   // 배치를 바꾸면 다음 실행이 따라간다.
   f.writeTable('srv_a 외주\nsrv_b 실험\n');
   result = f.run(['--auto']);
   assert.deepEqual(f.calls(), ['host ls --json', 'host update reg-a --meta work=외주', 'host update reg-b --meta work=실험']);
-  assert.match(result.stdout, /host work 일치$/m);
+  assert.equal(result.stdout, 'host work 2개 변경\nhost work 일치\n');
   result = f.run();
   assert.equal(result.stdout, 'host work 일치\n', '터미널에서는 매번 보여 준다');
 });
@@ -154,21 +170,25 @@ test('CLI: Infisical에서 배치표를 읽고, 값은 명령 인자·출력·�
   f.writeTable('# 비밀 메모\nsrv_a 외주\n');
   const result = f.run(['--auto']);
   assert.equal(result.status, 0, result.stderr);
+  const scope = `--profile test-profile --domain ${INFISICAL.domain}`;
   assert.deepEqual(f.infisicalCalls(), [
     'profile current --plain --silent',
-    `secrets get HOST_WORK --profile test-profile --domain ${INFISICAL.domain} --projectId ${INFISICAL.projectId} --env prod --path /paseo-hosts --plain --expand=false --silent`,
-  ], '키 이름만 넘기고 INFISICAL_TOKEN·작업 폴더의 설정을 쓰지 않는다');
+    `login status ${scope} --silent`,
+    `secrets-manager projects get ${INFISICAL.projectId} ${scope} --silent`,
+    `secrets get HOST_WORK ${scope} --projectId ${INFISICAL.projectId} --env prod --path /paseo-hosts --plain --expand=false --secret-overriding=false --include-imports=false --silent`,
+  ], '로그인·프로젝트 접근을 먼저 확인하고, 키 이름만 넘기며, 개인 값·가져온 값·INFISICAL_TOKEN·작업 폴더의 설정을 쓰지 않는다');
   assert.deepEqual(f.calls(), ['host ls --json', 'host update reg-a --meta work=외주']);
   assert.doesNotMatch(result.stdout + result.stderr + f.state(), /비밀 메모/);
 });
 
-test('CLI: Infisical CLI 없음·미로그인·만료·권한 없음·키 없음·빈 표·형식 오류는 paseo를 부르지 않고 짧은 코드만 남긴 뒤 0으로 끝난다', t => {
+test('CLI: Infisical CLI 없음·미로그인·만료·프로젝트 접근 없음·권한 없음·키 없음·빈 표·형식 오류는 paseo를 부르지 않고 짧은 코드만 남긴 뒤 0으로 끝난다', t => {
   const f = fixture(t);
   const cases = [
-    [() => {}, '키 없음', 2],
+    [() => {}, '키 없음', 4],
     [() => writeFileSync(join(f.fake, 'logged-out'), ''), 'infisical 미로그인', 1],
-    [() => { rmSync(join(f.fake, 'logged-out')); writeFileSync(join(f.fake, 'expired'), ''); }, 'infisical 미로그인', 3],
-    [() => { rmSync(join(f.fake, 'expired')); writeFileSync(join(f.fake, 'denied'), ''); }, '조회 실패(종료 1)', 3],
+    [() => { rmSync(join(f.fake, 'logged-out')); writeFileSync(join(f.fake, 'expired'), ''); }, 'infisical 미로그인', 2],
+    [() => { rmSync(join(f.fake, 'expired')); writeFileSync(join(f.fake, 'noproject'), ''); }, '프로젝트 접근 안 됨', 3],
+    [() => { rmSync(join(f.fake, 'noproject')); writeFileSync(join(f.fake, 'denied'), ''); }, '조회 실패(종료 1)', 4],
   ];
   for (const [arrange, code, infisicalCalls] of cases) {
     arrange();
@@ -177,6 +197,8 @@ test('CLI: Infisical CLI 없음·미로그인·만료·권한 없음·키 없음
     assert.equal(result.stdout, `host work 맞춤 건너뜀: 배치표 조회 안 됨 (${code})\n`, code);
     assert.equal(f.infisicalCalls().length, infisicalCalls, code);
   }
+  assert.equal(f.loginPids().length, 1, '만료 세션은 login status에서 멈추고 secrets get까지 가지 않는다');
+  assert.ok(!alive(f.loginPids()[0]), '만료 세션이 띄운 재로그인 프로세스를 남기지 않는다');
   assert.equal(f.run(['--auto']).stdout, '', '같은 결과는 한 번만 기록한다');
   rmSync(join(f.fake, 'denied'));
 
@@ -184,17 +206,17 @@ test('CLI: Infisical CLI 없음·미로그인·만료·권한 없음·키 없음
   assert.equal(result.stdout, 'host work 맞춤 건너뜀: 배치표 조회 안 됨 (infisical 없음)\n');
 
   f.writeTable('# 주석만\n\n');
-  assert.match(f.run().stdout, /건너뜀: 배치표가 비어 있음 \(Infisical \/paseo-hosts\/HOST_WORK\)/);
+  assert.equal(f.run().stdout, 'host work 맞춤 건너뜀: 배치표가 비어 있음\n');
 
   f.writeTable('srv_a 외주\nsrv_b 실험;비밀\n');
   result = f.run();
-  assert.match(result.stdout, /건너뜀: 배치표 형식 오류 \(Infisical \/paseo-hosts\/HOST_WORK 줄 2:/);
+  assert.match(result.stdout, /건너뜀: 배치표 형식 오류 \(줄 2:/);
   assert.doesNotMatch(result.stdout, /비밀/, '틀린 줄의 내용은 남기지 않는다');
   assert.deepEqual(f.calls(), []);
   assert.equal(f.hosts()[0].metadata.work, '실험');
 });
 
-test('CLI: 멈춘 infisical은 TERM을 무시해도 전체 상한(20초)에 SIGKILL로 끝낸다', t => {
+test('CLI: 멈춘 infisical은 TERM을 무시해도 전체 상한(20초)에 프로세스 그룹째 SIGKILL로 끝내 손자 login도 남기지 않는다', t => {
   const f = fixture(t);
   writeFileSync(join(f.fake, 'infisical-hang'), '');
   const started = Date.now();
@@ -202,7 +224,9 @@ test('CLI: 멈춘 infisical은 TERM을 무시해도 전체 상한(20초)에 SIGK
   assert.equal(result.status, 0, result.stderr);
   assert.ok(Date.now() - started < 24_000);
   assert.equal(result.stdout, 'host work 맞춤 건너뜀: 배치표 조회 안 됨 (시간 초과)\n');
-  assert.throws(() => process.kill(Number(readFileSync(join(f.fake, 'infisical-hang-pid'), 'utf8')), 0), '멈춘 infisical을 남기지 않는다');
+  assert.ok(!alive(Number(readFileSync(join(f.fake, 'infisical-hang-pid'), 'utf8'))), '멈춘 infisical을 남기지 않는다');
+  assert.equal(f.loginPids().length, 1);
+  assert.ok(!alive(f.loginPids()[0]), '손자 재로그인 프로세스도 남기지 않는다');
   assert.deepEqual(f.calls(), []);
 });
 
@@ -225,11 +249,10 @@ test('CLI: 데몬 응답 실패·paseo 없음·update 실패는 stderr의 오류
   rmSync(join(f.fake, 'down'));
   result = f.run(['--auto'], { FAIL_UPDATE: 'reg-a' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /host work 맞춤: C \(srv_c\) 실험 → 외주/, '실패한 host와 관계없이 나머지는 맞춘다');
-  assert.match(result.stdout, /host work 맞춤 남음: A \(srv_a\) 실패 \(종료 1\)$/m, '코드를 못 찾으면 종료 코드만 남긴다');
+  assert.equal(result.stdout, 'host work 1개 변경\nhost work 맞춤 남음: 실패 1개 (종료 1)\n', '실패한 host와 관계없이 나머지는 맞추고, 코드를 못 찾으면 종료 코드만 남긴다');
   assert.doesNotMatch(result.stdout, /Unexpected|\/home/);
   result = f.run(['--auto'], { DENY_UPDATE: 'reg-a' });
-  assert.match(result.stdout, /host work 맞춤 남음: A \(srv_a\) 실패 \(permission_denied\)$/m, '텍스트 오류에서 알려진 코드를 뽑는다');
+  assert.equal(result.stdout, 'host work 맞춤 남음: 실패 1개 (permission_denied)\n', '텍스트 오류에서 알려진 코드를 뽑는다');
   assert.doesNotMatch(result.stdout, /rejected/);
   f.calls();
   result = f.run(['--auto']);
