@@ -222,8 +222,7 @@ update_clis() {
 
 # 개인 배치표대로 Paseo host의 work 값을 맞춘다 (scripts/paseo-host-work.mjs). 배치표가 저장소 밖이라 바뀐 파일과 관계없이
 # 매번 확인한다. 결과는 단계 성공·실패에 넣지 않고 자기 상태 파일에 남긴다. 출력이 있을 때만 기록한다.
-# 스크립트가 Paseo 호출을 HOST_WORK_TIMEOUT초 안에 SIGKILL로 끝내고, 스크립트 자체도 5초 더 넘기면 limited가 끝낸다.
-HOST_WORK_TIMEOUT="${BOOTSTRAP_HOST_WORK_TIMEOUT:-20}"
+# 스크립트가 Paseo 호출을 20초 안에 SIGKILL로 끝내고, 스크립트 자체가 25초를 넘기면 limited가 끝낸다.
 sync_host_work() {
   has node || return 0
   if [[ "$DRY_RUN" == 1 ]]; then
@@ -233,9 +232,8 @@ sync_host_work() {
   local out line flag='' st=0
   [[ "$AUTO" != 1 ]] || flag=--auto
   out="$(mktemp "$STATE/host-work-out.XXXXXX")" || return 0
-  limited $((HOST_WORK_TIMEOUT + 5)) "$out" env BOOTSTRAP_HOST_WORK_TIMEOUT="$HOST_WORK_TIMEOUT" \
-    node "$BOOTSTRAP_ROOT/scripts/paseo-host-work.mjs" ${flag:+"$flag"} || st=$?
-  [[ "$st" != 124 ]] || printf 'host work 맞춤 시간 초과(%s초): 끝내고 넘어갑니다\n' "$((HOST_WORK_TIMEOUT + 5))" >>"$out"
+  limited 25 "$out" node "$BOOTSTRAP_ROOT/scripts/paseo-host-work.mjs" ${flag:+"$flag"} || st=$?
+  [[ "$st" != 124 ]] || printf 'host work 맞춤 시간 초과(25초): 끝내고 넘어갑니다\n' >>"$out"
   if [[ -s "$out" ]]; then
     header
     while IFS= read -r line; do info "$line"; done <"$out"

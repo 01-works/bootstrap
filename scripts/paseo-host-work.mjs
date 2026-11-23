@@ -5,7 +5,7 @@
 // 합쳐 통째로 바꾸므로, work 밖의 키가 있는 host는 동시에 바뀐 그 키를 되돌리지 않도록 자동으로 쓰지 않는다.
 // 배치표 없음·형식 오류·데몬 응답 실패는 알리고 0으로 끝난다(자동 갱신을 막지 않는다). 결과 한 줄을 상태 파일에 남긴다.
 // 자동 갱신(scripts/update.sh)이 바뀐 파일과 관계없이 매번 부른다. --auto는 바꾼 것과 바뀐 결과만 출력한다.
-// Paseo 호출 전체는 BOOTSTRAP_HOST_WORK_TIMEOUT초(기본 20) 안에 끝낸다. 넘기면 SIGKILL로 끝내고 다음 주기에 다시 본다.
+// Paseo 호출 전체는 20초 안에 끝낸다. 넘기면 SIGKILL로 끝내고 다음 주기에 다시 본다.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -15,6 +15,10 @@ import { fileURLToPath } from 'node:url';
 const pretty = path => path.startsWith(`${homedir()}/`) ? `~/${path.slice(homedir().length + 1)}` : path;
 const SERVER_ID = /^[A-Za-z0-9_-]+$/;
 const WORK = /^[가-힣A-Za-z0-9_-]+(,[가-힣A-Za-z0-9_-]+)*$/;
+const WORK_MAX = 256;  // Paseo는 metadata 값을 4096자까지 받는다
+const TIMEOUT_MS = 20_000;
+// host ls --json은 stderr에 JSON 오류를, host update는 "Error: <메시지>" 텍스트를 낸다. 텍스트에서는 알려진 코드만 뽑는다.
+const KNOWN_ERRORS = [['DAEMON_NOT_RUNNING', /DAEMON_NOT_RUNNING|Daemon is not running/], ['permission_denied', /permission_denied/i]];
 
 // 배치표 내용 → Map(serverId → work 값). 틀린 줄이 하나라도 있으면 전체를 쓰지 않는다(일부만 맞추지 않는다).
 export function parseTable(text) {
@@ -23,8 +27,8 @@ export function parseTable(text) {
     const fields = raw.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean);
     if (!fields.length) return;
     const [id, work] = fields;
-    if (fields.length !== 2 || !SERVER_ID.test(id) || !WORK.test(work)) {
-      throw new Error(`줄 ${index + 1}: "serverId work값" 형식이 아닙니다 (serverId는 영숫자·_·-, work는 한글·영숫자·_·-를 쉼표로 이음)`);
+    if (fields.length !== 2 || !SERVER_ID.test(id) || !WORK.test(work) || work.length > WORK_MAX) {
+      throw new Error(`줄 ${index + 1}: "serverId work값" 형식이 아닙니다 (serverId는 영숫자·_·-, work는 한글·영숫자·_·-를 쉼표로 이은 ${WORK_MAX}자 이하)`);
     }
     if (table.has(id)) throw new Error(`줄 ${index + 1}: serverId가 중복됩니다`);
     table.set(id, work);
@@ -48,12 +52,16 @@ export function plan(hosts, table) {
 
 const name = host => `${host.label || host.registrationId} (${host.serverId})`;
 
-// 데몬 오류는 stderr의 JSON에서 코드만 읽는다.
+// 오류는 코드만 남긴다(메시지에는 경로 등이 들어간다). 코드를 못 찾으면 종료 코드만.
 function why(result) {
   if (result.error?.code === 'ENOENT') return 'paseo 없음';
   if (result.error?.code === 'ETIMEDOUT') return '시간 초과';
-  try { return JSON.parse(result.stderr).error.code ?? `종료 ${result.status}`; } catch {}
-  return `종료 ${result.status ?? result.signal}`;
+  try {
+    const code = JSON.parse(result.stderr).error.code;
+    if (typeof code === 'string' && /^[A-Za-z_]+$/.test(code)) return code;
+  } catch {}
+  const known = KNOWN_ERRORS.find(([, pattern]) => pattern.test(result.stderr ?? ''));
+  return known ? known[0] : `종료 ${result.status ?? result.signal}`;
 }
 
 function sync(tablePath, home, deadline) {
@@ -71,6 +79,7 @@ function sync(tablePath, home, deadline) {
   try { table = parseTable(text); } catch (error) {
     return { result: `host work 맞춤 건너뜀: 배치표 형식 오류 (${pretty(tablePath)} ${error.message})`, lines: [] };
   }
+  if (!table.size) return { result: `host work 맞춤 건너뜀: 배치표가 비어 있음 (${pretty(tablePath)})`, lines: [] };
 
   const listed = paseo(['host', 'ls', '--json']);
   let hosts = null;
@@ -96,8 +105,7 @@ function main() {
   const config = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
   const state = join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'bootstrap/update/host-work');
   const home = process.env.PASEO_HOME || join(homedir(), '.paseo');
-  const seconds = Number(process.env.BOOTSTRAP_HOST_WORK_TIMEOUT) || 20;
-  const { result, lines } = sync(join(config, 'bootstrap/host-work'), home, Date.now() + seconds * 1000);
+  const { result, lines } = sync(join(config, 'bootstrap/host-work'), home, Date.now() + TIMEOUT_MS);
   let previous = null;
   try { previous = readFileSync(state, 'utf8').trim(); } catch {}
   for (const line of lines) console.log(line);

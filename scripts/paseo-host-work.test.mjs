@@ -14,6 +14,8 @@ test('배치표: 줄마다 serverId와 work 값, #부터는 주석. 허용 문�
   assert.throws(() => parseTable('srv_a 외주\nsrv_b\n'), /줄 2/);
   assert.throws(() => parseTable('srv_a 외주 실험\n'), /줄 1/);
   assert.throws(() => parseTable('srv_a 외주\nsrv_a 실험\n'), /줄 2: serverId가 중복/);
+  assert.equal(parseTable(`srv_a ${'가'.repeat(256)}\n`).get('srv_a').length, 256);
+  assert.throws(() => parseTable(`srv_a ${'가'.repeat(257)}\n`), /256자 이하/);
   for (const line of ['srv/a 외주', 'srv_a 외주,', 'srv_a ,외주', 'srv_a 외주,,실험', 'srv_a work=x', 'srv_a $(x)', 'srv.a 외주']) {
     assert.throws(() => parseTable(`srv_ok 외주\n${line}\n`), /줄 2/, line);
   }
@@ -59,7 +61,9 @@ if (fs.existsSync(${JSON.stringify(join(fake, 'down'))})) {
 const hosts = JSON.parse(fs.readFileSync(${JSON.stringify(hostsFile)}, 'utf8'));
 if (args.join(' ') === 'host ls --json') { console.log(JSON.stringify(hosts)); process.exit(0); }
 if (args[0] === 'host' && args[1] === 'update' && args[3] === '--meta' && args.length === 5) {
-  if (process.env.FAIL_UPDATE === args[2]) { console.error(JSON.stringify({ error: { code: 'HOST_UPDATE_FAILED' } })); process.exit(1); }
+  // host update는 --json 없이 부르므로 오류는 "Error: <메시지>" 텍스트다.
+  if (process.env.DENY_UPDATE === args[2]) { console.error('Error: Host update rejected (permission_denied) for ' + home); process.exit(1); }
+  if (process.env.FAIL_UPDATE === args[2]) { console.error('Error: Unexpected failure at ' + home); process.exit(1); }
   const host = hosts.find(h => h.registrationId === args[2]);
   const [key, ...value] = args[4].split('=');
   // Paseo 0.16.2: 조회한 metadata 객체에 넘긴 키를 합쳐 metadata 전체를 바꾼다(그 사이 바뀐 다른 키는 되돌아간다).
@@ -77,7 +81,7 @@ process.exit(9);
     { registrationId: 'reg-d', serverId: 'srv_d', label: 'D', metadata: { work: '실험', team: 'x' }, enabled: true },
   ]));
   const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` };
-  for (const key of ['XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'PASEO_HOME', 'BOOTSTRAP_HOST_WORK_TIMEOUT']) delete env[key];
+  for (const key of ['XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'PASEO_HOME']) delete env[key];
   const table = join(home, '.config/bootstrap/host-work');
   const state = join(home, '.local/state/bootstrap/update/host-work');
   const read = path => existsSync(path) ? readFileSync(path, 'utf8') : '';
@@ -125,6 +129,9 @@ test('CLI: 배치표 없음·읽을 수 없음·형식 오류는 paseo를 부르
   assert.match(result.stdout, /건너뜀: 배치표 없음 \(~\/\.config\/bootstrap\/host-work\)/);
   assert.equal(f.run(['--auto']).stdout, '', '같은 결과는 한 번만 기록한다');
 
+  f.writeTable('# 주석만\n\n');
+  assert.match(f.run().stdout, /건너뜀: 배치표가 비어 있음/);
+
   f.writeTable('srv_a 외주\nsrv_b 실험;rm\n');
   result = f.run(['--auto']);
   assert.equal(result.status, 0, result.stderr);
@@ -159,7 +166,11 @@ test('CLI: 데몬 응답 실패·paseo 없음·update 실패는 stderr의 오류
   result = f.run(['--auto'], { FAIL_UPDATE: 'reg-a' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /host work 맞춤: C \(srv_c\) 실험 → 외주/, '실패한 host와 관계없이 나머지는 맞춘다');
-  assert.match(result.stdout, /host work 맞춤 남음: A \(srv_a\) 실패 \(HOST_UPDATE_FAILED\)/);
+  assert.match(result.stdout, /host work 맞춤 남음: A \(srv_a\) 실패 \(종료 1\)$/m, '코드를 못 찾으면 종료 코드만 남긴다');
+  assert.doesNotMatch(result.stdout, /Unexpected|\/home/);
+  result = f.run(['--auto'], { DENY_UPDATE: 'reg-a' });
+  assert.match(result.stdout, /host work 맞춤 남음: A \(srv_a\) 실패 \(permission_denied\)$/m, '텍스트 오류에서 알려진 코드를 뽑는다');
+  assert.doesNotMatch(result.stdout, /rejected/);
   f.calls();
   result = f.run(['--auto']);
   assert.deepEqual(f.calls(), ['host ls --json', 'host update reg-a --meta work=외주']);
@@ -171,9 +182,9 @@ test('CLI: 멈춘 paseo는 TERM을 무시해도 시간 상한에 SIGKILL로 끝�
   f.writeTable('srv_a 외주\n');
   writeFileSync(join(f.fake, 'hang'), '');
   const started = Date.now();
-  let result = f.run(['--auto'], { BOOTSTRAP_HOST_WORK_TIMEOUT: '1' });
+  let result = f.run(['--auto']);
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(Date.now() - started < 5000, '시간 상한 안에 끝난다');
+  assert.ok(Date.now() - started < 24_000, '고정 상한(20초) 안에 끝난다');
   assert.match(result.stdout, /데몬 응답 없음 \(paseo host ls: 시간 초과\)/);
   assert.throws(() => process.kill(Number(readFileSync(join(f.fake, 'hang-pid'), 'utf8')), 0), '멈춘 paseo를 남기지 않는다');
   rmSync(join(f.fake, 'hang'));
