@@ -27,7 +27,7 @@ Gemini CLI(`gemini --acp`)를 ACP provider로 붙이는 방법은 쓰지 않는�
 
 ## OpenRouter 모델 (OpenCode)
 
-Bug Hunter는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
+Scan Reviewer·Bug Hunter는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
 
 **OpenRouter 가져오기**는 Infisical `/ai`의 `OPENROUTER_API_KEY`를 한 번 읽어 이 Mac의 OpenCode에 등록하고 Paseo의 OpenCode provider(기본값 꺼짐)를 켜는 작업이다.
 
@@ -125,7 +125,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | Deep Reviewer | Claude Opus 5.5 | high | bypassPermissions |
 | Policy Reviewer (Fable) | Claude Fable 5.2 | high | bypassPermissions |
 | Policy Reviewer (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
-| Scan Reviewer | Gemini 4 Argon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
+| Scan Reviewer | DeepSeek V4.1 Flash 1017 (OpenRouter) | 모델 기본값 | OpenCode plan |
 | Bug Hunter | Kimi K3.1 Pro (OpenRouter) | high | OpenCode plan |
 | Gemini Cross-check | Gemini 4 Neon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
 | Opus (agy) | Claude Opus 5.5 High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
@@ -136,7 +136,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다.
 - Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
-- Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도로, 따로 계산되는 Argon 쿼터를 쓴다. 2026-11-21 같은 범위 비교에서 이전 모델(DeepSeek V4.1 Flash)과 결함 후보 수와 질이 비슷했다. Argon 주간 한도를 다 쓰면 갱신 전까지 실행이 실패한다.
+- Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도다. 모델별 선택 근거와 바꿀 때 다시 볼 조건은 [모델 선택 근거](model-selection.md).
 - 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고, Scan Reviewer와 Bug Hunter는 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
 
 ## 작업 배치

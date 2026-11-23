@@ -43,9 +43,8 @@ test('Opus (agy)는 역할 없이 사용자가 직접 고르는 선택용 프로
 });
 
 test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권한 자동 승인을 켜지 않는다', () => {
-  // Scan Reviewer(Argon)와 Gemini Cross-check(Neon)는 서로 다른 Antigravity 쿼터를 쓴다.
   for (const [name, provider, model, modeId] of [
-    ['Scan Reviewer', 'antigravity', 'gemini-4-argon-high', 'full-access'],
+    ['Scan Reviewer', 'opencode', 'openrouter/deepseek/deepseek-v4.1-flash-1017', 'plan'],
     ['Bug Hunter', 'opencode', 'openrouter/moonshotai/kimi-k3.1-pro', 'plan'],
     ['Gemini Cross-check', 'antigravity', 'gemini-4-neon-high', 'full-access'],  // Antigravity의 유일한 모드
   ]) {

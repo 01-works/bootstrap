@@ -86,10 +86,10 @@
     {
       "id": "bootstrap-scan-reviewer",
       "name": "Scan Reviewer",
-      "provider": "antigravity",
-      "model": "gemini-4-argon-high",
-      "modeId": "full-access",
-      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 1차 스캔(Gemini 4 Argon, Antigravity 구독에서 따로 계산되는 Argon 쿼터). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인하며, 비밀값이 있는 저장소에는 쓰지 않는다. Argon 주간 한도를 다 쓰면 갱신 전까지 실행이 실패한다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
+      "provider": "opencode",
+      "model": "openrouter/deepseek/deepseek-v4.1-flash-1017",
+      "modeId": "plan",
+      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 저비용 1차 스캔(DeepSeek V4.1 Flash, OpenRouter). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 재현율이 높고 싸지만 오탐이 많으므로 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
     },
     {
       "id": "bootstrap-bug-hunter",
