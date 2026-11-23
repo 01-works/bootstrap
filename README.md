@@ -195,7 +195,7 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 - 직접 만든 스킬은 `agents/skills/`에서 관리한다. `paseo` 단계가 Claude(`~/.claude/skills`)·Codex(`~/.agents/skills`) 검색 경로에 같은 원본을 연결한다. 도구가 관리하는 기본 스킬과 구분해 `yw-` 접두사를 사용한다. 같은 이름의 다른 스킬이 있으면 덮어쓰지 않고 멈춘다.
 - 기존 파일은 `~/.local/state/bootstrap/backup/<시각>-<번호>/`로 옮긴 뒤 연결한다. 되돌리려면 링크(`~/.zshrc` 등)를 지우고 백업 폴더의 파일을 제자리로 옮긴다.
 - 기기마다 다른 설정은 `~/.zshrc.local`, `~/.gitconfig.local`에 둔다. 저장소에 넣지 않는다.
-- API 키 같은 비밀값은 `~/.zsh_secrets`에 `export`로 두고 권한은 600으로 한다. `.zshrc`가 있으면 읽는다. 저장소에는 넣지 않고, 커밋 전에 gitleaks가 한 번 더 검사한다. 여러 기기에서 쓰는 키는 Infisical `bootstrap` 프로젝트(`prod` `/common`)에 보관만 하고, 새 기기에서 필요할 때 복사해 넣는다. 자동으로 받지 않는다: 기기마다 로그인해야 해서 붙여 넣기보다 줄어드는 일이 없다(#93).
+- API 키 같은 비밀값은 `~/.zsh_secrets`에 `export`로 두고 권한은 600으로 한다. `.zshrc`가 있으면 읽는다. 저장소에는 넣지 않고, 커밋 전에 gitleaks가 한 번 더 검사한다. 여러 기기에서 쓰는 키는 Infisical `bootstrap` 프로젝트(`prod` `/common`)에 보관만 하고, 새 기기에서 필요할 때 복사해 넣는다. 자동으로 받지 않는다: 기기마다 로그인해야 해서 붙여 넣기보다 줄어드는 일이 없다(#93). 예외로 Paseo host 배치표(`/paseo-hosts`의 `HOST_WORK`)는 자동 갱신이 읽는다.
 - 넣지 않는 것: 인증 파일(`auth.json`, gh `hosts.yml`), SSH 개인키, 각 도구의 세션·캐시·기록, 도구가 설치해 주는 스킬·플러그인(그 도구가 관리한다).
 
 ## 구조
