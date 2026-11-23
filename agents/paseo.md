@@ -138,7 +138,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 - Scan Reviewer·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도이고, 같은 모델의 Gemini Cross-check와 Gemini 쿼터를 나눠 쓴다. 모델별 선택 근거와 바꿀 때 다시 볼 조건은 [모델 선택 근거](model-selection.md).
 - Helper는 CI·검증 실패 로그 분석, 리뷰 지적 중복 정리, 수정 전 코드 지도처럼 맡긴 쪽이 결과를 확인하는 읽기 전용 잡무를 싸게 맡는다. 결함 찾기·리뷰·확정에는 쓰지 않는다.
-- 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 `git status`로 확인한다. Scan Reviewer와 Helper는 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
+- 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 `git status`로 확인한다. Scan Reviewer와 Helper는 비밀값이 있는 저장소에 쓰지 않고, Helper에는 토큰·개인정보가 남아 있을 수 있는 로그·자료도 넘기지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
 
 ## 작업 배치
 

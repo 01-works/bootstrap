@@ -54,7 +54,7 @@ test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권�
     assert.match(profile.notes, /바꾸지 말라고 명시/, name);
   }
   for (const name of ['Scan Reviewer', 'Helper']) {
-    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않는다/, name);
+    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않/, name);
   }
   // 없앤 프로필은 기기에서 지우도록 removed에만 남긴다.
   for (const { id, name } of manifest.removed ?? []) {
