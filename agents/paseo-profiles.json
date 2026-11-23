@@ -1,5 +1,6 @@
 {
   "renames": { "Cross Reviewer": "Deep Reviewer" },
+  "removed": [{ "id": "bootstrap-bug-hunter", "name": "Bug Hunter" }],
   "profiles": [
     {
       "id": "bootstrap-supervisor",
@@ -86,19 +87,10 @@
     {
       "id": "bootstrap-scan-reviewer",
       "name": "Scan Reviewer",
-      "provider": "opencode",
-      "model": "openrouter/deepseek/deepseek-v4.1-flash-1017",
-      "modeId": "plan",
-      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 저비용 1차 스캔(DeepSeek V4.1 Flash, OpenRouter). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 재현율이 높고 싸지만 오탐이 많으므로 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
-    },
-    {
-      "id": "bootstrap-bug-hunter",
-      "name": "Bug Hunter",
-      "provider": "opencode",
-      "model": "openrouter/moonshotai/kimi-k3.1-pro",
-      "modeId": "plan",
-      "thinkingOptionId": "high",
-      "notes": "놓치면 안 되는 변경에서 결함을 최대한 많이 찾는 탐색 리뷰(Kimi K3.1 Pro, OpenRouter). 재현율이 높은 대신 오탐도 많으므로 지적마다 코드 근거·발생 조건·영향·재현 방법을 붙이고, 확정은 Reviewer 또는 Deep Reviewer가 한다. 직접 수정하지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
+      "provider": "antigravity",
+      "model": "gemini-4-neon-high",
+      "modeId": "full-access",
+      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 1차 스캔(Gemini 4 Neon, Antigravity의 Gemini 쿼터를 Gemini Cross-check와 나눠 씀). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인하며, 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
     },
     {
       "id": "bootstrap-gemini-cross-check",
@@ -106,7 +98,7 @@
       "provider": "antigravity",
       "model": "gemini-4-neon-high",
       "modeId": "full-access",
-      "notes": "Claude·GPT와 다른 계열(Gemini 4 Neon)로 넓게 탐색하는 독립 검토자. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 보고 반례와 빠진 맥락을 찾는다. 심각도를 높게 잡고 이미 기록된 결정·이슈를 새 발견처럼 내는 경향이 있으므로, 지시문에 기존 결정·이슈를 함께 주고 결과는 Reviewer(Sol)로 반박 검증한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인한다. 시험 운영 중이며 Reviewer·Deep Reviewer를 대신하지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
+      "notes": "Claude·GPT와 다른 계열(Gemini 4 Neon)로 넓게 탐색하는 독립 검토자. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 보고 반례와 빠진 맥락을 찾는다. 심각도를 높게 잡고 이미 기록된 결정·이슈를 새 발견처럼 내는 경향이 있으므로, 지시문에 기존 결정·이슈를 함께 주고 결과는 Reviewer(Sol)로 반박 검증한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인한다. Reviewer·Deep Reviewer를 대신하지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
     }
   ]
 }
