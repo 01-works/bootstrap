@@ -57,6 +57,11 @@ test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권�
   for (const { id, name } of manifest.removed ?? []) {
     assert.ok(!manifest.profiles.some(p => p.id === id || p.name === name), name);
   }
+  // 이전에 설치된 Bug Hunter는 명시적 갱신에서 지워진다.
+  const old = [{ id: 'bootstrap-bug-hunter', name: 'Bug Hunter', provider: 'opencode', model: 'openrouter/moonshotai/kimi-k3.1-pro' }];
+  const updated = mergeProfiles(old, manifest, true);
+  assert.ok(updated.changes.includes('제거: Bug Hunter'));
+  assert.equal(updated.profiles.some(p => p.id === 'bootstrap-bug-hunter'), false);
 });
 
 test('기존 개인 설정 유지, 누락 추가, 반복 실행 시 중복 없음', () => {
