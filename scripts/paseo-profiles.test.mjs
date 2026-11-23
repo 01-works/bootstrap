@@ -46,13 +46,16 @@ test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권�
   for (const [name, provider, model, modeId] of [
     ['Scan Reviewer', 'antigravity', 'gemini-4-neon-high', 'full-access'],  // Antigravity의 유일한 모드
     ['Gemini Cross-check', 'antigravity', 'gemini-4-neon-high', 'full-access'],
+    ['Helper', 'opencode', 'openrouter/deepseek/deepseek-v4.1-flash-1017', 'plan'],
   ]) {
     const profile = manifest.profiles.find(p => p.name === name);
     assert.deepEqual([profile.provider, profile.model, profile.modeId], [provider, model, modeId], name);
     assert.equal(profile.featureValues?.auto_accept, undefined, name);
     assert.match(profile.notes, /바꾸지 말라고 명시/, name);
   }
-  assert.match(manifest.profiles.find(p => p.name === 'Scan Reviewer').notes, /비밀값이 있는 저장소에는 쓰지 않는다/);
+  for (const name of ['Scan Reviewer', 'Helper']) {
+    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않는다/, name);
+  }
   // 없앤 프로필은 기기에서 지우도록 removed에만 남긴다.
   for (const { id, name } of manifest.removed ?? []) {
     assert.ok(!manifest.profiles.some(p => p.id === id || p.name === name), name);

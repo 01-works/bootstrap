@@ -27,7 +27,7 @@ Gemini CLI(`gemini --acp`)를 ACP provider로 붙이는 방법은 쓰지 않는�
 
 ## OpenRouter 모델 (OpenCode)
 
-OpenRouter 모델은 Paseo 내장 OpenCode provider로 쓴다. 지금 공유 프로필에는 OpenRouter 모델이 없다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
+Helper는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
 
 **OpenRouter 가져오기**는 Infisical `/ai`의 `OPENROUTER_API_KEY`를 한 번 읽어 이 Mac의 OpenCode에 등록하고 Paseo의 OpenCode provider(기본값 꺼짐)를 켜는 작업이다.
 
@@ -40,9 +40,9 @@ OpenRouter 모델은 Paseo 내장 OpenCode provider로 쓴다. 지금 공유 프
    ```
 
    OpenCode는 키를 터미널 입력으로만 받아서, 스크립트가 가상 터미널로 `opencode auth login openrouter`에 키를 넣는다. 키는 명령 인자·환경변수·출력에 남지 않고 OpenCode 데이터(`~/.local/share/opencode`)에만 저장된다. 다시 로그인하면 OpenCode가 계정을 하나 더 만들어서, OpenRouter가 이미 등록돼 있으면 등록은 건너뛰고 provider만 켠다. 키를 바꿀 때는 `opencode auth logout openrouter` 후 다시 실행한다. Infisical 없이 하려면 `opencode auth login`에서 OpenRouter를 고르고 키를 넣은 뒤 Paseo 앱 Settings → 호스트 → Providers에서 OpenCode를 켠다.
-2. 확인: `paseo provider diagnostic opencode`(Ready), `paseo provider models opencode`에 쓸 모델 ID가 있는지.
+2. 확인: `paseo provider diagnostic opencode`(Ready), `paseo provider models opencode`에 프로필의 모델 ID가 있는지.
 
-새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 Antigravity 프로필은 공유 프로필로 추가되지만 실행이 실패한다(agy 로그인 필요). ZeroSub는 OpenCode·Antigravity 계정을 관리하지 않는다.
+새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 OpenCode·Antigravity 프로필은 공유 프로필로 추가되지만 실행이 실패한다(Antigravity 프로필은 agy 로그인 필요). ZeroSub는 OpenCode·Antigravity 계정을 관리하지 않는다.
 
 ## Claude API 키와 프로필
 
@@ -126,6 +126,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | Policy Reviewer (Fable) | Claude Fable 5.2 | high | bypassPermissions |
 | Policy Reviewer (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
 | Scan Reviewer | Gemini 4 Neon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
+| Helper | DeepSeek V4.1 Flash 1017 (OpenRouter) | 모델 기본값 | OpenCode plan |
 | Gemini Cross-check | Gemini 4 Neon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
 | Opus (agy) | Claude Opus 5.5 High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
 
@@ -136,7 +137,8 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 - Scan Reviewer·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도이고, 같은 모델의 Gemini Cross-check와 Gemini 쿼터를 나눠 쓴다. 모델별 선택 근거와 바꿀 때 다시 볼 조건은 [모델 선택 근거](model-selection.md).
-- 두 프로필 모두 읽기 전용이 강제되지 않는다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 `git status`로 확인한다. Scan Reviewer는 비밀값이 있는 저장소에 쓰지 않는다.
+- Helper는 CI·검증 실패 로그 분석, 리뷰 지적 중복 정리, 수정 전 코드 지도처럼 맡긴 쪽이 결과를 확인하는 읽기 전용 잡무를 싸게 맡는다. 결함 찾기·리뷰·확정에는 쓰지 않는다.
+- 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 `git status`로 확인한다. Scan Reviewer와 Helper는 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
 
 ## 작업 배치
 
