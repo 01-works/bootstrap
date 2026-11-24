@@ -783,9 +783,9 @@ slot_json() {
         *) other=1 ;;
       esac
     else
-      st=legacy other=1
+      st=legacy other=1 pid=''
     fi
-    waiting="$waiting${waiting:+,}{\"id\":$(json_val "$id"),\"supervisor\":$(json_val "$(lf "$l" supervisor)"),\"queued\":$(num_val "$(lf "$l" queued)"),\"state\":\"$st\"}"
+    waiting="$waiting${waiting:+,}{\"id\":$(json_val "$id"),\"pid\":$(num_val "$pid"),\"supervisor\":$(json_val "$(lf "$l" supervisor)"),\"queued\":$(num_val "$(lf "$l" queued)"),\"state\":\"$st\"}"
   done <<EOF
 $(q_lines)
 EOF
@@ -805,7 +805,7 @@ EOF
     started="$(json_num "$owner" started)"
     # v2 owner는 epoch 대신 startedAt(UTC)을 쓴다.
     [ -n "$started" ] || started="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$(json_str "$owner" startedAt)" +%s 2>/dev/null)"
-    printf '{"id":%s,"supervisor":%s,"queued":%s,"started":%s,"state":"%s"}' "$(json_val "$(json_str "$owner" task)")" \
+    printf '{"id":%s,"pid":%s,"supervisor":%s,"queued":%s,"started":%s,"state":"%s"}' "$(json_val "$(json_str "$owner" task)")" "$(num_val "$holder")" \
       "$(json_val "$(json_str "$owner" supervisor)")" "$(num_val "$(json_num "$owner" queued)")" "$(num_val "$started")" "$st"
   else
     printf null
