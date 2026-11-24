@@ -138,18 +138,24 @@ test('자율 결정 위임: 사용자에게 남는 결정과 UX 판정·운영 �
   const read = name => readFileSync(new URL(`../agents/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
   const contract = read('yw-supervisor').split('\n## 에스컬레이션 계약\n')[1]?.split('\n## ')[0] ?? '';
   const delegation = contract.match(/^\*\*자율 결정 위임:\*\* [\s\S]*?(?=\n\n)/m)?.[0] ?? '';
-  assert.match(delegation, /사용자가 결정을 맡기면 원문·대상을 기록/);
+  assert.match(delegation, /다른 세션으로 위임이 넓어지지 않는다/);
+  const granted = delegation.match(/^- 대신 정하는 것: .+/m)?.[0] ?? '';
+  assert.match(granted, /범위 축소·연기\(중요 미해결을 남기는 것은 제외\)/);
+  assert.match(granted, /그 lane이 소유한 이슈의 종료/);
+  assert.doesNotMatch(granted, /병합|배포|결제|비용|force|archive|detach|삭제|권한/);
   const kept = delegation.match(/^- 계속 사용자가 정하는 것: .+/m)?.[0] ?? '';
-  for (const target of ['새 목표와 목표 밖 확장', '중요 미해결의 수용', 'main·운영 반영', '실결제', '비용', '되돌리기 어려운 일',
+  for (const target of ['위에 없는 계약 항목 전부', '새 목표와 목표 밖 확장', '중요 미해결의 수용', 'main·운영 반영', '실결제', '비용', '되돌리기 어려운 일',
     '다른 사람의 소유물', '사용자만 아는 사실·법적 판단', '안전 분류 거부', '4번', '최종 미합의']) {
     assert.ok(kept.includes(target), `사용자 결정 누락: ${target}`);
   }
   assert.match(kept, /자동 검사·보호를 우회하지 않는다/);
   const ux = contract.match(/^\*\*UX 선진행:\*\* .+/m)?.[0] ?? '';
-  assert.match(ux, /병합이 바로 운영에 배포되면 PR·미리보기에서 멈춘다/);
+  assert.match(ux, /`main`이 아니고 운영에 배포되지 않는 브랜치까지 진행하고, 없으면 PR·미리보기에서 멈춘다/);
   assert.match(ux, /판정은 사용자만/);
-  assert.match(ux, /main·운영 반영은 확인 뒤에/);
-  assert.match(read('yw-chief-supervisor'), /합의는 실행 권한을 추가하지 않는다/);
+  assert.match(ux, /판정은 병합·배포 승인이 아니므로 main·운영 반영은 판정 뒤에 계약대로 올린다/);
+  const chief = read('yw-chief-supervisor');
+  assert.match(chief, /합의는 실행 권한을 추가하지 않는다/);
+  assert.match(chief, /범위 축소·연기는 사용자 결정 원문이나 자율 결정 위임의 원문·합의 기록이 있어야 한다/);
 });
 
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {

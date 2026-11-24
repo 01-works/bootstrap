@@ -154,7 +154,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 - 기기 이름과 배치는 이 저장소에 쓰지 않는다. 대신 감독 기기에 등록한 Paseo host의 metadata `work`에 적는다. 값이 여러 개면 쉼표로 잇는다. 예를 들어 01-software 전용 작업 기기가 없는 동안에는 외주 기기에 `외주,01-software`를 붙여, 두 작업이 그 기기의 `yw-heavy` 대기열을 나눠 쓴다([공용 heavy 대기열](heavy-queue.md)).
 - UI/UX 변경을 포함하거나 실제 화면 확인이 완료 조건인 작업은 같은 저장소의 `ui` 기기로 보낸다. 나머지는 같은 저장소의 `ui` 없는 기기를 우선한다.
-- 화면을 묶어 리뷰할 때([UX 선진행](skills/yw-supervisor/SKILL.md#에스컬레이션-계약))는 01-software의 `apps/ui-review`를 쓴다. 실행·캡처 등록·결정 질문은 그 README를 따르고, 다른 저장소의 캡처도 저장소 이름을 label에 넣어 같은 서버에 등록한다.
+- 화면을 묶어 리뷰할 때([UX 선진행](skills/yw-supervisor/SKILL.md#에스컬레이션-계약))는 01-software의 `apps/ui-review`를 쓴다. 실행·캡처 등록·결정 질문은 그 README를 따르고, 다른 저장소의 캡처는 사용자가 허용한 것만 같은 서버에 등록한다.
 - 감독 자신의 기기(`list_hosts`의 `self`)에는 metadata가 없다. 사용자가 정한 그 기기의 `work` 값을 lane 기록에 남기고 후보에 넣으며, `serverId`를 생략해 띄운다.
 - 감독은 `list_hosts`의 등록 host 중 `metadata.work`에 해당 값이 있는 기기의 `serverId`로 작업자를 띄운다. 사용자가 지정한 기기가 우선하지만, heavy는 그 기기도 역할·저장소 runbook상 허용돼야 한다. 허용된 후보가 없으면 yw-supervisor의 실행 기기 보류 절차를 따른다.
 - 값은 `paseo host update <등록 ID> --meta work=<값>`으로 바꾸고 `paseo host inspect <등록 ID>`로 확인한다. host 등록은 감독 기기의 데몬마다 따로 저장된다. 배치를 바꾸면 그 host를 등록한 모든 감독 기기에서 함께 고친다.
