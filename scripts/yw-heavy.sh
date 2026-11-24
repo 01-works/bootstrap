@@ -704,7 +704,7 @@ rr_turns() {
       if (active!="" && count[active]) order[++m]=active
       while (left>0) for (i=1;i<=m;i++) {
         sup=order[i]
-        if (done[sup]<count[sup]) { out=out (out=="" ? "" : " → ") job[sup,++done[sup]]; left-- }
+        if (done[sup]<count[sup]) { out=out (out=="" ? "" : " ") job[sup,++done[sup]]; left-- }
       }
       print out
     }'
@@ -760,7 +760,7 @@ EOF
   # 기존 줄의 순서와 이웃 관계는 바꾸지 않는다.
   turns=''
   if [ "$LEGACY" = 0 ] && [ "$other" = 0 ]; then turns="$(rr_turns "$queued")"; fi
-  [ -z "$turns" ] || printf '예상 차례: %s\n' "$turns"
+  [ -z "$turns" ] || printf '예상 차례: %s\n' "$(printf '%s' "$turns" | sed 's/ / → /g')"
 }
 
 # 화면·도구용 status. 사람이 읽는 status와 같은 판정이며 token·lease·세대·명령은 내보내지 않는다.
@@ -769,7 +769,7 @@ json_val() {
 }
 num_val() { case "$1" in 0 | [1-9]*) case "$1" in *[!0-9]*) printf null ;; *) printf '%s' "$1" ;; esac ;; *) printf null ;; esac; }
 slot_json() {
-  local l id pid st v owner holder hs queued='' other=0 waiting='' turns=null w
+  local l id pid st v owner holder hs started queued='' other=0 waiting='' turns=null w
   while IFS= read -r l; do
     [ -n "$l" ] || continue
     id="$(line_id "$l")" v="$(lf "$l" v)"
@@ -791,7 +791,7 @@ $(q_lines)
 EOF
   if [ "$other" = 0 ] && [ "$(mode_read)" = round-robin ] && [ ! -e "$NR" ]; then
     turns=''
-    for w in $(rr_turns "$queued"); do [ "$w" = '→' ] || turns="$turns${turns:+,}$(json_val "$w")"; done
+    for w in $(rr_turns "$queued"); do turns="$turns${turns:+,}$(json_val "$w")"; done
     turns="[$turns]"
   fi
   printf '{"name":"%s","running":' "$1"
@@ -802,8 +802,11 @@ EOF
       if [ -z "$holder" ]; then st=no-holder
       else hs="$(json_str "$owner" holderStart)"; st="$(proc_state "$holder" "${hs:--}")"; fi
     fi
+    started="$(json_num "$owner" started)"
+    # v2 owner는 epoch 대신 startedAt(UTC)을 쓴다.
+    [ -n "$started" ] || started="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$(json_str "$owner" startedAt)" +%s 2>/dev/null)"
     printf '{"id":%s,"supervisor":%s,"queued":%s,"started":%s,"state":"%s"}' "$(json_val "$(json_str "$owner" task)")" \
-      "$(json_val "$(json_str "$owner" supervisor)")" "$(num_val "$(json_num "$owner" queued)")" "$(num_val "$(json_num "$owner" started)")" "$st"
+      "$(json_val "$(json_str "$owner" supervisor)")" "$(num_val "$(json_num "$owner" queued)")" "$(num_val "$started")" "$st"
   else
     printf null
   fi
@@ -812,7 +815,7 @@ EOF
 do_status_json() {
   local paused=false
   [ ! -e "$PAUSED" ] || paused=true
-  printf '{"schema":1,"mode":"%s","paused":%s,"slots":[' "$(mode_read)" "$paused"
+  printf '{"schema":1,"mode":%s,"paused":%s,"slots":[' "$(json_val "$(mode_read)")" "$paused"
   slot_json main
   if { role_shared && [ "$(mode_read)" = round-robin ]; } || [ -s "$LQ" ] || [ -e "$LXL" ]; then
     printf ,; use_lane; slot_json verifier; use_main

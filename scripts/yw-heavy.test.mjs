@@ -1604,3 +1604,17 @@ test('status --json은 compat·구형식·빈 owner에서도 JSON이고 차례�
   assert.equal(slot.turns, null);
   assert.deepEqual(slot.waiting.map(w => [w.id, w.supervisor, w.state]), [['OLD', 's', 'legacy'], ['V2', 'a"b\\c', 'dead:esrch']]);
 });
+
+test('status --json은 특이한 작업 ID와 깨진 모드 파일, v2 owner의 시작 시각을 바르게 낸다', t => {
+  const f = fixture(t); enable(f);
+  const p = f.live(), start = procStart(p.pid);
+  const v3 = (id, sup) => `${id} worker=w supervisor=${sup} v=3 pid=${p.pid} start=${start} queued=5\n`;
+  writeFileSync(f.q, v3('A', 'x') + v3('→', 'y') + v3('B', 'z'));
+  const slot = () => JSON.parse(f.sync('status', '--json').stdout).slots[0];
+  assert.deepEqual(slot().turns, ['A', '→', 'B']);
+  assert.match(f.sync('status').stdout, /^예상 차례: A → → → B$/m);
+  f.owner({ v: 2, pid: p.pid, holder: p.pid, holderStart: start, task: 'V2RUN', supervisor: 's', startedAt: '2026-10-19T05:08:49Z' });
+  assert.deepEqual([slot().running.id, slot().running.started], ['V2RUN', Date.UTC(2026, 9, 19, 5, 8, 49) / 1000]);
+  writeFileSync(f.q + '.mode', 'bad"mode\n');
+  assert.doesNotThrow(() => JSON.parse(f.sync('status', '--json').stdout));
+});
