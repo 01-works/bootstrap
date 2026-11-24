@@ -1530,3 +1530,40 @@ test('R5-no-reclaim: 취소 큐 삭제 직후 SIGKILL된 감독자는 다른 대
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'B', 'REJOIN']);
   assert.equal(events(f).filter(e => e.event === 'reclaim').length, 0);
 });
+
+test('v3 status의 예상 차례는 등록 순서가 아니라 실제 실행 순서와 같다', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const waiters = [];
+  for (const [id, sup] of [['H2', 'H'], ['A1', 'A'], ['A2', 'A'], ['B1', 'B'], ['A3', 'A'], ['B2', 'B']]) {
+    waiters.push(f.cli('run', id, 'w', sup, '--', 'true'));
+    await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
+  }
+  const st = f.sync('status');
+  assert.equal(st.status, 0);
+  const predicted = st.stdout.match(/^예상 차례: (.*)$/m)?.[1].split(' → ');
+  assert.deepEqual(predicted, ['A1', 'B1', 'H2', 'A2', 'B2', 'A3']);
+  h.stdin.end('done\n');
+  for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
+  const ran = events(f).filter(e => e.event === 'start').map(e => e.requestId);
+  assert.deepEqual(ran.slice(-predicted.length), predicted);
+  assert.doesNotMatch(f.sync('status').stdout, /예상 차례/, '대기가 없으면 표시하지 않는다');
+});
+
+test('v3 status의 예상 차례는 죽은 줄을 빼고, 회수가 꺼졌거나 v3가 아닌 줄이 있으면 표시하지 않는다', t => {
+  const f = fixture(t); enable(f);
+  const p = f.live(), start = procStart(p.pid);
+  const v3 = (id, sup, pid, st) => `${id} worker=w supervisor=${sup} v=3 pid=${pid} start=${st}\n`;
+  const turns = () => f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1];
+  const lines = v3('A0', 'A', dead, 'x') + v3('B1', 'B', p.pid, start) + v3('A1', 'A', p.pid, start);
+  writeFileSync(f.q + '.rotation', 'A\nB');  // 끝에 개행 없음
+  writeFileSync(f.q, lines);
+  assert.equal(turns(), 'A1 → B1');
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  assert.equal(turns(), undefined);
+  rmSync(f.env.YW_HEAVY_NO_RECLAIM);
+  writeFileSync(f.q, lines + f.line('V2', p.pid, start));
+  assert.equal(turns(), undefined);
+  writeFileSync(f.q, lines + 'OLD worker=w supervisor=s\n');
+  assert.equal(turns(), undefined);
+});
