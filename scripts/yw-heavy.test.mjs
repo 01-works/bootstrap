@@ -1549,3 +1549,21 @@ test('v3 status의 예상 차례는 등록 순서가 아니라 실제 실행 순
   assert.deepEqual(ran.slice(-predicted.length), predicted);
   assert.doesNotMatch(f.sync('status').stdout, /예상 차례/, '대기가 없으면 표시하지 않는다');
 });
+
+test('v3 status의 예상 차례는 죽은 줄을 빼고, 회수가 꺼졌거나 v3가 아닌 줄이 있으면 표시하지 않는다', t => {
+  const f = fixture(t); enable(f);
+  const p = f.live(), start = procStart(p.pid);
+  const v3 = (id, sup, pid, st) => `${id} worker=w supervisor=${sup} v=3 pid=${pid} start=${st}\n`;
+  const turns = () => f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1];
+  const lines = v3('A0', 'A', dead, 'x') + v3('B1', 'B', p.pid, start) + v3('A1', 'A', p.pid, start);
+  writeFileSync(f.q + '.rotation', 'A\nB');  // 끝에 개행 없음
+  writeFileSync(f.q, lines);
+  assert.equal(turns(), 'A1 → B1');
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  assert.equal(turns(), undefined);
+  rmSync(f.env.YW_HEAVY_NO_RECLAIM);
+  writeFileSync(f.q, lines + f.line('V2', p.pid, start));
+  assert.equal(turns(), undefined);
+  writeFileSync(f.q, lines + 'OLD worker=w supervisor=s\n');
+  assert.equal(turns(), undefined);
+});
