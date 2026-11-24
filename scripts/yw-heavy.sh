@@ -679,8 +679,37 @@ do_run() {
 }
 
 # 현재 자리(Q·XL)의 대기 줄과 실행 lock을 보인다. 구형식 줄 수는 LEGACY에 남긴다.
+# 지금 등록된 v3 줄이 실행될 순서 (읽기 전용). 줄 번호는 등록 순서라 round-robin의 실제 차례와 다르다.
+# ring_sync의 감독자 순서를 따르고, 실행 중 감독자는 해제 때 순환 끝으로 가므로 맨 뒤에 둔다. 나중에 등록되는 줄은 반영하지 않는다.
+rr_turns() {
+  [ "$(mode_read)" = round-robin ] || return 0
+  { printf 'A %s\n' "$(json_str "$(owner_read)" supervisor)"
+    if [ -f "$RING" ]; then ring_read | sed 's/^/R /'; fi
+    q_lines | sed 's/^/Q /'; } | awk '
+    $1=="A" { active=$2; next }
+    $1=="R" { ring[++n]=$2; next }
+    {
+      sup=""; version=""
+      for (i=3;i<=NF;i++) {
+        if ($i ~ /^supervisor=/) sup=substr($i,12)
+        if ($i ~ /^v=/) version=substr($i,3)
+      }
+      if (version!=3 || sup=="") next
+      if (!count[sup]++) ring[++n]=sup
+      job[sup,count[sup]]=$2; left++
+    }
+    END {
+      for (i=1;i<=n;i++) if (ring[i]!=active && count[ring[i]] && !seen[ring[i]]++) order[++m]=ring[i]
+      if (active!="" && count[active]) order[++m]=active
+      while (left>0) for (i=1;i<=m;i++) {
+        sup=order[i]
+        if (done[sup]<count[sup]) { out=out (out=="" ? "" : " → ") job[sup,++done[sup]]; left-- }
+      }
+      print out
+    }'
+}
 status_slot() {
-  local l n=0 id pid start st owner task holder hs
+  local l n=0 id pid start st owner task holder hs turns
   LEGACY=0
   while IFS= read -r l; do
     [ -n "$l" ] || continue
@@ -699,6 +728,8 @@ status_slot() {
 $(q_lines)
 EOF
   [ "$n" -gt 0 ] || printf '  (비어 있음)\n'
+  turns="$(rr_turns)"
+  [ -z "$turns" ] || printf '예상 차례: %s\n' "$turns"
 
   if [ -e "$XL" ]; then
     owner="$(owner_read)"
