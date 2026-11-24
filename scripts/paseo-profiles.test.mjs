@@ -28,6 +28,7 @@ test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는
     const notes = manifest.profiles.find(p => p.name === name).notes;
     assert.match(notes, /에만 쓰는 읽기 전용 검토자/, name);
     assert.match(notes, /그 밖의 리뷰에는 쓰지 않는다/, name);
+    assert.match(notes, /yw-chief-supervisor의 단계 검토/, name);
   }
   for (const profile of manifest.profiles) {
     assert.doesNotMatch(profile.notes ?? '', /한도 소진|대체 프로필/, profile.name);

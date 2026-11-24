@@ -64,7 +64,7 @@
       "model": "claude-fable-5-2",
       "modeId": "bypassPermissions",
       "thinkingOptionId": "high",
-      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)과 yw-chief-supervisor의 단계 검토에만 쓰는 읽기 전용 검토자. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
+      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)과 yw-chief-supervisor의 단계 검토에만 쓰는 읽기 전용 검토자. 워크플로 정책 변경 PR은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
     },
     {
       "id": "bootstrap-deep-reviewer-astra",
@@ -74,7 +74,7 @@
       "modeId": "auto-review",
       "thinkingOptionId": "xhigh",
       "featureValues": { "plan_mode": true },
-      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)과 yw-chief-supervisor의 단계 검토에만 쓰는 읽기 전용 검토자. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. yw-chief-supervisor의 새 운영 정책 설계에는 둘 다 쓴다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
+      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)과 yw-chief-supervisor의 단계 검토에만 쓰는 읽기 전용 검토자. 워크플로 정책 변경 PR은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. yw-chief-supervisor의 새 운영 정책 설계에는 둘 다 쓴다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
     },
     {
       "id": "bootstrap-opus-agy",
@@ -106,7 +106,7 @@
       "provider": "antigravity",
       "model": "gemini-4-neon-high",
       "modeId": "full-access",
-      "notes": "Claude·GPT와 다른 계열(Gemini 4 Neon)로 넓게 탐색하는 독립 검토자. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 보고 반례와 빠진 맥락을 찾는다. 심각도를 높게 잡고 이미 기록된 결정·이슈를 새 발견처럼 내는 경향이 있으므로, 지시문에 기존 결정·이슈를 함께 주고 결과는 Reviewer(Sol)로 반박 검증한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인한다. yw-chief-supervisor 단계 검토의 첫 단계로도 쓴다(중대 판단 제외). Reviewer·Deep Reviewer를 대신하지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
+      "notes": "Claude·GPT와 다른 계열(Gemini 4 Neon)로 넓게 탐색하는 독립 검토자. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 보고 반례와 빠진 맥락을 찾는다. 심각도를 높게 잡고 이미 기록된 결정·이슈를 새 발견처럼 내는 경향이 있으므로, 지시문에 기존 결정·이슈를 함께 주고 코드 리뷰의 결함 후보는 Reviewer(Sol)로 반박 검증한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인한다. yw-chief-supervisor 단계 검토의 첫 단계로도 쓴다(중대 판단 제외). Reviewer·Deep Reviewer를 대신하지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
     }
   ]
 }
