@@ -148,6 +148,10 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 
 끄면 role이 등록한 colima 서비스만 `brew services stop colima`로 해제한다(서비스로 실행 중인 VM도 멈출 수 있음). 기존 서비스나 소유 기록이 없는 구버전 역할의 서비스는 보존한다. 해제 실패 시 소유 기록을 남겨 다시 실행할 수 있다. colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
 
+로그 읽기 키는 하나만 저장한다. 다른 키로 add하면 거절한다. 로그를 읽을 작업 기기를 바꾸려면 먼저 아래 [run 사이 점검·정리 절차](#run-사이-점검정리-절차)의 1·2단계로 실행이 없는지 확인하고 loop를 내린다. remove가 role이 등록한 colima 서비스를 멈춰 진행 중인 회차를 끊을 수 있기 때문이다. 그다음 `role remove verifier`(위 끄기)와 새 키로 `role add verifier --ssh-key <새 공개키 파일>`을 실행하고, `role status verifier`가 0이 된 뒤 7단계로 loop를 올린다. remove가 상태 파일을 지우므로 기본값이 아닌 `--colima-memory`·`--shared`도 함께 준다.
+
+verifier를 다른 기기로 옮기는 순서와 작업 기기 쪽 후속 조치는 [01-software runbook의 이전 절](https://github.com/01-office/01-software/blob/dev/docs/runbooks/verifier-machine.md#move-the-verifier-to-another-machine)을 따른다.
+
 `role status`는 **clock override·실행 중인 기본 guest의 drop-in·unit CapabilityBoundingSet**, **colima 자동 시작 설정**, **지금 Docker 응답**, **heavy 공유·전용**을 따로 보고한다. 공유 역할은 세 자동 시작이 등록돼 있는지와 heavy 모드가 round-robin인지(아니면 2), 전용 역할은 자동 시작이 꺼졌는지 확인한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
 
 - **0 준비 완료**: 자동 시작 등록·소유 기록, Docker 응답과 기존 역할 검사가 모두 정상이다. 인자 없는 `role status`는 켠 역할이 없어도 기존처럼 0이다.
