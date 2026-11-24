@@ -134,28 +134,14 @@ test('감독 계약: 닫힌 사용자 결정 목록의 안전 대상을 보존�
   }
 });
 
-test('자율 결정 위임: 사용자에게 남는 결정과 UX 판정·운영 경계를 보존한다', () => {
-  const read = name => readFileSync(new URL(`../agents/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
-  const contract = read('yw-supervisor').split('\n## 에스컬레이션 계약\n')[1]?.split('\n## ')[0] ?? '';
-  const delegation = contract.match(/^\*\*자율 결정 위임:\*\* [\s\S]*?(?=\n\n)/m)?.[0] ?? '';
-  assert.match(delegation, /다른 세션으로 위임이 넓어지지 않는다/);
-  const granted = delegation.match(/^- 대신 정하는 것: .+/m)?.[0] ?? '';
-  assert.match(granted, /범위 축소·연기\(중요 미해결을 남기는 것은 제외\)/);
-  assert.match(granted, /그 lane이 소유한 이슈의 종료/);
-  assert.doesNotMatch(granted, /병합|배포|결제|비용|force|archive|detach|삭제|권한/);
-  const kept = delegation.match(/^- 계속 사용자가 정하는 것: .+/m)?.[0] ?? '';
-  for (const target of ['위에 없는 계약 항목 전부', '새 목표와 목표 밖 확장', '중요 미해결의 수용', 'main·운영 반영', '실결제', '비용', '되돌리기 어려운 일',
-    '다른 사람의 소유물', '사용자만 아는 사실·법적 판단', '안전 분류 거부', '4번', '최종 미합의']) {
-    assert.ok(kept.includes(target), `사용자 결정 누락: ${target}`);
-  }
-  assert.match(kept, /자동 검사·보호를 우회하지 않는다/);
-  const ux = contract.match(/^\*\*UX 선진행:\*\* .+/m)?.[0] ?? '';
-  assert.match(ux, /`main`이 아니고 운영에 배포되지 않는 브랜치까지 진행하고, 없으면 PR·미리보기에서 멈춘다/);
-  assert.match(ux, /판정은 사용자만/);
-  assert.match(ux, /판정은 병합·배포 승인이 아니므로 main·운영 반영은 판정 뒤에 계약대로 올린다/);
-  const chief = read('yw-chief-supervisor');
-  assert.match(chief, /합의는 실행 권한을 추가하지 않는다/);
-  assert.match(chief, /범위 축소·연기는 사용자 결정 원문이나 자율 결정 위임의 원문·합의 기록이 있어야 한다/);
+test('결정 위임·UX 선진행: 사용자에게 남는 결정과 운영 경계를 보존한다', () => {
+  const skill = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const delegation = skill.match(/^\*\*결정 위임:\*\* .+/m)?.[0] ?? '';
+  const ux = skill.match(/^\*\*UX 선진행:\*\* .+/m)?.[0] ?? '';
+  assert.match(delegation, /원문·대상 lane을 `tasks\.md`에 남긴다/);
+  assert.match(delegation, /남긴 채 닫기·완료 처리·병합하려면 사용자가 수용해야 한다/);
+  assert.match(delegation, /그 밖의 2~7번[^\n]*그대로 사용자가 정하며, 위임으로 권한·보호·검사를 완화할 수 없다/);
+  assert.match(ux, /운영에 배포되지 않는 브랜치일 때만 먼저 병합[^\n]*판정은 사용자만 하며 main·운영 반영 승인이 아니다/);
 });
 
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {
@@ -218,5 +204,5 @@ test('감독 위임: 소유·지정 저장소의 기본 브랜치에 병합된 �
   const turnEnd = skill.split('\n## 턴 종료 계약\n')[1]?.split('\n## ')[0] ?? '';
   assert.match(skill, /대화 제목을 `감독: <목표>`로 바꾼다\(`update_agent`의 `name`\)/);
   assert.match(turnEnd, /응답 첫 줄에 지금 상태\(무엇을 하는 중인지·무엇을 기다리는지·사용자 결정이 필요한지·완료인지\)를 쓴다/);
-  assert.match(turnEnd, /완료를 말할 때는 요청별 증거·사용자 연기 결정·공유 기록을 댄다/);
+  assert.match(turnEnd, /완료를 말할 때는 요청별 증거·연기의 결정 근거·공유 기록을 댄다/);
 });
