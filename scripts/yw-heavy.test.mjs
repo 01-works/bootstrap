@@ -1567,3 +1567,40 @@ test('v3 status의 예상 차례는 죽은 줄을 빼고, 회수가 꺼졌거나
   writeFileSync(f.q, lines + 'OLD worker=w supervisor=s\n');
   assert.equal(turns(), undefined);
 });
+
+test('status --json은 실행·대기·예상 차례를 JSON으로 내고 비밀값과 상태를 바꾸지 않는다', async t => {
+  const f = fixture(t); enable(f);
+  const get = () => {
+    const r = f.sync('status', '--json');
+    assert.equal(r.status, 0, r.stderr); assert.equal(r.stdout.trim().split('\n').length, 1);
+    return [JSON.parse(r.stdout), r.stdout];
+  };
+  assert.deepEqual(get()[0], { schema: 1, mode: 'round-robin', paused: false, slots: [{ name: 'main', running: null, waiting: [], turns: [] }] });
+  const h = await holding(f);
+  const owner = JSON.parse(f.ownerText()), before = tree(f.dir);
+  assert.deepEqual(get()[0].slots[0].running, { id: owner.task, supervisor: 'H', queued: owner.queued, started: owner.started, state: 'alive' });
+  assert.deepEqual(tree(f.dir), before, '읽기 전용');
+  const waiters = [];
+  for (const [id, sup] of [['A1', 'A'], ['A2', 'A'], ['B1', 'B']]) {
+    waiters.push(f.cli('run', id, 'w', sup, '--', 'true'));
+    await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
+  }
+  const [now, raw] = get();
+  assert.deepEqual(now.slots[0].waiting.map(w => [w.id, w.supervisor, w.state]), [['A1', 'A', 'alive'], ['A2', 'A', 'alive'], ['B1', 'B', 'alive']]);
+  assert.ok(now.slots[0].waiting.every(w => Number.isInteger(w.queued)));
+  assert.deepEqual(now.slots[0].turns, ['A1', 'B1', 'A2']);
+  for (const secret of [owner.token, owner.lease, owner.generation]) assert.ok(secret && !raw.includes(secret));
+  h.stdin.end('done\n');
+  for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
+  assert.equal(f.sync('status', '--bad').status, 2);
+});
+
+test('status --json은 compat·구형식·빈 owner에서도 JSON이고 차례를 모르면 null이다', t => {
+  const f = fixture(t);
+  writeFileSync(f.q, 'OLD worker=w supervisor=s\n' + f.line('V2', dead, 'x', 'a"b\\c'));
+  mkdirSync(f.x); writeFileSync(join(f.x, 'owner.txt'), '');
+  const slot = JSON.parse(f.sync('status', '--json').stdout).slots[0];
+  assert.deepEqual(slot.running, { id: null, supervisor: null, queued: null, started: null, state: 'unknown' });
+  assert.equal(slot.turns, null);
+  assert.deepEqual(slot.waiting.map(w => [w.id, w.supervisor, w.state]), [['OLD', 's', 'legacy'], ['V2', 'a"b\\c', 'dead:esrch']]);
+});
