@@ -134,6 +134,24 @@ test('감독 계약: 닫힌 사용자 결정 목록의 안전 대상을 보존�
   }
 });
 
+test('자율 결정 위임: 사용자에게 남는 결정과 UX 판정·운영 경계를 보존한다', () => {
+  const read = name => readFileSync(new URL(`../agents/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
+  const contract = read('yw-supervisor').split('\n## 에스컬레이션 계약\n')[1]?.split('\n## ')[0] ?? '';
+  const delegation = contract.match(/^\*\*자율 결정 위임:\*\* [\s\S]*?(?=\n\n)/m)?.[0] ?? '';
+  assert.match(delegation, /사용자가 결정을 맡기면 원문·대상을 기록/);
+  const kept = delegation.match(/^- 계속 사용자가 정하는 것: .+/m)?.[0] ?? '';
+  for (const target of ['새 목표와 목표 밖 확장', '중요 미해결의 수용', 'main·운영 반영', '실결제', '비용', '되돌리기 어려운 일',
+    '다른 사람의 소유물', '사용자만 아는 사실·법적 판단', '안전 분류 거부', '4번', '최종 미합의']) {
+    assert.ok(kept.includes(target), `사용자 결정 누락: ${target}`);
+  }
+  assert.match(kept, /자동 검사·보호를 우회하지 않는다/);
+  const ux = contract.match(/^\*\*UX 선진행:\*\* .+/m)?.[0] ?? '';
+  assert.match(ux, /병합이 바로 운영에 배포되면 PR·미리보기에서 멈춘다/);
+  assert.match(ux, /판정은 사용자만/);
+  assert.match(ux, /main·운영 반영은 확인 뒤에/);
+  assert.match(read('yw-chief-supervisor'), /합의는 실행 권한을 추가하지 않는다/);
+});
+
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {
   test(`${name} 설치: dry-run, 양쪽 동일 원본, 재실행, 충돌·중복 보존`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'bootstrap-skills-test-'));
