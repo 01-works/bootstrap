@@ -9,7 +9,7 @@ import { mergeProfiles } from './paseo-profiles.mjs';
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-profiles.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-profiles.mjs', import.meta.url).pathname;
 
-test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는 정책 검토 전용', () => {
+test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는 정책·단계 검토 전용', () => {
   for (const [name, model, modeId, thinkingOptionId] of [
     ['Supervisor', 'claude-opus-5-5', 'bypassPermissions', 'high'],
     ['Architect', 'claude-opus-5-5', 'bypassPermissions', 'xhigh'],
@@ -21,7 +21,7 @@ test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는
     assert.deepEqual([profile.model, profile.modeId, profile.thinkingOptionId],
       [model, modeId, thinkingOptionId], name);
   }
-  // 비용 때문에 Fable·Astra는 정책 검토 프로필에만 둔다. 모델 대체 프로필은 두지 않는다.
+  // 비용 때문에 Fable·Astra는 정책·단계 검토 프로필에만 둔다. 모델 대체 프로필은 두지 않는다.
   assert.deepEqual(manifest.profiles.filter(p => /fable|astra/i.test(p.model ?? '')).map(p => p.name),
     ['Policy Reviewer (Fable)', 'Policy Reviewer (Astra)']);
   for (const name of ['Policy Reviewer (Fable)', 'Policy Reviewer (Astra)']) {
