@@ -113,7 +113,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-총괄·중요한 설계·일반 구현·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
+총괄·중요한 설계·일반 구현·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경의 Policy Reviewer와 총괄 스킬의 단계 검토에만 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드 리뷰, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 정책 변경은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
@@ -136,7 +136,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다.
 - Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
-- Scan Reviewer·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도이고, 같은 모델의 Gemini Cross-check와 Gemini 쿼터를 나눠 쓴다. 모델별 선택 근거와 바꿀 때 다시 볼 조건은 [모델 선택 근거](model-selection.md).
+- Scan Reviewer·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 결함 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도이고, 같은 모델의 Gemini Cross-check와 Gemini 쿼터를 나눠 쓴다. 모델별 선택 근거와 바꿀 때 다시 볼 조건은 [모델 선택 근거](model-selection.md).
 - Helper는 CI·검증 실패 로그 분석, 리뷰 지적 중복 정리, 수정 전 코드 지도처럼 맡긴 쪽이 결과를 확인하는 읽기 전용 잡무를 싸게 맡는다. 결함 찾기·리뷰·확정에는 쓰지 않는다.
 - 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 `git status`로 확인한다. Scan Reviewer와 Helper는 비밀값이 있는 저장소에 쓰지 않고, Helper에는 토큰·개인정보가 남아 있을 수 있는 로그·자료도 넘기지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
 
