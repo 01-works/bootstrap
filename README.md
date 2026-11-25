@@ -88,7 +88,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 - Paseo 플러그인: 처음 설치할 때 최신본을 받는다. 이후에는 `paseo plugin update --all`에서 후보 버전을 확인하고 승인해 갱신한다. [플러그인 갱신](agents/paseo.md#플러그인-갱신)
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
 - 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
-- 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다. 그래서 `main`은 PR로 바꾸고, GitHub Actions의 `test`(macOS에서 전체 테스트)가 통과한 뒤 병합한다. 에이전트도 병합할 수 있다. 브랜치 보호로 강제하지는 않으므로 `main`에 직접 push하지 않는다.
+- 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다. 그래서 `main`은 PR로 바꾸고, GitHub Actions의 `test`(macOS에서 전체 테스트)가 통과한 뒤 병합한다. 에이전트도 병합할 수 있다. ruleset이 `main`의 직접 push·force push·삭제를 막는다. `test` 통과는 강제하지 않으므로(러너를 못 받아 시작하지 못하는 경우가 있다) 병합하는 쪽이 확인한다.
 - 끄기: `launchctl bootout gui/$(id -u)/local.bootstrap.update` 후 `~/Library/LaunchAgents/local.bootstrap.update.plist`를 지운다.
 
 ## 기기 역할
