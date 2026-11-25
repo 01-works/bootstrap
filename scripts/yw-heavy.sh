@@ -69,8 +69,8 @@ init() {
   ROLE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier"
   # 감독자가 켠 모드를 재시동 뒤에도 유지한다. /tmp가 비면 .mode가 없어 compat으로 돌아가기 때문이다.
   # 기본 대기열(경로로 판정: helper는 기본 경로를 YW_HEAVY_QUEUE로 넘긴다)에만 쓴다. 테스트·격리 대기열은 읽지도 쓰지도 않는다.
-  # YW_HEAVY_DEFAULT_QUEUE는 테스트가 기본 대기열을 흉내 낼 때만 쓴다.
-  case "$Q" in "${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}" | "/private${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}") SAVED="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/heavy-mode" ;; *) SAVED= ;; esac
+  # YW_HEAVY_DEFAULT_QUEUE는 테스트가 기본 대기열을 흉내 낼 때만 쓴다. 호출자마다 다를 수 있는 XDG_CONFIG_HOME 대신 $HOME 아래 고정 경로를 쓴다.
+  case "$Q" in "${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}" | "/private${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}") SAVED="$HOME/.config/bootstrap/heavy-mode" ;; *) SAVED= ;; esac
   # 검증 자리: 일반 자리와 같은 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 편집 잠금·기록·모드·제출 중지는 공유한다.
   MQ="$Q" MXL="$XL" LQ="$Q.verifier" LXL="$XL.verifier"
 }
@@ -947,7 +947,8 @@ mode_write() {
 mode_heal() {
   # 이 기능 전에 켠 모드는 저장값이 없다. 편집 잠금을 잡은 첫 호출이 지금 모드를 한 번 남긴다.
   if [ -n "$SAVED" ] && [ ! -e "$SAVED" ] && mode_file >/dev/null; then
-    save_mode "$(mode_file)" && note "mode-save from=existing to=$(mode_file)"
+    if save_mode "$(mode_file)"; then note "mode-save from=existing to=$(mode_file)"
+    else say "재시동 뒤 유지할 모드를 저장하지 못했습니다: $SAVED"; note "mode-save from=existing to=$(mode_file) result=failed"; fi
   fi
   ! mode_file >/dev/null && v3_active || return 0
   mode_write round-robin || return 1

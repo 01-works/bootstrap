@@ -1637,7 +1637,7 @@ test('status --json은 compat에서 실행 중인 작업을 대기에 다시 넣
 test('명시적으로 켠 모드는 /tmp가 비어도 유지되고, compat으로 되돌리면 저장값도 바뀐다', async t => {
   const f = fixture(t);
   f.env.YW_HEAVY_DEFAULT_QUEUE = f.q; // 이 대기열을 기본 대기열로 취급한다(helper처럼 경로를 명시해 넘김).
-  const saved = join(f.env.XDG_CONFIG_HOME, 'bootstrap', 'heavy-mode');
+  const saved = join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode');
   assert.equal(f.sync('pause').status, 0);
   assert.equal(f.sync('mode', 'round-robin').status, 0);
   assert.equal(read(saved).trim(), 'round-robin');
@@ -1661,8 +1661,8 @@ test('명시적으로 켠 모드는 /tmp가 비어도 유지되고, compat으로
 
 test('기본이 아닌 대기열은 저장된 모드를 읽지도 쓰지도 않고, 알 수 없는 저장값은 무시한다', t => {
   const f = fixture(t);
-  const saved = join(f.env.XDG_CONFIG_HOME, 'bootstrap', 'heavy-mode');
-  mkdirSync(join(f.env.XDG_CONFIG_HOME, 'bootstrap'), { recursive: true });
+  const saved = join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode');
+  mkdirSync(join(f.env.HOME, '.config', 'bootstrap'), { recursive: true });
   writeFileSync(saved, 'round-robin\n');
   assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
   assert.equal(f.sync('pause').status, 0);
@@ -1677,7 +1677,7 @@ test('기본이 아닌 대기열은 저장된 모드를 읽지도 쓰지도 않�
 test('저장값 이행·우선순위·저장 실패: 이미 켠 기기는 첫 잠금 때 저장하고, 살아 있는 v3가 저장된 compat보다 앞서며, 디렉터리면 전환이 실패를 알린다', async t => {
   const f = fixture(t); enable(f);
   f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
-  const saved = join(f.env.XDG_CONFIG_HOME, 'bootstrap', 'heavy-mode');
+  const saved = join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode');
   assert.equal(existsSync(saved), false);
   const h = await holding(f);
   assert.equal(read(saved).trim(), 'round-robin', '이 기능 전에 켠 round-robin을 첫 잠금 호출이 남긴다');
@@ -1688,4 +1688,22 @@ test('저장값 이행·우선순위·저장 실패: 이미 켠 기기는 첫 �
   assert.equal(f.sync('pause').status, 0);
   const r = f.sync('mode', 'compat');
   assert.equal(r.status, 1, r.stderr); assert.match(r.stderr, /유지할 설정을 쓰지 못했습니다/);
+  // 이미 켠 기기에서 저장할 수 없으면 첫 잠금 호출이 경고와 기록을 남긴다.
+  assert.equal(f.sync('resume').status, 0);
+  writeFileSync(f.q + '.mode', 'round-robin\n'); rmSync(saved, { recursive: true }); writeFileSync(join(f.env.HOME, '.config', 'bootstrap', 'x'), ''); rmSync(join(f.env.HOME, '.config', 'bootstrap'), { recursive: true });
+  writeFileSync(join(f.env.HOME, '.config', 'bootstrap'), '');
+  const run = f.cli('run', 'WARN', 'w', 'S', '--', 'true');
+  assert.equal(await f.finish(run), 0, run.err);
+  assert.match(run.err, /유지할 모드를 저장하지 못했습니다/); assert.match(f.log(), /mode-save from=existing to=round-robin result=failed/);
+});
+
+
+test('저장값은 XDG_CONFIG_HOME과 관계없이 같은 경로를 쓴다', t => {
+  const f = fixture(t); f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
+  mkdirSync(join(f.env.HOME, '.config', 'bootstrap'), { recursive: true });
+  writeFileSync(join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode'), 'round-robin\n');
+  for (const xdg of [f.env.XDG_CONFIG_HOME, join(f.dir, 'other-config'), '']) {
+    const r = spawnSync('/bin/bash', [script, 'capabilities'], { env: { ...f.env, XDG_CONFIG_HOME: xdg }, encoding: 'utf8' });
+    assert.equal(JSON.parse(r.stdout).mode, 'round-robin', `XDG_CONFIG_HOME=${xdg}`);
+  }
 });
