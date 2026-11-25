@@ -23,7 +23,7 @@ usage() {
                                                         차례가 오면 "ACQUIRED <ID>". holder가 끝나면 다른 대기자가 회수한다
   yw-heavy release <ID>                                 차례(그 ID의 것일 때)와 그 ID의 대기 줄을 지운다
   yw-heavy enqueue <ID> <worker> <supervisor>           구버전 acquire 호환 전용 (구형식 줄)
-  yw-heavy status                                       읽기 전용 상태
+  yw-heavy status [--json]                              읽기 전용 상태 (--json은 화면·도구용)
   yw-heavy capabilities                                 JSON 프로토콜·현재 모드 (version도 동일)
   yw-heavy reclaim                                      확정 사망 항목만 회수 (pause 중 drain용)
   yw-heavy pause | resume                               신규 제출 중지·재개 (기존 대기는 drain)
@@ -704,7 +704,7 @@ rr_turns() {
       if (active!="" && count[active]) order[++m]=active
       while (left>0) for (i=1;i<=m;i++) {
         sup=order[i]
-        if (done[sup]<count[sup]) { out=out (out=="" ? "" : " → ") job[sup,++done[sup]]; left-- }
+        if (done[sup]<count[sup]) { out=out (out=="" ? "" : " ") job[sup,++done[sup]]; left-- }
       }
       print out
     }'
@@ -760,7 +760,70 @@ EOF
   # 기존 줄의 순서와 이웃 관계는 바꾸지 않는다.
   turns=''
   if [ "$LEGACY" = 0 ] && [ "$other" = 0 ]; then turns="$(rr_turns "$queued")"; fi
-  [ -z "$turns" ] || printf '예상 차례: %s\n' "$turns"
+  [ -z "$turns" ] || printf '예상 차례: %s\n' "$(printf '%s' "$turns" | sed 's/ / → /g')"
+}
+
+# 화면·도구용 status. 사람이 읽는 status와 같은 판정이며 token·lease·세대·명령은 내보내지 않는다.
+json_val() {
+  if [ -n "$1" ]; then printf '"%s"' "$(json_esc "$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177')")"; else printf null; fi
+}
+num_val() { case "$1" in 0 | [1-9]*) case "$1" in *[!0-9]*) printf null ;; *) printf '%s' "$1" ;; esac ;; *) printf null ;; esac; }
+slot_json() {
+  local l id pid st v owner holder hs started queued='' other=0 waiting='' turns=null w running=''
+  # compat은 실행 중인 줄을 release까지 큐에 남긴다. 실행 중인 작업을 대기로 다시 내지 않는다.
+  [ ! -e "$XL" ] || running="$(json_str "$(owner_read)" task)"
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    id="$(line_id "$l")" v="$(lf "$l" v)"
+    [ -z "$running" ] || [ "$id" != "$running" ] || continue
+    if is_v2 "$l"; then
+      pid="$(lf "$l" pid)"
+      if [ "${pid:--}" = - ]; then st=no-holder; else st="$(proc_state "$pid" "$(lf "$l" start)")"; fi
+      case "$v:$st" in
+        3:dead:*) ;;
+        3:*) queued="$queued$l
+" ;;
+        *) other=1 ;;
+      esac
+    else
+      st=legacy other=1 pid=''
+    fi
+    waiting="$waiting${waiting:+,}{\"id\":$(json_val "$id"),\"pid\":$(num_val "$pid"),\"supervisor\":$(json_val "$(lf "$l" supervisor)"),\"queued\":$(num_val "$(lf "$l" queued)"),\"state\":\"$st\"}"
+  done <<EOF
+$(q_lines)
+EOF
+  if [ "$other" = 0 ] && [ "$(mode_read)" = round-robin ] && [ ! -e "$NR" ]; then
+    turns=''
+    for w in $(rr_turns "$queued"); do turns="$turns${turns:+,}$(json_val "$w")"; done
+    turns="[$turns]"
+  fi
+  printf '{"name":"%s","running":' "$1"
+  if [ -e "$XL" ]; then
+    owner="$(owner_read)"; holder="$(json_num "$owner" holder)"
+    st=unknown
+    if owner_v2 "$owner"; then
+      if [ -z "$holder" ]; then st=no-holder
+      else hs="$(json_str "$owner" holderStart)"; st="$(proc_state "$holder" "${hs:--}")"; fi
+    fi
+    started="$(json_num "$owner" started)"
+    # v2 owner는 epoch 대신 startedAt(UTC)을 쓴다.
+    [ -n "$started" ] || started="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$(json_str "$owner" startedAt)" +%s 2>/dev/null)"
+    printf '{"id":%s,"pid":%s,"supervisor":%s,"queued":%s,"started":%s,"state":"%s"}' "$(json_val "$(json_str "$owner" task)")" "$(num_val "$holder")" \
+      "$(json_val "$(json_str "$owner" supervisor)")" "$(num_val "$(json_num "$owner" queued)")" "$(num_val "$started")" "$st"
+  else
+    printf null
+  fi
+  printf ',"waiting":[%s],"turns":%s}' "$waiting" "$turns"
+}
+do_status_json() {
+  local paused=false
+  [ ! -e "$PAUSED" ] || paused=true
+  printf '{"schema":1,"mode":%s,"paused":%s,"slots":[' "$(json_val "$(mode_read)")" "$paused"
+  slot_json main
+  if { role_shared && [ "$(mode_read)" = round-robin ]; } || [ -s "$LQ" ] || [ -e "$LXL" ]; then
+    printf ,; use_lane; slot_json verifier; use_main
+  fi
+  printf ']}\n'
 }
 
 do_status() {
@@ -1162,7 +1225,13 @@ main() {
   local cmd="${1:-}" st
   [ $# -gt 0 ] && shift
   case "$cmd" in
-    status) do_status; return ;;
+    status)
+      case "$*" in
+        '') do_status ;;
+        --json) do_status_json ;;
+        *) usage >&2; return 2 ;;
+      esac
+      return ;;
     capabilities | version) capabilities; return ;;
     pause | resume | mode | reclaim) control "$cmd" "$@"; return ;;
     -h | --help | help) usage; return 0 ;;
