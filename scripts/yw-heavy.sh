@@ -926,12 +926,15 @@ saved_mode() {
   case "$m" in compat | round-robin) printf '%s' "$m" ;; *) return 1 ;; esac
 }
 mode_read() {
-  mode_file || saved_mode || if v3_active; then printf round-robin; else printf compat; fi
+  # 살아 있는 v3 상태가 저장값보다 앞선다(저장값이 compat이어도 v3 작업과 helper 자체 잠금이 겹치지 않게).
+  mode_file || { v3_active && printf round-robin; } || saved_mode || printf compat
 }
 # 명시적 전환만 저장한다. 저장에 실패하면 전환은 유지하고 코드 1로 알린다.
 save_mode() {
   local tmp
   [ -n "$SAVED" ] || return 0
+  # 디렉터리 등 일반 파일이 아닌 것이 있으면 mv가 그 안에 넣고 성공하므로 거절한다.
+  [ ! -e "$SAVED" ] || [ -f "$SAVED" ] || return 1
   mkdir -p "$(dirname "$SAVED")" && tmp="$(mktemp "$SAVED.tmp.XXXXXX")" || return 1
   if ! { printf '%s\n' "$1" >"$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$SAVED"; }; then rm -f "$tmp"; return 1; fi
 }
@@ -942,6 +945,10 @@ mode_write() {
 }
 # 편집 잠금 아래에서만 부른다. 사라진 모드 파일을 v3 대기·실행이 남아 있을 때만 되살린다.
 mode_heal() {
+  # 이 기능 전에 켠 모드는 저장값이 없다. 편집 잠금을 잡은 첫 호출이 지금 모드를 한 번 남긴다.
+  if [ -n "$SAVED" ] && [ ! -e "$SAVED" ] && mode_file >/dev/null; then
+    save_mode "$(mode_file)" && note "mode-save from=existing to=$(mode_file)"
+  fi
   ! mode_file >/dev/null && v3_active || return 0
   mode_write round-robin || return 1
   note "mode-restore from=missing to=round-robin"

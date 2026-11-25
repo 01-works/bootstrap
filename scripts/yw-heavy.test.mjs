@@ -1673,3 +1673,19 @@ test('기본이 아닌 대기열은 저장된 모드를 읽지도 쓰지도 않�
   writeFileSync(saved, 'fast\n'); rmSync(f.q + '.mode', { force: true });
   assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
 });
+
+test('저장값 이행·우선순위·저장 실패: 이미 켠 기기는 첫 잠금 때 저장하고, 살아 있는 v3가 저장된 compat보다 앞서며, 디렉터리면 전환이 실패를 알린다', async t => {
+  const f = fixture(t); enable(f);
+  f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
+  const saved = join(f.env.XDG_CONFIG_HOME, 'bootstrap', 'heavy-mode');
+  assert.equal(existsSync(saved), false);
+  const h = await holding(f);
+  assert.equal(read(saved).trim(), 'round-robin', '이 기능 전에 켠 round-robin을 첫 잠금 호출이 남긴다');
+  writeFileSync(saved, 'compat\n'); rmSync(f.q + '.mode', { force: true });
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'round-robin', 'v3 실행이 살아 있으면 저장된 compat보다 앞선다');
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+  rmSync(saved); mkdirSync(saved);
+  assert.equal(f.sync('pause').status, 0);
+  const r = f.sync('mode', 'compat');
+  assert.equal(r.status, 1, r.stderr); assert.match(r.stderr, /유지할 설정을 쓰지 못했습니다/);
+});
