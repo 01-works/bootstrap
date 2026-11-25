@@ -1633,3 +1633,35 @@ test('status --json은 compat에서 실행 중인 작업을 대기에 다시 넣
   assert.match(f.sync('status').stdout, /1\. RUN {2}v2/, '사람용 status는 그대로 줄을 보인다');
   h.stdin.end('done\n');
 });
+
+test('명시적으로 켠 모드는 /tmp가 비어도 유지되고, compat으로 되돌리면 저장값도 바뀐다', async t => {
+  const f = fixture(t);
+  const saved = join(f.dir, 'config', 'bootstrap', 'heavy-mode');
+  f.env.YW_HEAVY_SAVED_MODE = saved;
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 0);
+  assert.equal(read(saved).trim(), 'round-robin');
+  assert.equal(lstatSync(saved).mode & 0o777, 0o600);
+  assert.equal(f.sync('resume').status, 0);
+  // 재시동: /tmp의 상태 파일이 모두 사라진다.
+  for (const p of [f.q + '.mode', f.q + '.rotation', f.q + '.paused', f.q]) rmSync(p, { force: true });
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'round-robin');
+  const run = f.cli('run', 'AFTER-BOOT', 'w', 'S', '--', 'true');
+  assert.equal(await f.finish(run), 0, run.err);
+  assert.ok(events(f).some(e => e.event === 'start' && e.requestId === 'AFTER-BOOT'), 'round-robin 이벤트가 남는다');
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'compat').status, 0);
+  assert.equal(read(saved).trim(), 'compat');
+  rmSync(f.q + '.mode', { force: true });
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
+});
+
+test('다른 대기열은 저장된 모드를 읽지 않고, 알 수 없는 저장값은 무시한다', t => {
+  const f = fixture(t);
+  const dir = join(f.env.XDG_CONFIG_HOME, 'bootstrap'); mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'heavy-mode'), 'round-robin\n');
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat', 'YW_HEAVY_QUEUE를 지정한 대기열은 기본 저장값을 쓰지 않는다');
+  f.env.YW_HEAVY_SAVED_MODE = join(dir, 'heavy-mode');
+  writeFileSync(f.env.YW_HEAVY_SAVED_MODE, 'fast\n');
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
+});

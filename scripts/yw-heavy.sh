@@ -67,6 +67,9 @@ init() {
   LOCKF=/usr/bin/lockf
   ID='' WORKER='' SUP='' HOLDER='' HOLDER_START=- MYSTART=- MYMARK='' LOCKED=0 SIG='' HELD=0 KEPT_AT=-1 KEEPER=''
   ROLE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier"
+  # 감독자가 켠 모드를 재시동 뒤에도 유지한다. /tmp가 비면 .mode가 없어 compat으로 돌아가기 때문이다.
+  # 기본 대기열에만 쓴다. 다른 YW_HEAVY_QUEUE(테스트·격리 대기열)는 YW_HEAVY_SAVED_MODE를 직접 줄 때만 쓴다.
+  if [ -n "${YW_HEAVY_QUEUE:-}" ]; then SAVED="${YW_HEAVY_SAVED_MODE:-}"; else SAVED="${YW_HEAVY_SAVED_MODE:-${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/heavy-mode}"; fi
   # 검증 자리: 일반 자리와 같은 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 편집 잠금·기록·모드·제출 중지는 공유한다.
   MQ="$Q" MXL="$XL" LQ="$Q.verifier" LXL="$XL.verifier"
 }
@@ -916,8 +919,20 @@ v3_active() {
 # 파일이 있어도 읽지 못하거나 비어 있으면 없는 것과 같이 판단한다.
 # 일반 파일이 아니면(FIFO 등) 읽다가 멈추지 않도록 읽지 않는다.
 mode_file() { local m; [ -f "$MODE" ] && m="$(cat "$MODE" 2>/dev/null)" && [ -n "$m" ] && printf '%s' "$m"; }
+saved_mode() {
+  local m
+  [ -n "$SAVED" ] && [ -f "$SAVED" ] && m="$(cat "$SAVED" 2>/dev/null)" || return 1
+  case "$m" in compat | round-robin) printf '%s' "$m" ;; *) return 1 ;; esac
+}
 mode_read() {
-  mode_file || if v3_active; then printf round-robin; else printf compat; fi
+  mode_file || saved_mode || if v3_active; then printf round-robin; else printf compat; fi
+}
+# 명시적 전환만 저장한다. 저장에 실패하면 전환은 유지하고 코드 1로 알린다.
+save_mode() {
+  local tmp
+  [ -n "$SAVED" ] || return 0
+  mkdir -p "$(dirname "$SAVED")" && tmp="$(mktemp "$SAVED.tmp.XXXXXX")" || return 1
+  if ! { printf '%s\n' "$1" >"$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$SAVED"; }; then rm -f "$tmp"; return 1; fi
 }
 mode_write() {
   local tmp
@@ -955,6 +970,7 @@ control() {
       # 순환 파일을 먼저 지운다. 실패하면 기존 모드를 유지한다.
       rm -f "$RING" "$LQ.rotation" || { unlock_queue; return 1; }
       mode_write "$target" || { unlock_queue; return 1; }
+      save_mode "$target" || { say "모드는 바꿨지만 재시동 뒤 유지할 설정을 쓰지 못했습니다: $SAVED"; note "mode-change from=$prev to=$target save=failed"; unlock_queue; return 1; }
       note "mode-change from=$prev to=$target parent=$PPID:$(ps -o ucomm= -p "$PPID" 2>/dev/null | tr -d ' ')"
       ;;
   esac
