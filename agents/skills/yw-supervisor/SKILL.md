@@ -92,7 +92,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 검증 동작·방법과 기기에서 허용된 실행 범위:
 브라우저·GUI면 대상·Chrome/Computer Use 도구·own target·조작 차례:
 반환: 변경 요약·diff/commit·검증 결과·지시/스킬 불일치·미해결·필요 결정.
-백그라운드 작업을 남기면 밝히고 결과는 감독자 {serverId: <감독자 serverId>, agentId: <감독자 agent ID>}에게 직접 보고한다. send_agent_prompt에 두 ID를 쓴다. 도구 없는 Codex는 같은 호스트에서만 `paseo send <감독자 agent ID>`를 쓰고, 전송 불가면 응답에 결과를 남긴다.
+결과는 최종 응답에 남긴다(완료 알림으로 전달된다). 응답을 마친 뒤에도 백그라운드 작업이 남으면 응답에 대기 대상과 최종 결과 확인 위치를 적는다. 그 백그라운드 작업이 끝나면, 자기 `list_hosts`에 감독자 {serverId: <감독자 serverId>, agentId: <감독자 agent ID>}의 serverId가 있을 때만 그 결과를 send_agent_prompt로 직접 보고하고, 없거나 Unknown host이면 작업자 세션 응답에 남긴다. 도구 없는 Codex는 같은 호스트에서만 `paseo send <감독자 agent ID>`를 쓴다.
 작업자로서 다른 작업의 총괄·재위임은 하지 않는다.
 ```
 
