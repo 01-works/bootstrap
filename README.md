@@ -115,7 +115,7 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 
 작업 기기가 검증도 맡으면 `--shared`로 켠다. 상태 파일에 `shared=1`을 기록하고, 다시 적용할 때도 저장된 값을 쓴다. `--dedicated`로 전용으로 되돌린다. 공유 역할은 두 가지가 다르다.
 
-- heavy: 다른 요청도 거절하지 않고 일반 대기열에서 차례를 받는다. round-robin이면 `verifier-loop` 요청은 일반 대기열과 분리된 검증 자리 1개를 써서, 일반 작업 1개와 검증 1개가 동시에 돈다. 검증 holder의 nice는 10으로 올린다. compat이면 검증 자리 없이 함께 차례를 받는다. 모드는 재시동하면 compat로 돌아가므로 다시 켠다([공유 역할](agents/heavy-queue.md#공유-역할-role-add-verifier---shared)).
+- heavy: 다른 요청도 거절하지 않고 일반 대기열에서 차례를 받는다. round-robin이면 `verifier-loop` 요청은 일반 대기열과 분리된 검증 자리 1개를 써서, 일반 작업 1개와 검증 1개가 동시에 돈다. 검증 holder의 nice는 10으로 올린다. compat이면 검증 자리 없이 함께 차례를 받는다. 켠 모드는 재시동 뒤에도 유지된다([공유 역할](agents/heavy-queue.md#공유-역할-role-add-verifier---shared)).
 - 자동 시작: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 끄지 않고 이 기기 종류의 원래 등록을 유지한다. 작업 기기의 에이전트가 이 기기에서 Paseo와 브라우저 작업을 계속 쓰기 때문이다. 재적용은 실행 중인 등록을 내렸다 올리지 않는다(감독 세션 보호). 내용이 바뀌었으면 수동 작업 대기로 알리고 paseo·browser 단계에 맡긴다.
 
 메모리는 기존 `--colima-memory`로 정한다. VM은 작업과 검증이 같이 쓰므로 `max(지금 값, 6)` 이상을 준다. 선택지 없이 처음 켜면 기본 6 GiB로 줄일 수 있다. 검증 피크는 VM 약 6 GiB, 호스트 node 최대 약 6 GiB다. 01-software 검증은 VM CPU 4개를 요구하는데 role은 `cpu:`를 바꾸지 않으므로 직접 확인한다.

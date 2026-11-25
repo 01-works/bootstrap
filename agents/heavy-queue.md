@@ -18,7 +18,7 @@ supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS �
 - **round-robin**이면 supervisor가 `verifier-loop`인 새 획득은 **검증 자리**를 쓴다. 그래서 일반 작업 1개와 검증 1개가 동시에 실행된다.
   - 검증 자리는 일반 자리와 같은 v3 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 대기열은 `$YW_HEAVY_QUEUE.verifier`, 실행 lock은 `$YW_HEAVY_EXEC_LOCK.verifier`, 순환 파일은 `$YW_HEAVY_QUEUE.verifier.rotation`이다. 편집 잠금·기록·이벤트·모드·제출 중지 파일은 일반 자리와 같이 쓴다.
   - 실행 슬롯은 1개라 검증 요청이 둘이면 나중 요청은 검증 자리에서 기다린다.
-- **compat**이면 검증 자리를 쓰지 않는다. verifier-loop도 일반 대기열에서 함께 차례를 받으므로 동시에 돌지 않는다. 두 v2 대기열에 같은 ID가 등록되면 `release <ID>`가 어느 자리를 풀지 모호해지므로 지원하지 않는다. 모드 파일은 `/tmp`에 있어 재시동하면 compat로 돌아간다. 공유 기기는 재시동이나 재로그인 뒤 [활성화 절차](#활성화와-롤백)로 round-robin을 다시 켠다. `role status verifier`는 공유 역할인데 round-robin이 아니면 수동 작업 대기(2)로 알린다.
+- **compat**이면 검증 자리를 쓰지 않는다. verifier-loop도 일반 대기열에서 함께 차례를 받으므로 동시에 돌지 않는다. 두 v2 대기열에 같은 ID가 등록되면 `release <ID>`가 어느 자리를 풀지 모호해지므로 지원하지 않는다. `role status verifier`는 공유 역할인데 round-robin이 아니면 수동 작업 대기(2)로 알린다.
 - 자리 선택은 기존 재진입 계약을 먼저 따른다.
   1. 상속한 token(`YW_HEAVY_GENERATION`·`YW_HEAVY_TOKEN`)은 세대가 같은 자리를 쓴다.
   2. token이 없으면 호출자가 그 자리 holder의 자손인 자리를 쓴다.
@@ -117,7 +117,7 @@ CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효�
 3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다(검증 자리 포함). v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
 4. `capabilities`·`status`에서 모드를 확인하고 `yw-heavy resume`으로 새 제출을 연다. 두 번의 인계와 이벤트 기록을 확인한다.
 
-모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다.
+모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라진다. 기본 대기열에서 `mode`로 명시적으로 바꾼 모드는 `~/.config/bootstrap/heavy-mode`(호출자의 `XDG_CONFIG_HOME`과 관계없는 고정 경로)에도 남아(권한 600), `.mode`가 없으면 그 값을 읽는다. 재시동 직후에는 대기열이 비어 있으므로 첫 제출부터 같은 모드가 된다. 켠 적 없는 기기는 compat이 기본이다. 이 기능 전에 이미 켠 기기는 다음 잠금 호출이 지금 모드를 한 번 저장한다. 살아 있는 v3 실행·대기가 있으면 저장값보다 round-robin이 앞선다. 되돌리기는 같은 drain 절차로 `mode compat`을 실행하면 저장값도 compat이 된다. 기본 대기열인지는 경로(`/tmp/yw-heavy-queue`)로 판정한다. helper가 이 경로를 `YW_HEAVY_QUEUE`로 넘겨도 같은 값을 읽고, 다른 경로의 테스트·격리 대기열은 저장값을 읽거나 쓰지 않는다.
 
 macOS `com.apple.tmp_cleaner`는 매일 로컬 0시에 atime·mtime·ctime이 모두 3일 넘은 `/tmp` 파일을 지운다. APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않으므로, 읽기만 하는 모드 파일과 `.flock`이 재시동 없이 지워진다(#114). 그래서 편집 잠금을 잡은 프로세스는 `YW_HEAVY_KEEP_EVERY`(기본 3600초)마다 한 번, `run`은 명령이 실행되는 동안 같은 주기로(갱신 프로세스는 `YW_HEAVY_KEEP_CHECK`, 기본 20초마다 run이 살아 있는지 확인하고 없으면 끝난다) 큐 본문·실행 lock `owner.txt`·`.flock`·`.mode`·`.paused`·`.rotation`·`.no-reclaim`·`.log`·`.events`의 mtime을 갱신한다(없는 파일은 만들지 않는다). 모드 파일이 없거나 읽을 수 없어도 v3 대기 줄이나 v3 실행 owner가 남아 있으면 round-robin으로 읽고, 다음 잠금 보유자가 파일을 되살리며 `mode-restore`를 기록한다. compat 전환은 빈 대기열에서만 가능하므로 이 상태는 파일 유실뿐이다. `mode` 전환은 이전·다음 모드와 호출한 부모 프로세스(PID·실행 파일 이름)를 `.log`에 `mode-change`로 남긴다. `status`는 로그 tail과 별개로 `마지막 모드 변경:` 한 줄을 보인다(기록이 없으면 `기록 없음`). 테스트는 큐·실행 lock·편집 lock·기록을 모두 임시 경로로 격리한다.
 
