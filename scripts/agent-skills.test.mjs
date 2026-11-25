@@ -140,7 +140,7 @@ test('결정 위임·UX 선진행: 사용자에게 남는 결정과 운영 경�
   const ux = skill.match(/^\*\*UX 선진행:\*\* .+/m)?.[0] ?? '';
   assert.match(delegation, /원문·대상 lane을 `tasks\.md`에 남긴다/);
   assert.match(delegation, /남긴 채 닫기·완료 처리·병합하려면 사용자가 수용해야 한다/);
-  assert.match(delegation, /그 밖의 2~7번[^\n]*그대로 사용자가 정하며, 위임으로 권한·보호·검사를 완화할 수 없다/);
+  assert.match(delegation, /새 목표·목표 밖 확장, 사용자만 아는 사실·법적 판단은 사용자가 정하고, 2~7번은 각 항목의 승인 조건을 따르며, 위임으로 권한·보호·검사를 완화할 수 없다/);
   assert.match(ux, /운영에 배포되지 않는 브랜치일 때만 먼저 병합[^\n]*판정은 사용자만 하며 main·운영 반영 승인이 아니다/);
 });
 
