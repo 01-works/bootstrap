@@ -68,8 +68,9 @@ init() {
   ID='' WORKER='' SUP='' HOLDER='' HOLDER_START=- MYSTART=- MYMARK='' LOCKED=0 SIG='' HELD=0 KEPT_AT=-1 KEEPER=''
   ROLE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier"
   # 감독자가 켠 모드를 재시동 뒤에도 유지한다. /tmp가 비면 .mode가 없어 compat으로 돌아가기 때문이다.
-  # 기본 대기열에만 쓴다. 다른 YW_HEAVY_QUEUE(테스트·격리 대기열)는 YW_HEAVY_SAVED_MODE를 직접 줄 때만 쓴다.
-  if [ -n "${YW_HEAVY_QUEUE:-}" ]; then SAVED="${YW_HEAVY_SAVED_MODE:-}"; else SAVED="${YW_HEAVY_SAVED_MODE:-${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/heavy-mode}"; fi
+  # 기본 대기열(경로로 판정: helper는 기본 경로를 YW_HEAVY_QUEUE로 넘긴다)에만 쓴다. 테스트·격리 대기열은 읽지도 쓰지도 않는다.
+  # YW_HEAVY_DEFAULT_QUEUE는 테스트가 기본 대기열을 흉내 낼 때만 쓴다.
+  case "$Q" in "${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}" | "/private${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}") SAVED="${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/heavy-mode" ;; *) SAVED= ;; esac
   # 검증 자리: 일반 자리와 같은 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 편집 잠금·기록·모드·제출 중지는 공유한다.
   MQ="$Q" MXL="$XL" LQ="$Q.verifier" LXL="$XL.verifier"
 }
