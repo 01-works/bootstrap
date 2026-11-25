@@ -10,6 +10,7 @@
   },
   "model": "opus[1m]",
   "autoMemoryEnabled": false,
+  "autoCompactWindow": 400000,
   "enabledPlugins": {},
   "extraKnownMarketplaces": {},
   "tui": "fullscreen",

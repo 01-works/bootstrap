@@ -27,7 +27,7 @@
 | 프로필 | 모델 | 근거 | 약점과 대응 |
 |---|---|---|---|
 | Supervisor·Architect | Claude Opus 5.5 | Terminal-Bench 4.0 66.4%(Anthropic 발표, Artificial Analysis 재측정 59.6%)로 에이전트 코딩 최상위권 | 구현·설계 능력은 자체 비교로 재지 않았다 |
-| Builder | Claude Sonnet 5.5 | 2026-11-22~25 원격 3대에서 Opus로 위임된 세션 95개 중 60개가 Builder였다(세션 수 기준, 제목으로 역할 분류). 가격이 Opus 5.5의 절반($2/$10 대 $4/$20)이고, 결과는 Reviewer(Sol)가 다른 계열로 검토한다 | 구현 능력은 자체 비교로 재지 않았다. 어려운 설계·원인 분석은 Architect(Opus)가 맡는다 |
+| Builder | GPT-6.2 Sol | 2026-11-22~25 원격 3대에서 Opus로 위임된 세션 95개 중 60개가 Builder였다(세션 수 기준, 제목으로 역할 분류). 위임이 가장 많은 역할을 Claude 사용량 밖으로 옮긴다. 자체 결함 찾기 비교 9/23으로 Opus(7/23)보다 많이 찾았고, 2026-11-22 이전 Builder 모델이었다. 사용자 결정(2026-11-26) | 구현 능력은 자체 비교로 재지 않았다. Reviewer도 Sol이라 기본 리뷰가 같은 계열이므로, 다른 계열 검토가 필요한 변경은 Deep Reviewer(Opus)를 더한다. 어려운 설계·원인 분석은 Architect(Opus)가 맡는다 |
 | Frontend Builder | Claude Opus 5.5 | WebDev Arena 디자인 부문 1위(2026-11-11 기준) | Arena는 사용자 투표라 실제 화면은 브라우저로 검증한다 |
 | Reviewer | GPT-6.2 Sol | 자체 비교 9/23. Astra와 코딩 점수가 비슷하고 가격은 1/4 | 지적이 많고 확신도를 높게 매기므로 지적마다 근거를 확인한다 |
 | Deep Reviewer | Claude Opus 5.5 | 에이전트 코딩 최상위권이고, 자체 비교에서 지적이 적고 근거를 따져 후보를 걸러 냈다 | 확정 정밀도는 재지 않았다. Opus 결과에 다른 계열 검토가 필요하면 Reviewer(Sol)가 맡는다 |
@@ -44,7 +44,7 @@
 
 ## 다시 볼 조건
 
-- Builder(Sonnet 5.5) 결과에서 Reviewer 재작업이나 Architect 이관이 Opus 때보다 눈에 띄게 늘면 Builder 모델을 다시 비교한다.
+- Builder(Sol) 결과에서 Reviewer 재작업이나 Architect 이관이 Opus 때보다 눈에 띄게 늘면 Builder 모델을 다시 비교한다.
 - Scan Reviewer와 Gemini Cross-check를 함께 쓰다가 Gemini 쿼터에 자주 막히면 스캔 모델을 다시 비교한다.
 
 ## 출처
