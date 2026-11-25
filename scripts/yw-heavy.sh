@@ -769,10 +769,13 @@ json_val() {
 }
 num_val() { case "$1" in 0 | [1-9]*) case "$1" in *[!0-9]*) printf null ;; *) printf '%s' "$1" ;; esac ;; *) printf null ;; esac; }
 slot_json() {
-  local l id pid st v owner holder hs started queued='' other=0 waiting='' turns=null w
+  local l id pid st v owner holder hs started queued='' other=0 waiting='' turns=null w running=''
+  # compat은 실행 중인 줄을 release까지 큐에 남긴다. 실행 중인 작업을 대기로 다시 내지 않는다.
+  [ ! -e "$XL" ] || running="$(json_str "$(owner_read)" task)"
   while IFS= read -r l; do
     [ -n "$l" ] || continue
     id="$(line_id "$l")" v="$(lf "$l" v)"
+    [ -z "$running" ] || [ "$id" != "$running" ] || continue
     if is_v2 "$l"; then
       pid="$(lf "$l" pid)"
       if [ "${pid:--}" = - ]; then st=no-holder; else st="$(proc_state "$pid" "$(lf "$l" start)")"; fi

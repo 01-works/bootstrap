@@ -197,7 +197,7 @@ yw-heavy status                                              # 읽기 전용
 관문: 닫힘 (구형식 줄 1개). 실행 lock은 자동 회수하지 않음
 ```
 
-- `status --json`은 화면·도구용 한 줄 JSON이다(읽기 전용). 최상위는 `schema`(1)·`mode`·`paused`·`slots`, slot은 `name`(`main`, 검증 자리가 있으면 `verifier`)·`running`·`waiting`·`turns`다. `running`은 실행 중이 아니면 `null`, 그 외와 `waiting` 항목은 `id`·`pid`(대기자·holder, 모르면 `null`)·`supervisor`·`queued`·`state`(실행 중은 `started`도, epoch 초)를 갖고, 예상 차례를 알 수 없으면 `turns`는 `null`이다. 등록 시각을 적지 않는 v2 줄의 `queued`는 `null`이다. token·lease·세대·명령은 내보내지 않는다. 이 옵션을 모르는 구버전은 사람용 문장을 출력하므로 소비자는 JSON으로 읽지 못하면 미지원으로 다룬다.
+- `status --json`은 화면·도구용 한 줄 JSON이다(읽기 전용). 최상위는 `schema`(1)·`mode`·`paused`·`slots`, slot은 `name`(`main`, 검증 자리가 있으면 `verifier`)·`running`·`waiting`·`turns`다. `running`은 실행 중이 아니면 `null`, 그 외와 `waiting` 항목은 `id`·`pid`(대기자·holder, 모르면 `null`)·`supervisor`·`queued`·`state`(실행 중은 `started`도, epoch 초)를 갖고, 예상 차례를 알 수 없으면 `turns`는 `null`이다. 실행 중인 작업은 `waiting`에 넣지 않는다. 등록 시각을 적지 않는 v2 줄의 `queued`는 `null`이다. token·lease·세대·명령은 내보내지 않는다. 이 옵션을 모르는 구버전은 사람용 문장을 출력하므로 소비자는 JSON으로 읽지 못하면 미지원으로 다룬다.
 - round-robin에서 줄 번호는 등록 순서다. 실제로 실행될 순서는 `예상 차례:` 줄로 본다. 지금 등록된 v3 줄만으로 계산하므로 새 제출·취소·회수가 있으면 바뀐다. 회수될 줄은 빼고, 회수가 꺼져 있거나 v3가 아닌 줄이 섞여 있으면 표시하지 않는다.
 - 줄 상태: `alive`, `unknown`(판단 불가, 보존), `dead:…`(다음 대기자가 회수), `holder 없음`(차례를 얻은 뒤 holder 없이 실행 중, 자동 회수 안 함).
 - 관문이 닫혀 있으면 구버전 대기자가 남아 있다는 뜻이다. 그동안 v2 holder가 끝나면 `release <ID>`로 직접 푼다.

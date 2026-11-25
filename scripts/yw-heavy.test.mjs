@@ -1620,3 +1620,15 @@ test('status --json은 특이한 작업 ID와 깨진 모드 파일, v2 owner의 
   writeFileSync(f.q + '.mode', 'bad"mode\n');
   assert.doesNotThrow(() => JSON.parse(f.sync('status', '--json').stdout));
 });
+
+test('status --json은 compat에서 실행 중인 작업을 대기에 다시 넣지 않는다', async t => {
+  const f = fixture(t);
+  const h = f.start(['-c', `${quote(script)} run RUN w s -- /bin/sh -c 'read -r _'`]);
+  await f.wait(() => f.ownerText().includes('"RUN"'), 'running');
+  writeFileSync(f.q, read(f.q) + f.line('NEXT', h.pid, procStart(h.pid)));
+  const slot = JSON.parse(f.sync('status', '--json').stdout).slots[0];
+  assert.equal(slot.running.id, 'RUN');
+  assert.deepEqual(slot.waiting.map(w => w.id), ['NEXT']);
+  assert.match(f.sync('status').stdout, /1\. RUN {2}v2/, '사람용 status는 그대로 줄을 보인다');
+  h.stdin.end('done\n');
+});
