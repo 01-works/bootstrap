@@ -946,7 +946,7 @@ mode_write() {
 # 편집 잠금 아래에서만 부른다. 사라진 모드 파일을 v3 대기·실행이 남아 있을 때만 되살린다.
 mode_heal() {
   # 이 기능 전에 켠 모드는 저장값이 없다. 편집 잠금을 잡은 첫 호출이 지금 모드를 한 번 남긴다.
-  if [ -n "$SAVED" ] && [ ! -e "$SAVED" ] && mode_file >/dev/null; then
+  if [ -n "$SAVED" ] && [ ! -f "$SAVED" ] && mode_file >/dev/null; then
     if save_mode "$(mode_file)"; then note "mode-save from=existing to=$(mode_file)"
     else say "재시동 뒤 유지할 모드를 저장하지 못했습니다: $SAVED"; note "mode-save from=existing to=$(mode_file) result=failed"; fi
   fi

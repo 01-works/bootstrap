@@ -1691,7 +1691,7 @@ test('저장값 이행·우선순위·저장 실패: 이미 켠 기기는 첫 �
   // 이미 켠 기기에서 저장할 수 없으면 첫 잠금 호출이 경고와 기록을 남긴다.
   assert.equal(f.sync('resume').status, 0);
   writeFileSync(f.q + '.mode', 'round-robin\n'); rmSync(saved, { recursive: true }); writeFileSync(join(f.env.HOME, '.config', 'bootstrap', 'x'), ''); rmSync(join(f.env.HOME, '.config', 'bootstrap'), { recursive: true });
-  writeFileSync(join(f.env.HOME, '.config', 'bootstrap'), '');
+  mkdirSync(saved, { recursive: true }); // 저장 경로가 디렉터리인 기존 기기
   const run = f.cli('run', 'WARN', 'w', 'S', '--', 'true');
   assert.equal(await f.finish(run), 0, run.err);
   assert.match(run.err, /유지할 모드를 저장하지 못했습니다/); assert.match(f.log(), /mode-save from=existing to=round-robin result=failed/);
