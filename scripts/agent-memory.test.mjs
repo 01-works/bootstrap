@@ -28,7 +28,7 @@ esac
   return { root, file, run, codexState: () => readFileSync(state, 'utf8') };
 }
 
-test('기존 설정의 다른 값과 권한을 유지하고 메모리만 끈다. 다시 실행해도 그대로', t => {
+test('기존 설정의 다른 값과 권한을 유지하고 메모리 끄기·자동 요약 창만 넣는다. 다시 실행해도 그대로', t => {
   const f = fixture(t, { settings: '{"model":"x","autoMemoryEnabled":true,"permissions":{"allow":["a"]}}', codex: 'true' });
   assert.equal(f.run('--check').status, 1);
   assert.equal(f.run('--dry-run').status, 0);
@@ -36,7 +36,8 @@ test('기존 설정의 다른 값과 권한을 유지하고 메모리만 끈다.
   assert.equal(f.codexState(), 'true');
   const result = f.run();
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(readFileSync(f.file, 'utf8')), { model: 'x', autoMemoryEnabled: false, permissions: { allow: ['a'] } });
+  assert.deepEqual(JSON.parse(readFileSync(f.file, 'utf8')),
+    { model: 'x', autoMemoryEnabled: false, permissions: { allow: ['a'] }, autoCompactWindow: 400000 });
   assert.equal(statSync(f.file).mode & 0o777, 0o600);
   assert.equal(f.codexState(), 'false');
   assert.deepEqual(readdirSync(dirname(f.file)), ['settings.json'], '임시 파일 없음');
@@ -44,6 +45,14 @@ test('기존 설정의 다른 값과 권한을 유지하고 메모리만 끈다.
   assert.equal(f.run().status, 0);
   assert.equal(readFileSync(f.file, 'utf8'), after);
   assert.equal(f.run('--check').status, 0);
+});
+
+test('기기에서 정한 자동 요약 창은 그대로 둔다', t => {
+  const f = fixture(t, { settings: '{"autoMemoryEnabled":false,"autoCompactWindow":600000}' });
+  const before = readFileSync(f.file, 'utf8');
+  assert.equal(f.run('--check').status, 0);
+  assert.equal(f.run().status, 0);
+  assert.equal(readFileSync(f.file, 'utf8'), before);
 });
 
 test('손상된 설정은 그대로 두고 실패하며 Codex는 계속 처리한다', t => {
@@ -60,7 +69,7 @@ test('저장소 링크는 고치지 않고 실제 값으로 판정한다', t => 
   writeFileSync(target, '{}');
   assert.equal(f.run().status, 1);
   assert.equal(readFileSync(target, 'utf8'), '{}');
-  writeFileSync(target, '{"autoMemoryEnabled":false}');
+  writeFileSync(target, '{"autoMemoryEnabled":false,"autoCompactWindow":400000}');
   assert.equal(f.run().status, 0);
   assert.ok(lstatSync(f.file).isSymbolicLink());
 });

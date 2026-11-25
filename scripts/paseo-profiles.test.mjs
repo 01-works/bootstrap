@@ -9,10 +9,10 @@ import { mergeProfiles } from './paseo-profiles.mjs';
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-profiles.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-profiles.mjs', import.meta.url).pathname;
 
-test('역할마다 프로필 하나: 일상 역할은 Opus·Sonnet·Sol, Fable·Astra는 정책·단계 검토 전용', () => {
+test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는 정책·단계 검토 전용', () => {
   for (const [name, model, modeId, thinkingOptionId] of [
     ['Supervisor', 'claude-opus-5-5', 'bypassPermissions', 'high'],
-    ['Builder', 'claude-sonnet-5-5', 'bypassPermissions', 'high'],
+    ['Builder', 'gpt-6.2-sol', 'full-access', 'high'],
     ['Architect', 'claude-opus-5-5', 'bypassPermissions', 'xhigh'],
     ['Deep Reviewer', 'claude-opus-5-5', 'bypassPermissions', 'high'],
     ['Policy Reviewer (Fable)', 'claude-fable-5-2', 'bypassPermissions', 'high'],
