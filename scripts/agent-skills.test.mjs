@@ -109,6 +109,7 @@ test('chief 순찰·재개: 공통 결정 계약·새 권한 금지·만료 안�
 test('감독 계약: 닫힌 사용자 결정 목록의 안전 대상을 보존한다', () => {
   const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
   const contract = supervisor.split('\n## 에스컬레이션 계약\n')[1]?.split('\n## ')[0] ?? '';
+  assert.match(contract, /\*\*사용자 결정은 아래 닫힌 목록만 남긴다\.\*\* 기존 승인·위임의 대상·조건 안이면 재사용한다\./);
   const decisions = [...contract.matchAll(/^(\d+)\. (.+)$/gm)];
   assert.deepEqual(decisions.map(([, id]) => id), ['1', '2', '3', '4', '5', '6', '7']);
   const requiredByDecision = [
