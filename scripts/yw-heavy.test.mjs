@@ -1624,7 +1624,8 @@ test('status --json은 특이한 작업 ID와 깨진 모드 파일, v2 owner의 
 test('status --json은 compat에서 실행 중인 작업을 대기에 다시 넣지 않는다', async t => {
   const f = fixture(t);
   const h = f.start(['-c', `${quote(script)} run RUN w s -- /bin/sh -c 'read -r _'`]);
-  await f.wait(() => f.ownerText().includes('"RUN"'), 'running');
+  // owner가 생긴 뒤에도 줄을 고쳐 쓰므로, 획득이 끝난 신호 뒤에 줄을 더한다.
+  await f.wait(() => h.err.includes('ACQUIRED RUN'), 'acquired');
   writeFileSync(f.q, read(f.q) + f.line('NEXT', h.pid, procStart(h.pid)));
   const slot = JSON.parse(f.sync('status', '--json').stdout).slots[0];
   assert.equal(slot.running.id, 'RUN');
