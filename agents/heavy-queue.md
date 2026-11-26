@@ -2,6 +2,8 @@
 
 전체 타입 검사·테스트·빌드, dev 서버처럼 메모리를 많이 쓰는 명령은 같은 기기에서 하나씩 실행한다. 감독 세션과 worktree가 달라도 같은 대기열을 쓴다. 원본은 `scripts/yw-heavy.sh`이고, 모든 기기에서 `heavy` 단계가 `~/.local/bin/yw-heavy`로 설치한다. 자동 갱신이 원본 변경을 전파하되 실행 중 참여자가 있으면 교체를 미룬다.
 
+전체 검사가 실패하거나 중단되면 다시 제출하기 전에 로그에서 실패·중단 지점을 확인한다. 범위를 좁힐 수 있으면 그 단계부터 검증하고, 좁힌 명령도 무거우면 아래 차례 규칙을 따른다(2026-11-26, 한 lane에서 18~42분짜리 전체 검증이 세 번 연속 실패한 뒤 같은 형태로 다시 제출됐다).
+
 ## verifier 역할 기기
 
 `${XDG_CONFIG_HOME:-$HOME/.config}/bootstrap/roles/verifier` 파일이 있고 전용 역할이면(아래 공유 역할이 아니면) compat·round-robin 모두 `acquire`·`run`의 supervisor가 정확히 `verifier-loop`일 때만 허용한다. 기존 verifier 호출은 `acquire VERIFIER-01-software nightly-local verifier-loop --holder <루프 PID>`이며, 호출을 바꿀 필요가 없다. 역할이 꺼져 있으면 기존 동작 그대로다. 조회·해제·제어 명령에는 이 제한을 적용하지 않는다.
