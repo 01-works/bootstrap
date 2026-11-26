@@ -1195,7 +1195,7 @@ rr_cancel() {
   fi
 }
 rr_acquire() {
-  local registered=0 l owner rc count supcount now json head free_since=''
+  local registered=0 l owner rc count supcount now json head free_since='' gens='' seen g
   case "$MAX_SUP:$MAX_ALL" in *[!0-9:]* | :* | *: | 0:* | *:0) say "pending 한도는 양의 정수여야 합니다"; return 2 ;; esac
   # 장기 holder는 호출자의 조상이어야 하며 시작 시각을 검증할 수 있어야 한다.
   [ -n "$HOLDER" ] || { HOLDER="$PPID"; HOLDER_START="$(proc_start "$PPID")" || HOLDER_START=-; }
@@ -1248,9 +1248,12 @@ rr_acquire() {
       rr_cancel; unlock_queue; say "활성 모드에 구버전 줄이 있어 획득을 거절합니다"; return 4
     fi
     ring_sync || { unlock_queue; return 1; }
-    # 자리가 10초 넘게 비어 있으면 사용 시간 없이 순환 순서로 고른다. 구버전 대기자가 섞이거나 기준이 갈려도
+    # 같은 빈자리가 10초 넘게 이어지면 사용 시간 없이 순환 순서로 고른다. 구버전 대기자가 섞이거나 기준이 갈려도
     # 모두 같은 순환 선두에 합의해 정체가 풀린다. 정상 인계는 FAST_POLL 안에 끝난다.
-    head=''
+    # 확인 사이에 다른 줄이 빠졌으면(시작·취소) 그동안 차례가 진행된 것이므로 다시 센다.
+    head='' seen="$gens"
+    gens=" $(q_lines | sed -n 's/.* generation=\([^ ]*\).*/\1/p' | tr '\n' ' ')"
+    for g in $seen; do case "$gens" in *" $g "*) ;; *) free_since='' ;; esac; done
     if [ -d "$XL" ]; then free_since=''
     else
       now="$(date +%s)"; [ -n "$free_since" ] || free_since="$now"
