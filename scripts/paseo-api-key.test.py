@@ -278,5 +278,31 @@ class ApiKeyTests(unittest.TestCase):
             self.assertEqual(self.path.read_bytes(), original)
 
 
+    def test_runner_checks_login_before_secret_lookup(self):
+        # 만료 세션의 secrets get은 브라우저 로그인 탭을 열므로, 로그인 확인이 실패하면 조회하지 않는다.
+        runner = Path(__file__).with_name('paseo-infisical-provider.sh')
+        calls = self.home / 'calls'
+        cli = self.home / 'infisical'
+        cli.write_text(f'#!/bin/sh\necho "$1 $2" >> "{calls}"\n'
+                       '[ "$1" = login ] && exit "$LOGIN_CODE"\necho sk-fixture-key\n')
+        cli.chmod(0o700)
+        backend = self.home / 'backend'
+        backend.write_text('#!/bin/sh\necho "backend $ANTHROPIC_API_KEY"\n')
+        backend.chmod(0o700)
+        env = {'PATH': '/usr/bin:/bin', 'PASEO_INFISICAL_API_SECRET': 'ANTHROPIC_API_KEY_K',
+               'PASEO_INFISICAL_PROFILE': 'fixture-profile', 'PASEO_INFISICAL_CLI': str(cli),
+               'PASEO_API_BACKEND': str(backend)}
+        for code, expected_calls in (('1', ['login status']), ('0', ['login status', 'secrets get'])):
+            with self.subTest(login=code):
+                calls.unlink(missing_ok=True)
+                result = subprocess.run(['/bin/sh', str(runner)], env=env | {'LOGIN_CODE': code},
+                                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+                self.assertEqual(calls.read_text().split('\n')[:-1], expected_calls)
+                if code == '1':
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn('infisical login', result.stderr)
+                else:
+                    self.assertEqual((result.returncode, result.stdout), (0, 'backend sk-fixture-key\n'))
+
 if __name__ == '__main__':
     unittest.main()

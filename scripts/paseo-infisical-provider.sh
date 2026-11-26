@@ -7,12 +7,19 @@ case "$PASEO_INFISICAL_API_SECRET" in
 esac
 
 unset INFISICAL_TOKEN
+# 세션이 만료된 채 secrets get을 실행하면 Infisical CLI가 개인 브라우저에 로그인 탭을 연다.
+# Paseo는 provider를 30분마다 백그라운드로 새로고침하므로 세션부터 확인하고 바로 실패한다.
+if ! (cd / && "$PASEO_INFISICAL_CLI" login status --profile "$PASEO_INFISICAL_PROFILE" \
+        --domain https://app.infisical.com/api --silent </dev/null >/dev/null 2>&1); then
+    echo 'Paseo API: Infisical 로그인 세션이 만료되었습니다. 터미널에서 infisical login을 실행하세요.' >&2
+    exit 1
+fi
 if ! api_key=$(
     cd / &&
     "$PASEO_INFISICAL_CLI" secrets get "$PASEO_INFISICAL_API_SECRET" \
         --profile "$PASEO_INFISICAL_PROFILE" --domain https://app.infisical.com/api \
         --projectId 7cc30bec-94ce-45b0-b1c7-e1613de839fd --env prod --path /ai \
-        --plain --silent --expand=false 2>/dev/null
+        --plain --silent --expand=false </dev/null 2>/dev/null
 ); then
     echo 'Paseo API: Infisical 키 조회 실패. 로그인 상태와 키 접근 권한을 확인하세요.' >&2
     exit 1
