@@ -21,6 +21,8 @@ const WORK_MAX = 256;  // Paseo는 metadata 값을 4096자까지 받는다
 const TIMEOUT_MS = 20_000;
 export const INFISICAL = { domain: 'https://app.infisical.com/api', projectId: '3ce526b3-d09b-4c7e-b116-873ce8a9cd2f', env: 'prod', path: '/paseo-hosts', key: 'HOST_WORK' };
 // host ls --json은 stderr에 JSON 오류를, host update는 "Error: <메시지>" 텍스트를 낸다. 텍스트에서는 알려진 코드만 뽑는다.
+// Infisical CLI(v0.45.13 packages/util/secrets.go)가 백업 값을 낼 때 stderr에 쓰는 경고.
+const OFFLINE_BACKUP = /serving secrets from last successful fetch|Unable to fetch the latest secret/i;
 const KNOWN_ERRORS = [['DAEMON_NOT_RUNNING', /DAEMON_NOT_RUNNING|Daemon is not running/], ['permission_denied', /permission_denied/i]];
 
 // 배치표 내용 → Map(serverId → work 값). 틀린 줄이 하나라도 있으면 전체를 쓰지 않는다(일부만 맞추지 않는다).
@@ -57,6 +59,7 @@ export function plan(hosts, table) {
 function why(result) {
   if (result.error?.code === 'ENOENT') return 'paseo 없음';
   if (result.error?.code === 'ETIMEDOUT') return '시간 초과';
+  if (result.error) return `paseo 실행 실패(${result.error.code})`;
   try {
     const code = JSON.parse(result.stderr).error.code;
     if (typeof code === 'string' && /^[A-Za-z_]+$/.test(code)) return code;
@@ -77,7 +80,7 @@ function runGroup(command, args, options, deadline) {
     const timer = setTimeout(() => { timedOut = true; killGroup(); }, timeout);
     child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
     child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
-    child.on('error', spawnError => { error = spawnError; });
+    child.on('error', spawnError => { error = spawnError; clearTimeout(timer); resolvePromise({ error }); });
     child.on('exit', killGroup);
     child.on('close', (status, signal) => {
       clearTimeout(timer);
@@ -95,7 +98,8 @@ async function readTable(run) {
   const env = { ...process.env };
   delete env.INFISICAL_TOKEN;  // 로그인 프로필로만 읽는다
   const infisical = args => run('infisical', [...args, '--silent'], { cwd: '/', env });
-  const cliCode = result => result.error?.code === 'ENOENT' ? 'infisical 없음' : result.error?.code === 'ETIMEDOUT' ? '시간 초과' : null;
+  const cliCode = ({ error }) => !error ? null : error.code === 'ENOENT' ? 'infisical 없음'
+    : error.code === 'ETIMEDOUT' ? '시간 초과' : `infisical 실행 실패(${error.code})`;
   const login = await infisical(['profile', 'current', '--plain']);
   if (cliCode(login)) return { code: cliCode(login) };
   const profile = login.stdout.trim();
@@ -110,6 +114,9 @@ async function readTable(run) {
   const got = await infisical(['secrets', 'get', INFISICAL.key, ...scope, '--projectId', INFISICAL.projectId,
     '--env', INFISICAL.env, '--path', INFISICAL.path, '--plain', '--expand=false', '--secret-overriding=false', '--include-imports=false']);
   if (cliCode(got)) return { code: cliCode(got) };
+  // 오프라인이면 CLI가 마지막 백업을 내고 stderr에 경고한다. 백업은 --secret-overriding·--include-imports 범위를 구분하지 않아
+  // 다른 범위의 값일 수 있고, 다음 주기에 바로잡힌다는 보장도 없으므로 버린다.
+  if (OFFLINE_BACKUP.test(got.stderr)) return { code: '오프라인 백업 값' };
   if (got.status !== 0) return { code: `조회 실패(종료 ${got.status ?? got.signal})` };
   return got.stdout.trim() ? { text: got.stdout } : { code: '키 없음' };
 }

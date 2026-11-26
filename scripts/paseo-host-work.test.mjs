@@ -35,7 +35,7 @@ test('계획: 등록된 host 중 배치표에 있고 값이 다른 것만, work 
 });
 
 // 임시 HOME과 PATH 앞의 가짜 infisical·paseo. 가짜는 쓰는 명령만 알고 호출을 기록한다. 실제 Infisical·데몬은 건드리지 않는다.
-// 가짜 infisical: $FAKE/table이 HOST_WORK 값이다(없으면 실제 CLI처럼 종료 0에 빈 값). logged-out·expired·noproject·denied·infisical-hang
+// 가짜 infisical: $FAKE/table이 HOST_WORK 값이다(없으면 실제 CLI처럼 종료 0에 빈 값). logged-out·expired·noproject·denied·offline·infisical-hang
 // 파일로 실패를 흉내 낸다. 만료(expired)와 멈춤(infisical-hang)은 실제 CLI의 브라우저 재로그인처럼 손자 login 프로세스를 띄운다.
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -80,6 +80,11 @@ if (sub === 'profile current') {
       args[2] !== 'HOST_WORK' || !args.includes('--plain') || !args.includes('--secret-overriding=false') || !args.includes('--include-imports=false')) process.exit(6);
   if (fs.existsSync(${f('expired')})) { relogin(); setInterval(() => {}, 1000); return; }  // 실제 CLI: 만료 세션이면 브라우저 재로그인을 기다린다
   if (fs.existsSync(${f('denied')})) { console.error('error: request failed'); process.exit(1); }
+  if (fs.existsSync(${f('offline')})) {  // 실제 CLI(v0.45.13): 범위를 구분하지 않는 백업을 종료 0으로 내고 stderr에 경고한다
+    console.error('Warning: Unable to fetch the latest secret(s) due to connection error, serving secrets from last successful fetch. For more info, run with --debug ');
+    process.stdout.write('srv_a 백업범위\\n');
+    process.exit(0);
+  }
   if (fs.existsSync(${f('table')})) process.stdout.write(fs.readFileSync(${f('table')}, 'utf8') + '\\n');
 } else process.exit(9);
 `, { mode: 0o755 });
@@ -181,7 +186,7 @@ test('CLI: Infisical에서 배치표를 읽고, 값은 명령 인자·출력·�
   assert.doesNotMatch(result.stdout + result.stderr + f.state(), /비밀 메모/);
 });
 
-test('CLI: Infisical CLI 없음·미로그인·만료·프로젝트 접근 없음·권한 없음·키 없음·빈 표·형식 오류는 paseo를 부르지 않고 짧은 코드만 남긴 뒤 0으로 끝난다', t => {
+test('CLI: Infisical CLI 없음·실행 권한 없음·미로그인·만료·프로젝트 접근 없음·권한 없음·오프라인 백업·키 없음·빈 표·형식 오류는 paseo를 부르지 않고 짧은 코드만 남긴 뒤 0으로 끝난다', t => {
   const f = fixture(t);
   const cases = [
     [() => {}, '키 없음', 4],
@@ -201,8 +206,32 @@ test('CLI: Infisical CLI 없음·미로그인·만료·프로젝트 접근 없�
   assert.ok(!alive(f.loginPids()[0]), '만료 세션이 띄운 재로그인 프로세스를 남기지 않는다');
   assert.equal(f.run(['--auto']).stdout, '', '같은 결과는 한 번만 기록한다');
   rmSync(join(f.fake, 'denied'));
+  f.infisicalCalls();
 
-  let result = f.run([], { PATH: `${f.bin}:/usr/bin:/bin` });
+  // 사전 확인 성공 뒤 백업 경고와 함께 범위 밖 배치가 오면 버리고 갱신하지 않는다.
+  f.writeTable('srv_a 외주\n');
+  writeFileSync(join(f.fake, 'offline'), '');
+  let result = f.run(['--auto']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'host work 맞춤 건너뜀: 배치표 조회 안 됨 (오프라인 백업 값)\n');
+  assert.equal(f.state(), 'host work 맞춤 건너뜀: 배치표 조회 안 됨 (오프라인 백업 값)');
+  assert.equal(f.infisicalCalls().length, 4);
+  assert.equal(f.run(['--auto']).stdout, '', '같은 결과는 한 번만 기록한다');
+  assert.deepEqual(f.calls(), [], 'paseo를 부르지 않는다');
+  assert.equal(f.hosts()[0].metadata.work, '실험');
+  rmSync(join(f.fake, 'offline'));
+  rmSync(join(f.fake, 'table'));
+
+  // 실행 권한이 없는 infisical은 예외 없이 짧은 코드로 건너뛴다.
+  const noexec = join(f.fake, 'noexec');
+  mkdirSync(noexec);
+  writeFileSync(join(noexec, 'infisical'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
+  result = f.run([], { PATH: `${noexec}:${f.bin}:/usr/bin:/bin` });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout, 'host work 맞춤 건너뜀: 배치표 조회 안 됨 (infisical 실행 실패(EACCES))\n');
+
+  result = f.run([], { PATH: `${f.bin}:/usr/bin:/bin` });
   assert.equal(result.stdout, 'host work 맞춤 건너뜀: 배치표 조회 안 됨 (infisical 없음)\n');
 
   f.writeTable('# 주석만\n\n');
