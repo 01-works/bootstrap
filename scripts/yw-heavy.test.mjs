@@ -1594,22 +1594,42 @@ test('v3 예상 차례는 실행 중 감독자도 사용 시간으로 비교해 
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['A1', 'A2', 'B1']);
 });
 
-test('기본 대기열은 호출자의 YW_HEAVY_FAIR_WINDOW를 읽지 않아 대기자마다 기준이 갈리지 않는다', async t => {
+test('기본 대기열은 호출자의 YW_HEAVY_FAIR_WINDOW·YW_HEAVY_EVENTS를 읽지 않아 대기자마다 기준이 갈리지 않는다', async t => {
   const f = fixture(t);
   f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
   enable(f);
   const now = Math.floor(Date.now() / 1000);
-  writeFileSync(f.env.YW_HEAVY_EVENTS, JSON.stringify({ event: 'end', at: now - 60, requestId: 'old', generation: 'g', supervisor: 'A', waitSeconds: 0, heldSeconds: 600, exitCode: '0', signal: 'unknown' }) + '\n');
+  writeFileSync(f.q + '.events', JSON.stringify({ event: 'end', at: now - 60, requestId: 'old', generation: 'g', supervisor: 'A', waitSeconds: 0, heldSeconds: 600, exitCode: '0', signal: 'unknown' }) + '\n');
+  const other = join(f.dir, 'other-events');
+  writeFileSync(other, '');
   const h = await holding(f);
   const waiters = [];
-  for (const [id, sup, win] of [['A1', 'A', '0'], ['B1', 'B', '0']]) {
-    waiters.push(f.cliEnv({ YW_HEAVY_FAIR_WINDOW: win }, 'run', id, 'w', sup, '--', 'true'));
+  // A는 구간 0, B는 빈 다른 이벤트 파일을 넘긴다. 둘 다 무시되어야 같은 차례를 계산하고 인계가 이어진다.
+  for (const [id, sup, extra] of [['A1', 'A', { YW_HEAVY_FAIR_WINDOW: '0' }], ['B1', 'B', { YW_HEAVY_EVENTS: other }]]) {
+    waiters.push(f.cliEnv(extra, 'run', id, 'w', sup, '--', 'true'));
     await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
   }
-  assert.equal(f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1], 'B1 → A1', 'env 0이어도 기본 구간을 쓴다');
+  assert.equal(f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1], 'B1 → A1');
   h.stdin.end('done\n');
   for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
-  assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId).slice(-2), ['B1', 'A1']);
+  const ran = read(f.q + '.events').trim().split('\n').map(JSON.parse).filter(e => e.event === 'start').map(e => e.requestId);
+  assert.deepEqual(ran.slice(-2), ['B1', 'A1']);
+  assert.equal(read(other), '', '다른 이벤트 경로에는 쓰지 않는다');
+});
+
+test('대기자마다 차례 기준이 갈려도 자리가 10초 넘게 비면 순환 순서로 합의해 인계한다', async t => {
+  const f = fixture(t); enable(f);
+  const now = Math.floor(Date.now() / 1000);
+  writeFileSync(f.env.YW_HEAVY_EVENTS, JSON.stringify({ event: 'end', at: now - 60, requestId: 'old', generation: 'g', supervisor: 'B', waitSeconds: 0, heldSeconds: 600, exitCode: '0', signal: 'unknown' }) + '\n');
+  const h = await holding(f);
+  // 순환 B → A. B는 사용 시간을 보고 A를, A는 순환만 보고 B를 선두로 계산한다(구버전과 새 버전이 섞인 상황).
+  const b = f.cliEnv({ YW_HEAVY_FAIR_WINDOW: '3600' }, 'run', 'B1', 'w', 'B', '--', 'true');
+  await f.wait(() => read(f.q).includes('B1 '), 'B1 queued');
+  const a = f.cliEnv({ YW_HEAVY_FAIR_WINDOW: '0' }, 'run', 'A1', 'w', 'A', '--', 'true');
+  await f.wait(() => read(f.q).includes('A1 '), 'A1 queued');
+  h.stdin.end('done\n');
+  for (const p of [h, b, a]) assert.equal(await f.finish(p, 30000), 0, p.err);
+  assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId).slice(-2), ['B1', 'A1'], '순환 선두 B1부터');
 });
 
 test('v3 status의 예상 차례는 죽은 줄을 빼고, 회수가 꺼졌거나 v3가 아닌 줄이 있으면 표시하지 않는다', t => {
@@ -1713,7 +1733,8 @@ test('명시적으로 켠 모드는 /tmp가 비어도 유지되고, compat으로
   assert.equal(releaseLease(f, JSON.parse(json.out)).status, 0);
   const run = f.cli('run', 'AFTER-BOOT', 'w', 'S', '--', 'true');
   assert.equal(await f.finish(run), 0, run.err);
-  assert.ok(events(f).some(e => e.event === 'start' && e.requestId === 'AFTER-BOOT'), 'round-robin 이벤트가 남는다');
+  // 기본 대기열은 YW_HEAVY_EVENTS를 무시하고 $Q.events에 쓴다.
+  assert.ok(read(f.q + '.events').trim().split('\n').map(JSON.parse).some(e => e.event === 'start' && e.requestId === 'AFTER-BOOT'), 'round-robin 이벤트가 남는다');
   assert.equal(f.sync('pause').status, 0);
   assert.equal(f.sync('mode', 'compat').status, 0);
   assert.equal(read(saved).trim(), 'compat');

@@ -9,7 +9,7 @@
 #   편집 lock YW_HEAVY_FLOCK ($Q.flock, 커널 flock) + 호환 표지 파일 YW_HEAVY_EDIT_LOCK (/tmp/yw-heavy-queue.edit.lock)
 #   회수 기록 YW_HEAVY_LOG ($Q.log), 회수 끄기 YW_HEAVY_NO_RECLAIM ($Q.no-reclaim), 대기 주기 YW_HEAVY_POLL (30초)
 #   v3 모드 $Q.mode (없으면 compat, 단 v3 대기·실행이 남아 있으면 round-robin), 신규 제출 중지 $Q.paused, 감독자 순환 $Q.rotation
-#   v3 작업 이벤트 YW_HEAVY_EVENTS ($Q.events), 내부 재확인 YW_HEAVY_FAST_POLL (.2초)
+#   v3 작업 이벤트 $Q.events (격리 대기열만 YW_HEAVY_EVENTS로 바꾼다), 내부 재확인 YW_HEAVY_FAST_POLL (.2초)
 #   v3 사용 시간 비교 구간 3600초. 격리 대기열(테스트)만 YW_HEAVY_FAIR_WINDOW로 바꾼다 (0이면 순환 순서만)
 #   v3 pending 한도 YW_HEAVY_MAX_PENDING_SUPERVISOR (128), YW_HEAVY_MAX_PENDING (1024)
 #   /tmp 정리 방지 mtime 갱신 주기 YW_HEAVY_KEEP_EVERY (3600초), run 갱신 프로세스의 부모 확인 YW_HEAVY_KEEP_CHECK (20초)
@@ -72,10 +72,11 @@ init() {
   # 기본 대기열(경로로 판정: helper는 기본 경로를 YW_HEAVY_QUEUE로 넘긴다)에만 쓴다. 테스트·격리 대기열은 읽지도 쓰지도 않는다.
   # YW_HEAVY_DEFAULT_QUEUE는 테스트가 기본 대기열을 흉내 낼 때만 쓴다. 호출자마다 다를 수 있는 XDG_CONFIG_HOME 대신 $HOME 아래 고정 경로를 쓴다.
   case "$Q" in "${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}" | "/private${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}") SAVED="$HOME/.config/bootstrap/heavy-mode" ;; *) SAVED= ;; esac
-  # 대기자마다 구간이 다르면 서로 상대를 첫 차례로 계산해 빈 자리에서 아무도 시작하지 않는다. 기본 대기열은 호출자 환경을 읽지 않는다.
+  # 차례 계산의 구간·이벤트 파일이 대기자마다 다르면 서로 상대를 첫 차례로 계산해 빈 자리에서 아무도 시작하지 않는다.
+  # 그래서 기본 대기열은 두 값을 호출자 환경에서 읽지 않는다.
   FAIR_WINDOW=3600
-  if [ -z "$SAVED" ]; then
-    case "${YW_HEAVY_FAIR_WINDOW:-}" in '' | *[!0-9]* | 0?*) ;; *) FAIR_WINDOW="$YW_HEAVY_FAIR_WINDOW" ;; esac
+  if [ -n "$SAVED" ]; then EVENTS="$Q.events"
+  else case "${YW_HEAVY_FAIR_WINDOW:-}" in '' | *[!0-9]* | 0?*) ;; *) FAIR_WINDOW="$YW_HEAVY_FAIR_WINDOW" ;; esac
   fi
   # 검증 자리: 일반 자리와 같은 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 편집 잠금·기록·모드·제출 중지는 공유한다.
   MQ="$Q" MXL="$XL" LQ="$Q.verifier" LXL="$XL.verifier"
@@ -701,7 +702,7 @@ rr_turns() {
     if [ -f "$RING" ]; then printf '%s\n' "$(ring_read)" | sed 's/^/R /'; fi
     rr_usage
     printf '%s\n' "$1" | grep . | sed 's/^/Q /'; } | awk -v now="$(date +%s)" -v fair="$FAIR_WINDOW" '
-    $1=="A" { active=$2; if (fair>0 && $3 ~ /^[0-9]+$/) held=now-$3; next }
+    $1=="A" { active=$2; if (fair>0 && $3 ~ /^[0-9]+$/ && now>$3) held=now-$3; next }
     $1=="R" { ring[++n]=$2; next }
     $1=="U" { used[$2]=$3; next }
     {
@@ -1122,9 +1123,9 @@ rr_usage() {
     END { for (s in used) print "U", s, used[s] }'
   return 0
 }
-# 대기 줄이 있는 감독자 중 최근 사용 시간이 가장 적은 감독자의 첫 줄. 같으면 순환 순서가 앞선 쪽이다.
+# 대기 줄이 있는 감독자 중 최근 사용 시간이 가장 적은 감독자의 첫 줄. 같으면 순환 순서가 앞선 쪽이다. ring이면 순환 순서만 쓴다.
 rr_head() {
-  { ring_read | sed 's/^/R /'; q_lines | sed 's/^/Q /'; rr_usage; } | awk '
+  { ring_read | sed 's/^/R /'; q_lines | sed 's/^/Q /'; [ "${1:-}" = ring ] || rr_usage; } | awk '
     $1=="R" { if ($2!="") ring[++n]=$2; next }
     $1=="U" { used[$2]=$3; next }
     {
@@ -1194,7 +1195,7 @@ rr_cancel() {
   fi
 }
 rr_acquire() {
-  local registered=0 l owner rc count supcount now json head
+  local registered=0 l owner rc count supcount now json head free_since=''
   case "$MAX_SUP:$MAX_ALL" in *[!0-9:]* | :* | *: | 0:* | *:0) say "pending 한도는 양의 정수여야 합니다"; return 2 ;; esac
   # 장기 holder는 호출자의 조상이어야 하며 시작 시각을 검증할 수 있어야 한다.
   [ -n "$HOLDER" ] || { HOLDER="$PPID"; HOLDER_START="$(proc_start "$PPID")" || HOLDER_START=-; }
@@ -1247,8 +1248,14 @@ rr_acquire() {
       rr_cancel; unlock_queue; say "활성 모드에 구버전 줄이 있어 획득을 거절합니다"; return 4
     fi
     ring_sync || { unlock_queue; return 1; }
+    # 자리가 10초 넘게 비어 있으면 사용 시간 없이 순환 순서로 고른다. 구버전 대기자가 섞이거나 기준이 갈려도
+    # 모두 같은 순환 선두에 합의해 정체가 풀린다. 정상 인계는 FAST_POLL 안에 끝난다.
     head=''
-    [ -d "$XL" ] || head="$(rr_head)"
+    if [ -d "$XL" ]; then free_since=''
+    else
+      now="$(date +%s)"; [ -n "$free_since" ] || free_since="$now"
+      if [ $((now - free_since)) -ge 10 ]; then head="$(rr_head ring)"; else head="$(rr_head)"; fi
+    fi
     if [ "$head" = "$ID" ] && (umask 077; mkdir "$XL") 2>/dev/null; then
       GEN="$(lf "$l" generation)" TOKEN="$(random_id)" LEASE="r-$(random_id)" now="$(date +%s)"
       if [ -z "$TOKEN" ] || [ "$LEASE" = r- ]; then rmdir "$XL"; unlock_queue; return 1; fi
