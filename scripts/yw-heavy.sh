@@ -9,7 +9,8 @@
 #   편집 lock YW_HEAVY_FLOCK ($Q.flock, 커널 flock) + 호환 표지 파일 YW_HEAVY_EDIT_LOCK (/tmp/yw-heavy-queue.edit.lock)
 #   회수 기록 YW_HEAVY_LOG ($Q.log), 회수 끄기 YW_HEAVY_NO_RECLAIM ($Q.no-reclaim), 대기 주기 YW_HEAVY_POLL (30초)
 #   v3 모드 $Q.mode (없으면 compat, 단 v3 대기·실행이 남아 있으면 round-robin), 신규 제출 중지 $Q.paused, 감독자 순환 $Q.rotation
-#   v3 작업 이벤트 YW_HEAVY_EVENTS ($Q.events), 내부 재확인 YW_HEAVY_FAST_POLL (.2초)
+#   v3 작업 이벤트 $Q.events (격리 대기열만 YW_HEAVY_EVENTS로 바꾼다), 내부 재확인 YW_HEAVY_FAST_POLL (.2초)
+#   v3 사용 시간 비교 구간 3600초. 격리 대기열(테스트)만 YW_HEAVY_FAIR_WINDOW로 바꾼다 (0이면 순환 순서만)
 #   v3 pending 한도 YW_HEAVY_MAX_PENDING_SUPERVISOR (128), YW_HEAVY_MAX_PENDING (1024)
 #   /tmp 정리 방지 mtime 갱신 주기 YW_HEAVY_KEEP_EVERY (3600초), run 갱신 프로세스의 부모 확인 YW_HEAVY_KEEP_CHECK (20초)
 #   owner 없는 실행 lock 회수까지 YW_HEAVY_OWNERLESS_AGE (60초), 구형식 편집 lock 경고까지 YW_HEAVY_EDIT_WARN (120초)
@@ -71,6 +72,12 @@ init() {
   # 기본 대기열(경로로 판정: helper는 기본 경로를 YW_HEAVY_QUEUE로 넘긴다)에만 쓴다. 테스트·격리 대기열은 읽지도 쓰지도 않는다.
   # YW_HEAVY_DEFAULT_QUEUE는 테스트가 기본 대기열을 흉내 낼 때만 쓴다. 호출자마다 다를 수 있는 XDG_CONFIG_HOME 대신 $HOME 아래 고정 경로를 쓴다.
   case "$Q" in "${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}" | "/private${YW_HEAVY_DEFAULT_QUEUE:-/tmp/yw-heavy-queue}") SAVED="$HOME/.config/bootstrap/heavy-mode" ;; *) SAVED= ;; esac
+  # 차례 계산의 구간·이벤트 파일이 대기자마다 다르면 서로 상대를 첫 차례로 계산해 빈 자리에서 아무도 시작하지 않는다.
+  # 그래서 기본 대기열은 두 값을 호출자 환경에서 읽지 않는다.
+  FAIR_WINDOW=3600
+  if [ -n "$SAVED" ]; then EVENTS="$Q.events"
+  else case "${YW_HEAVY_FAIR_WINDOW:-}" in '' | *[!0-9]* | 0?*) ;; *) FAIR_WINDOW="$YW_HEAVY_FAIR_WINDOW" ;; esac
+  fi
   # 검증 자리: 일반 자리와 같은 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 편집 잠금·기록·모드·제출 중지는 공유한다.
   MQ="$Q" MXL="$XL" LQ="$Q.verifier" LXL="$XL.verifier"
 }
@@ -684,15 +691,20 @@ do_run() {
 
 # 현재 자리(Q·XL)의 대기 줄과 실행 lock을 보인다. 구형식 줄 수는 LEGACY에 남긴다.
 # 지금 등록된 v3 줄이 실행될 순서 (읽기 전용). 줄 번호는 등록 순서라 round-robin의 실제 차례와 다르다.
-# ring_sync의 감독자 순서를 따르고, 실행 중 감독자는 해제 때 순환 끝으로 가므로 맨 뒤에 둔다. 나중에 등록되는 줄은 반영하지 않는다.
+# 최근 사용 시간이 적은 감독자부터, 같으면 ring_sync의 감독자 순서를 따른다. 실행 중 감독자는 해제 때 순환 끝으로 가고
+# 지금 차례의 보유 시간이 더해진 값으로 비교한다. 이후 실행 시간은 모르므로 예상은 바뀔 수 있다. 나중에 등록되는 줄은 반영하지 않는다.
 # $1은 회수될 줄(확정 사망)을 뺀 대기 줄. 회수가 꺼져 있거나 v3가 아닌 줄이 있으면 차례를 알 수 없어 표시하지 않는다.
 rr_turns() {
   [ "$(mode_read)" = round-robin ] && [ ! -e "$NR" ] || return 0
-  { printf 'A %s\n' "$(json_str "$(owner_read)" supervisor)"
+  local owner
+  owner="$(owner_read)"
+  { printf 'A %s %s\n' "$(json_str "$owner" supervisor)" "$(json_num "$owner" started)"
     if [ -f "$RING" ]; then printf '%s\n' "$(ring_read)" | sed 's/^/R /'; fi
-    printf '%s\n' "$1" | grep . | sed 's/^/Q /'; } | awk '
-    $1=="A" { active=$2; next }
+    rr_usage
+    printf '%s\n' "$1" | grep . | sed 's/^/Q /'; } | awk -v now="$(date +%s)" -v fair="$FAIR_WINDOW" '
+    $1=="A" { active=$2; if (fair>0 && $3 ~ /^[0-9]+$/ && now>$3) held=now-$3; next }
     $1=="R" { ring[++n]=$2; next }
+    $1=="U" { used[$2]=$3; next }
     {
       sup=""; version=""
       for (i=3;i<=NF;i++) {
@@ -705,10 +717,14 @@ rr_turns() {
     }
     END {
       for (i=1;i<=n;i++) if (ring[i]!=active && count[ring[i]] && !seen[ring[i]]++) order[++m]=ring[i]
-      if (active!="" && count[active]) order[++m]=active
-      while (left>0) for (i=1;i<=m;i++) {
-        sup=order[i]
-        if (done[sup]<count[sup]) { out=out (out=="" ? "" : " ") job[sup,++done[sup]]; left-- }
+      if (active!="" && count[active]) { order[++m]=active; used[active]+=held }
+      # rr_head와 같은 선택을 반복한다. 앞으로의 실행 시간은 모르므로 더하지 않고, 받은 감독자는 순환 끝으로 보낸다.
+      while (left>0) {
+        k=0
+        for (i=1;i<=m;i++) if (done[order[i]]<count[order[i]] && (k==0 || used[order[i]]+0 < used[order[k]]+0)) k=i
+        sup=order[k]; out=out (out=="" ? "" : " ") job[sup,++done[sup]]; left--
+        for (i=k;i<m;i++) order[i]=order[i+1]
+        order[m]=sup
       }
       print out
     }'
@@ -1088,15 +1104,44 @@ ring_rotate() {
   fi
   ring_write "$cur"
 }
+# 최근 FAIR_WINDOW초 안에 끝난 차례(end·reclaim)의 보유 시간을 감독자별로 합친다. 줄 형식: U <감독자> <초>.
+# 이벤트 파일은 순환하지 않으므로 끝의 일부만 읽는다(2026-11 최대 시간당 약 130줄). 구간 밖·미래 시각·잘린 줄은 버린다.
+rr_usage() {
+  local now
+  [ "$FAIR_WINDOW" -gt 0 ] && [ -f "$EVENTS" ] || return 0
+  now="$(date +%s)"
+  tail -n 1000 "$EVENTS" 2>/dev/null | awk -v now="$now" -v since=$((now - FAIR_WINDOW)) '
+    /"event":"(end|reclaim)"/ && /}$/ {
+      if (!match($0, /"at":[0-9]+/)) next
+      at = substr($0, RSTART + 5, RLENGTH - 5) + 0
+      if (at < since || at > now) next
+      if (!match($0, /"supervisor":"[^"]*"/)) next
+      sup = substr($0, RSTART + 14, RLENGTH - 15)
+      if (!match($0, /"heldSeconds":[0-9]+/)) next
+      used[sup] += substr($0, RSTART + 14, RLENGTH - 14)
+    }
+    END { for (s in used) print "U", s, used[s] }'
+  return 0
+}
+# 대기 줄이 있는 감독자 중 최근 사용 시간이 가장 적은 감독자의 첫 줄. 같으면 순환 순서가 앞선 쪽이다.
 rr_head() {
-  local s l
-  while IFS= read -r s; do
-    [ -n "$s" ] || continue
-    l="$(q_lines | awk -v s="supervisor=$s" '{ for(i=2;i<=NF;i++) if($i==s) {print $1; exit} }')"
-    if [ -n "$l" ]; then printf '%s' "$l"; return; fi
-  done <<EOF_RING
-$(ring_read)
-EOF_RING
+  { ring_read | sed 's/^/R /'; q_lines | sed 's/^/Q /'; rr_usage; } | awk '
+    $1=="R" { if ($2!="") ring[++n]=$2; next }
+    $1=="U" { used[$2]=$3; next }
+    {
+      sup=""
+      for (i=3;i<=NF;i++) if ($i ~ /^supervisor=/) sup=substr($i,12)
+      if (sup!="" && !(sup in first)) first[sup]=$2
+    }
+    END {
+      for (i=1;i<=n;i++) {
+        s=ring[i]
+        if (!(s in first)) continue
+        u=used[s]+0
+        if (best=="" || u<low) { best=first[s]; low=u }
+      }
+      printf "%s", best
+    }'
 }
 rr_reclaim() {
   local protect="${1:-}" owner holder start state l id age
@@ -1203,7 +1248,9 @@ rr_acquire() {
       rr_cancel; unlock_queue; say "활성 모드에 구버전 줄이 있어 획득을 거절합니다"; return 4
     fi
     ring_sync || { unlock_queue; return 1; }
-    head="$(rr_head)"
+    # 자리가 차 있으면 mkdir이 어차피 실패하므로 차례 계산을 건너뛴다.
+    head=''
+    [ -d "$XL" ] || head="$(rr_head)"
     if [ "$head" = "$ID" ] && (umask 077; mkdir "$XL") 2>/dev/null; then
       GEN="$(lf "$l" generation)" TOKEN="$(random_id)" LEASE="r-$(random_id)" now="$(date +%s)"
       if [ -z "$TOKEN" ] || [ "$LEASE" = r- ]; then rmdir "$XL"; unlock_queue; return 1; fi
