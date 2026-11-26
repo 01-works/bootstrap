@@ -1123,14 +1123,9 @@ rr_usage() {
     END { for (s in used) print "U", s, used[s] }'
   return 0
 }
-# 가장 최근 start 기록의 세대 (rr_acquire의 빈자리 타이머용).
-rr_last_start() {
-  tail -n 1000 "$EVENTS" 2>/dev/null | sed -n 's/^{"event":"start".*"generation":"\([^"]*\)".*/\1/p' | tail -n 1
-  return 0
-}
-# 대기 줄이 있는 감독자 중 최근 사용 시간이 가장 적은 감독자의 첫 줄. 같으면 순환 순서가 앞선 쪽이다. ring이면 순환 순서만 쓴다.
+# 대기 줄이 있는 감독자 중 최근 사용 시간이 가장 적은 감독자의 첫 줄. 같으면 순환 순서가 앞선 쪽이다.
 rr_head() {
-  { ring_read | sed 's/^/R /'; q_lines | sed 's/^/Q /'; [ "${1:-}" = ring ] || rr_usage; } | awk '
+  { ring_read | sed 's/^/R /'; q_lines | sed 's/^/Q /'; rr_usage; } | awk '
     $1=="R" { if ($2!="") ring[++n]=$2; next }
     $1=="U" { used[$2]=$3; next }
     {
@@ -1200,7 +1195,7 @@ rr_cancel() {
   fi
 }
 rr_acquire() {
-  local registered=0 l owner rc count supcount now json head free_since='' last_start='' st
+  local registered=0 l owner rc count supcount now json head
   case "$MAX_SUP:$MAX_ALL" in *[!0-9:]* | :* | *: | 0:* | *:0) say "pending 한도는 양의 정수여야 합니다"; return 2 ;; esac
   # 장기 holder는 호출자의 조상이어야 하며 시작 시각을 검증할 수 있어야 한다.
   [ -n "$HOLDER" ] || { HOLDER="$PPID"; HOLDER_START="$(proc_start "$PPID")" || HOLDER_START=-; }
@@ -1253,17 +1248,9 @@ rr_acquire() {
       rr_cancel; unlock_queue; say "활성 모드에 구버전 줄이 있어 획득을 거절합니다"; return 4
     fi
     ring_sync || { unlock_queue; return 1; }
-    # 같은 빈자리가 10초 넘게 이어지면 사용 시간 없이 순환 순서로 고른다. 구버전 대기자가 섞이거나 기준이 갈려도
-    # 모두 같은 순환 선두에 합의해 정체가 풀린다. 정상 인계는 FAST_POLL 안에 끝난다.
-    # 확인 사이에 다른 실행이 시작됐으면(마지막 start 기록이 바뀜) 새 빈자리이므로 다시 센다. 대기 취소는 세지 않는다.
+    # 자리가 차 있으면 mkdir이 어차피 실패하므로 차례 계산을 건너뛴다.
     head=''
-    if [ -d "$XL" ]; then free_since=''
-    else
-      st="$(rr_last_start)"
-      [ "$st" = "$last_start" ] || { free_since=''; last_start="$st"; }
-      now="$(date +%s)"; [ -n "$free_since" ] || free_since="$now"
-      if [ $((now - free_since)) -ge 10 ]; then head="$(rr_head ring)"; else head="$(rr_head)"; fi
-    fi
+    [ -d "$XL" ] || head="$(rr_head)"
     if [ "$head" = "$ID" ] && (umask 077; mkdir "$XL") 2>/dev/null; then
       GEN="$(lf "$l" generation)" TOKEN="$(random_id)" LEASE="r-$(random_id)" now="$(date +%s)"
       if [ -z "$TOKEN" ] || [ "$LEASE" = r- ]; then rmdir "$XL"; unlock_queue; return 1; fi
