@@ -1632,31 +1632,39 @@ test('대기자마다 차례 기준이 갈려도 자리가 10초 넘게 비면 �
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId).slice(-2), ['B1', 'A1'], '순환 선두 B1부터');
 });
 
-test('빈자리 10초 규칙은 확인 사이에 다른 차례가 진행됐으면 다시 세어 사용 시간 순서를 지킨다', async t => {
+test('빈자리 10초 규칙은 확인 사이에 다른 실행이 시작됐을 때만 다시 세고, 대기 취소로는 미루지 않는다', async t => {
   const f = fixture(t); enable(f);
   f.env.YW_HEAVY_FAIR_WINDOW = '3600';
-  // A의 시계만 파일로 고정한다. 다른 줄(B·C)은 살아 있는 대역 프로세스로 직접 쓴다.
+  // A의 시계만 파일로 고정한다. 다른 줄은 살아 있는 대역 프로세스로 직접 쓴다.
   const clock = join(f.dir, 'clock');
   writeFileSync(clock, '10000\n');
   const hook = f.hookWith(`date() { if [ "$1" = +%s ]; then /bin/cat ${quote(clock)}; else command date "$@"; fi; }`);
-  const ev = (sup, held) => JSON.stringify({ event: 'end', at: 9990, requestId: 'old', generation: 'g', supervisor: sup, waitSeconds: 0, heldSeconds: held, exitCode: '0', signal: 'unknown' });
-  writeFileSync(f.env.YW_HEAVY_EVENTS, [ev('A', 600), ev('C', 100)].join('\n') + '\n');
+  const ev = (event, sup, held, gen = 'g') => JSON.stringify({ event, at: 9990, requestId: 'old', generation: gen, supervisor: sup, waitSeconds: 0, heldSeconds: held, exitCode: '0', signal: 'unknown' });
+  writeFileSync(f.env.YW_HEAVY_EVENTS, [ev('end', 'A', 600), ev('end', 'C', 100)].join('\n') + '\n');
   const holder = f.live();
   f.owner({ v: 3, pid: holder.pid, holder: holder.pid, holderStart: procStart(holder.pid), task: 'H', supervisor: 'H', generation: 'gh', token: 't', lease: 'r-l', queued: 9990, started: 9990 });
   const a = f.cliEnv({ BASH_ENV: hook }, 'run', 'A1', 'w', 'A', '--', 'true');
   await f.wait(() => read(f.q).includes('A1 '), 'A1 queued');
   const p = f.live(), st = procStart(p.pid);
-  appendFileSync(f.q, `B1 worker=w supervisor=B v=3 pid=${p.pid} start=${st} generation=gb queued=10000\nC1 worker=w supervisor=C v=3 pid=${p.pid} start=${st} generation=gc queued=10000\n`);
-  // 실행 lock을 비우면 A는 빈자리를 보고 사용 시간이 적은 B에게 양보한다.
+  const fake = (id, sup) => `${id} worker=w supervisor=${sup} v=3 pid=${p.pid} start=${st} generation=g${id} queued=10000\n`;
+  appendFileSync(f.q, fake('C1', 'C'));
+  // 실행 lock을 비우면 A는 빈자리를 보고 사용 시간이 적은 C에게 양보한다(순환은 A → C).
   rmSync(f.x, { recursive: true });
   await pause(500);
-  assert.ok(read(f.q).includes('A1 ') && !existsSync(f.x), 'A는 B에게 양보한다');
-  // A가 보지 못한 사이 B가 시작해 11초 실행하고 끝난 상황: B 줄이 빠지고 시계가 11초 간다.
-  writeFileSync(f.q, read(f.q).split('\n').filter(l => !l.startsWith('B1 ')).join('\n'));
+  assert.ok(read(f.q).includes('A1 ') && !existsSync(f.x), 'A는 C에게 양보한다');
+  // A가 대기 줄을 보지 못한 새 요청 B가 시작해 11초 실행하고 끝났다: start·end 기록만 남는다.
+  appendFileSync(f.env.YW_HEAVY_EVENTS, [ev('start', 'B', 0, 'gb'), ev('end', 'B', 0, 'gb')].join('\n') + '\n');
   writeFileSync(clock, '10011\n');
   await pause(1000);
   assert.ok(read(f.q).includes('A1 ') && !existsSync(f.x), '막 비워진 자리는 사용 시간이 적은 C가 먼저다');
-  // 같은 빈자리가 10초 넘게 이어지면 순환 순서로 돌아간다(순환 A → C).
+  // 대기 취소(D 줄이 생겼다 사라짐)는 실행이 아니므로 타이머를 미루지 않는다.
+  appendFileSync(f.q, fake('D1', 'D'));
+  await pause(500);
+  writeFileSync(f.q, read(f.q).split('\n').filter(l => !l.startsWith('D1 ')).join('\n'));
+  writeFileSync(clock, '10016\n');
+  await pause(500);
+  assert.ok(read(f.q).includes('A1 ') && !existsSync(f.x), '10초 전에는 계속 C에게 양보한다');
+  // 같은 빈자리가 10011초부터 10초 넘게 이어지면 순환 순서로 돌아간다.
   writeFileSync(clock, '10022\n');
   assert.equal(await f.finish(a, 30000), 0, a.err);
 });
