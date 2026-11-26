@@ -62,7 +62,7 @@ node scripts/launch-agents.mjs --check --only agent-chrome --desktop   # 노트�
 - 끝나면 불필요한 own 탭만 닫는다. 다른 작업의 탭은 건드리지 않는다.
 - 닫을 own 탭이 current target이면 같은 호출 안에서 담당자와 정한 살아 있는 인계 탭으로 `switch_tab()`한 뒤 `close_tab(own_target)`으로 닫는다. 인계 탭이 없으면 own `about:blank` 탭 하나를 유지하고 보고한다. 닫힌 target을 남기면 `current_tab()`·doctor가 연결 단절로 오인할 수 있다.
 - 에이전트 Chrome의 로그인·로그아웃은 공유 상태이므로 조율한다. 비밀번호·MFA·동의가 필요하면 사용자에게 넘긴다.
-- 공유 에이전트 Chrome에서는 다른 작업의 로그인 세션을 지울 수 있으므로 전역 쿠키 삭제(`Network.clearBrowserCookies`, `Storage.clearCookies` 등)나 origin을 지정하지 않은 저장소 삭제는 하지 않는다. 자기 작업의 쿠키는 `Network.deleteCookies`에 URL 또는 도메인을, 저장소는 `Storage.clearDataForOrigin`에 origin을 지정해 지운다. 전역 초기화가 필요하면 별도 프로필이나 브라우저를 쓴다.
+- 다른 작업의 로그인이 풀리므로 전역 쿠키·저장소 삭제(`Network.clearBrowserCookies`, `Storage.clearCookies` 등)는 하지 않는다. 자기 작업 것만 `Network.deleteCookies`(URL·도메인 지정)나 `Storage.clearDataForOrigin`으로 지우고, 전역 초기화가 필요하면 담당자와 조율한다.
 
 ### 실패와 새 연결
 
