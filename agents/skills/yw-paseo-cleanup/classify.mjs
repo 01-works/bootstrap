@@ -16,7 +16,9 @@ function scopedGap(gap) {
   if (['excerpt', 'git', 'gh', 'terminals'].includes(gap.domain ?? gap.source)) return false;
   return true;
 }
-function gapAffects(gap, { id, path, workspaceId, memberIds = [] }) {
+function gapAffects(gap, { id, path, workspaceId, memberIds = [], directory = false }) {
+  // An absent workspace's directory is unknown, so directory removal stays globally blocked.
+  if (gap.directoryGlobal && directory) return true;
   const scope = gap.scope;
   if (!scope || !(scope.agentIds?.length || scope.paths?.length || scope.workspaceIds?.length)) return true;
   return scope.agentIds?.includes(id) || scope.workspaceIds?.includes(id) || scope.workspaceIds?.includes(workspaceId) || memberIds.some(member => scope.agentIds?.includes(member)) || scope.paths?.some(p => overlaps(path, p));
@@ -26,6 +28,9 @@ export function protectionContext(snapshot) {
   const workspaces = new Map((snapshot.workspaces ?? []).map(w => [w.workspaceId, w]));
   const agentIds = new Set((snapshot.agents ?? []).map(a => a.id));
   const aliases = new Map(), generatedGaps = [];
+  // A well-formed ID that matches no stored workspace cannot be a local agent's or workspace's ID.
+  const storeComplete = !(snapshot.meta?.gaps ?? []).some(gap => String(gap.source ?? '').endsWith('projects/workspaces.json') && !gap.scope);
+  const absent = reference => storeComplete && typeof reference === 'string' && /^wks_[A-Za-z0-9]+$/.test(reference) && reference.length >= 4 + minWorkspacePrefixLength && ![...workspaces.keys()].some(id => id.startsWith(reference));
   const resolve = reference => {
     if (workspaces.has(reference)) return workspaces.get(reference);
     if (typeof reference !== 'string' || !reference.startsWith('wks_') || reference.length < 4 + minWorkspacePrefixLength) return null;
@@ -42,7 +47,7 @@ export function protectionContext(snapshot) {
       if (workspace) aliases.set(reference, id);
       const candidates = workspace ? [workspace.cwd, workspace.worktreeRoot].filter(value => value !== undefined && value !== null) : [];
       if (!candidates.length || candidates.some(value => typeof value !== 'string' || !value.startsWith('/') || value.includes('\0'))) {
-        generatedGaps.push({ domain: 'protection', source: `supervisor:${record.directory}`, reason: 'supervisor_workspace_unresolved', workspaceId: reference });
+        generatedGaps.push({ domain: 'protection', source: `supervisor:${record.directory}`, reason: 'supervisor_workspace_unresolved', workspaceId: reference, ...(!workspace && absent(reference) ? { scope: { workspaceIds: [reference] }, directoryGlobal: true } : {}) });
       }
       for (const path of candidates) if (typeof path === 'string' && path.startsWith('/') && !path.includes('\0')) paths.add(path);
     }
@@ -72,6 +77,7 @@ export function scanSummary(snapshot) {
   for (const state of paths.values()) terminals[state]++;
   const globalBlockers = {};
   for (const gap of protectionContext(snapshot).gaps) if (!gap.scope || !(gap.scope.agentIds?.length || gap.scope.workspaceIds?.length || gap.scope.paths?.length)) globalBlockers[gap.reason ?? 'unknown'] = (globalBlockers[gap.reason ?? 'unknown'] ?? 0) + 1;
+  else if (gap.directoryGlobal) globalBlockers[`${gap.reason ?? 'unknown'}:directories`] = (globalBlockers[`${gap.reason ?? 'unknown'}:directories`] ?? 0) + 1;
   return { live: { activeTotal: active.length, observed: live, storedFallback: active.length - live }, terminals, globalBlockers };
 }
 export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHours = 72, selfAgentId, selfCwd } = {}) {
@@ -244,7 +250,7 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if (r.ageHours === null) hold(r, 'data', 'unknown observed timestamp maximum');
     else if (r.ageHours < minAgeHours) hold(r, 'recent', 'recent observed timestamp maximum');
     r.work = r.hold.length ? 'unknown' : 'candidate';
-    applyGaps(r, { path: o.path });
+    applyGaps(r, { path: o.path, directory: true });
     r.verdict = r.hold.some(h => ['self', 'active_lane', 'schedule_dependency', 'recent'].includes(h)) ? 'exclude' : r.hold.length ? 'review' : 'batch_candidate';
     if (r.listOnly) r.verdict = 'review';
     if (!r.hold.length) r.hold.push('none');
