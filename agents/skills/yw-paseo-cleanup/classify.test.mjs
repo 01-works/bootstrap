@@ -189,7 +189,7 @@ test('R4 workspace worktreeRoot is protected even when cwd points elsewhere', ()
   const r = scan({ workspaces: [w({ workspaceId: 'wks_archived', cwd: '/fake/elsewhere', worktreeRoot: '/fake/worktrees/project/orphan', archivedAt: '2026-01-02' })], supervisors: [{ directory: 'fake-record', ownerIds: [], workspaceIds: ['wks_archived'] }], orphans: [o()] });
   assert.equal(r.orphans[0].verdict, 'review'); assert.ok(r.orphans[0].hold.includes('supervisor_scope'));
 });
-for (const workspace of [null, { workspaceId: 'wks_unresolved' }, { workspaceId: 'wks_unresolved', cwd: 'relative/path' }, { workspaceId: 'wks_unresolved', cwd: '/fake/cwd', worktreeRoot: 'relative/root' }]) test(`R4 unresolved workspace reference blocks globally: ${JSON.stringify(workspace)}`, () => {
+for (const workspace of [{ workspaceId: 'wks_unresolved' }, { workspaceId: 'wks_unresolved', cwd: 'relative/path' }, { workspaceId: 'wks_unresolved', cwd: '/fake/cwd', worktreeRoot: 'relative/root' }]) test(`R4 unresolved workspace reference blocks globally: ${JSON.stringify(workspace)}`, () => {
   const r = scan({ workspaces: [w(), ...(workspace ? [workspace] : [])], orphans: [o()], supervisors: [{ directory: 'fake-record', ownerIds: [], workspaceIds: ['wks_unresolved'], agentIds: ['other-id'], paths: ['/fake/unrelated'] }] });
   assert.equal(r.orphans[0].verdict, 'review'); assert.ok(r.orphans[0].reasons.includes('protection_gap:supervisor_workspace_unresolved')); assert.notEqual(r.workspaces[0].verdict, 'batch_candidate');
 });
@@ -198,7 +198,34 @@ test('R4 generated workspace-resolution gaps are pure and counted once when pers
   const snapshot = { ...structuredClone(base), supervisors: [{ directory: 'fake-record', workspaceIds: ['wks_missing'], paths: [] }] }, before = structuredClone(snapshot);
   const context = protectionContext(snapshot); assert.equal(context.generatedGaps.length, 1); assert.deepEqual(snapshot, before);
   snapshot.meta.gaps = context.generatedGaps;
-  assert.equal(protectionContext(snapshot).gaps.length, 1); assert.equal(scanSummary(snapshot).globalBlockers.supervisor_workspace_unresolved, 1);
+  assert.equal(protectionContext(snapshot).gaps.length, 1); assert.equal(scanSummary(snapshot).globalBlockers['supervisor_workspace_unresolved:directories'], 1);
+});
+for (const ref of ['wks_dead', 'wks_remote0000000001']) test(`R6 absent workspace reference spares only unrelated agents and directory-preserving workspaces: ${ref}`, async () => {
+  const { protectionContext, scanSummary } = await import('./classify.mjs');
+  const localDir = { workspaceId: 'wks_localdir00000001', cwd: '/fake/localdir', kind: 'directory', isPaseoOwnedWorktree: false, createdAt: '2026-01-01', updatedAt: '2026-01-01', checks: structuredClone(base.fixtureChecks) };
+  const data = { ...structuredClone(base), workspaces: [w({ workspaceId: 'wks_abcd000000000001', cwd: '/fake/wks_abcd' }), localDir], supervisors: [{ directory: 'remote-lane', ownerIds: [], workspaceIds: [ref], agentIds: [], paths: [] }], agents: [a('local', { cwd: '/fake/wks_abcd', workspaceId: 'wks_abcd000000000001' }), a('exact', { cwd: '/fake/elsewhere', workspaceId: ref }), a('prefixed', { cwd: '/fake/elsewhere', workspaceId: `${ref}1234` }), a('unowned', { cwd: '/fake/elsewhere', workspaceId: undefined })], orphans: [o()] };
+  const gap = protectionContext(data).generatedGaps[0];
+  assert.equal(gap.reason, 'supervisor_workspace_unresolved'); assert.deepEqual(gap.scope, { workspaceIds: [ref] }); assert.equal(gap.directoryGlobal, true); assert.equal(gap.absentWorkspaceRef, ref);
+  const r = scan(data), reason = 'protection_gap:supervisor_workspace_unresolved', ws = id => r.workspaces.find(x => x.id === id);
+  assert.ok(!record(r, 'local').reasons.includes(reason));
+  for (const id of ['exact', 'prefixed', 'unowned']) assert.ok(record(r, id).reasons.includes(reason), id);
+  assert.ok(ws('wks_abcd000000000001').reasons.includes(reason)); assert.notEqual(ws('wks_abcd000000000001').verdict, 'batch_candidate');
+  assert.ok(!ws('wks_localdir00000001').reasons.includes(reason)); assert.equal(ws('wks_localdir00000001').verdict, 'batch_candidate');
+  assert.equal(r.orphans[0].verdict, 'review'); assert.ok(r.orphans[0].reasons.includes(reason));
+  assert.deepEqual(scanSummary(data).globalBlockers, { 'supervisor_workspace_unresolved:directories': 1 });
+});
+test('R6 persisted legacy unscoped gap keeps global protection alongside the scoped gap', async () => {
+  const { protectionContext } = await import('./classify.mjs');
+  const legacy = { domain: 'protection', source: 'supervisor:remote-lane', reason: 'supervisor_workspace_unresolved', workspaceId: 'wks_dead' };
+  const data = { ...structuredClone(base), meta: { ...base.meta, gaps: [legacy] }, workspaces: [w()], supervisors: [{ directory: 'remote-lane', ownerIds: [], workspaceIds: ['wks_dead'], paths: [] }], agents: [a('local')], orphans: [o()] };
+  assert.equal(protectionContext(data).gaps.filter(g => g.reason === 'supervisor_workspace_unresolved').length, 2);
+  assert.ok(record(scan(data), 'local').reasons.includes('protection_gap:supervisor_workspace_unresolved'));
+});
+test('R6 absent workspace reference stays globally blocked when the workspace store is incomplete', async () => {
+  const { protectionContext } = await import('./classify.mjs');
+  const data = { ...structuredClone(base), meta: { ...base.meta, gaps: [{ source: '/fake/home/projects/workspaces.json', reason: 'parse error' }] }, workspaces: [w()], supervisors: [{ directory: 'remote-lane', ownerIds: [], workspaceIds: ['wks_dead'], paths: [] }], agents: [a('local')], orphans: [o()] };
+  const gap = protectionContext(data).generatedGaps[0]; assert.equal(gap.scope, undefined); assert.equal(gap.directoryGlobal, undefined);
+  assert.ok(record(scan(data), 'local').reasons.includes('protection_gap:supervisor_workspace_unresolved'));
 });
 test('R4 coverage summary counts unique terminal cwd and global reasons without scoped or excerpt gaps', async () => {
   const { scanSummary } = await import('./classify.mjs');
@@ -217,7 +244,7 @@ for (const archived of [false, true]) test(`R5 unique four-character workspace p
   assert.deepEqual(context.supervisors[0].workspaceIds, [full]); assert.deepEqual(context.supervisors[0].workspaceRefs, [ref]); assert.deepEqual(context.generatedGaps, []);
   const r = scan(data); assert.equal(r.orphans[0].verdict, archived ? 'review' : 'exclude'); assert.ok(r.orphans[0].hold.includes('supervisor_scope'));
 });
-for (const [ref, ids] of [['wks_abcd', ['wks_abcd000000000001', 'wks_abcd000000000002']], ['wks_dead', ['wks_abcd000000000001']], ['wks_abc', ['wks_abcd000000000001']]]) test(`R5 ambiguous, absent or too-short prefix remains globally blocked: ${ref} ${ids.length}`, async () => {
+for (const [ref, ids] of [['wks_abcd', ['wks_abcd000000000001', 'wks_abcd000000000002']], ['wks_abc', ['wks_abcd000000000001']]]) test(`R5 ambiguous or too-short prefix remains globally blocked: ${ref} ${ids.length}`, async () => {
   const { protectionContext, minWorkspacePrefixLength } = await import('./classify.mjs'); assert.equal(minWorkspacePrefixLength, 4);
   const data = { ...structuredClone(base), workspaces: ids.map(id => w({ workspaceId: id, cwd: `/fake/${id}`, archivedAt: '2026-01-02' })), supervisors: [{ directory: 'prefix-owner', workspaceIds: [ref], paths: ['/fake/unrelated'] }], orphans: [o()] };
   const context = protectionContext(data); assert.equal(context.generatedGaps[0].reason, 'supervisor_workspace_unresolved'); assert.equal(context.generatedGaps[0].scope, undefined); assert.equal(scan(data).orphans[0].verdict, 'review');

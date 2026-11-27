@@ -335,7 +335,7 @@ test('R4 collector retains canonical archived worktreeRoot for supervisor ID-to-
     assert.equal(snapshot.workspaces[0].worktreeRoot, canonical);
     assert.ok(!snapshot.meta.gaps.some(g => g.reason === 'supervisor_workspace_unresolved'));
     writeFileSync(join(options.stateHome, 'yw-supervisor/fake/tasks.md'), 'workspace wks_missing');
-    const unresolved = await collect(options); assert.ok(unresolved.meta.gaps.some(g => g.reason === 'supervisor_workspace_unresolved' && !g.scope));
+    const unresolved = await collect(options); assert.ok(unresolved.meta.gaps.some(g => g.reason === 'supervisor_workspace_unresolved' && g.directoryGlobal === true && g.scope?.workspaceIds?.[0] === 'wks_missing'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('R4 plan summary displays live and terminal coverage plus global blocker counts', async () => {
