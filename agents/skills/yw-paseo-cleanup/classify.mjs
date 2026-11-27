@@ -16,9 +16,11 @@ function scopedGap(gap) {
   if (['excerpt', 'git', 'gh', 'terminals'].includes(gap.domain ?? gap.source)) return false;
   return true;
 }
-function gapAffects(gap, { id, path, workspaceId, memberIds = [], directory = false }) {
-  // An absent workspace's directory is unknown, so directory removal stays globally blocked.
+function gapAffects(gap, { id, path, workspaceId, memberIds = [], directory = false, agent = false }) {
+  // An absent workspace's directory is unknown, so anything that can remove a directory stays blocked.
   if (gap.directoryGlobal && directory) return true;
+  // Agents whose workspace is unknown or prefix-matches the absent reference may belong to it.
+  if (gap.absentWorkspaceRef && agent && (typeof workspaceId !== 'string' || !workspaceId || workspaceId.startsWith(gap.absentWorkspaceRef))) return true;
   const scope = gap.scope;
   if (!scope || !(scope.agentIds?.length || scope.paths?.length || scope.workspaceIds?.length)) return true;
   return scope.agentIds?.includes(id) || scope.workspaceIds?.includes(id) || scope.workspaceIds?.includes(workspaceId) || memberIds.some(member => scope.agentIds?.includes(member)) || scope.paths?.some(p => overlaps(path, p));
@@ -47,7 +49,7 @@ export function protectionContext(snapshot) {
       if (workspace) aliases.set(reference, id);
       const candidates = workspace ? [workspace.cwd, workspace.worktreeRoot].filter(value => value !== undefined && value !== null) : [];
       if (!candidates.length || candidates.some(value => typeof value !== 'string' || !value.startsWith('/') || value.includes('\0'))) {
-        generatedGaps.push({ domain: 'protection', source: `supervisor:${record.directory}`, reason: 'supervisor_workspace_unresolved', workspaceId: reference, ...(!workspace && absent(reference) ? { scope: { workspaceIds: [reference] }, directoryGlobal: true } : {}) });
+        generatedGaps.push({ domain: 'protection', source: `supervisor:${record.directory}`, reason: 'supervisor_workspace_unresolved', workspaceId: reference, ...(!workspace && absent(reference) ? { scope: { workspaceIds: [reference] }, directoryGlobal: true, absentWorkspaceRef: reference } : {}) });
       }
       for (const path of candidates) if (typeof path === 'string' && path.startsWith('/') && !path.includes('\0')) paths.add(path);
     }
@@ -155,7 +157,7 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if (ambiguous) for (const id of ids) if (records.has(id)) { records.get(id).work = 'unknown'; hold(records.get(id), 'active_lane', 'ambiguous continuation graph'); }
   }
   // Seed evidence gaps before the fixed point so their protection also crosses relations.
-  for (const a of agents) applyGaps(records.get(a.id), { id: a.id, path: a.cwd, workspaceId: a.workspaceId });
+  for (const a of agents) applyGaps(records.get(a.id), { id: a.id, path: a.cwd, workspaceId: a.workspaceId, agent: true });
   // All protection relations share one monotonic fixed point, including historical nodes.
   do {
     changed = false;
@@ -231,7 +233,7 @@ export function classify(snapshot, { now = snapshot.meta?.collectedAt, minAgeHou
     if (w.untrusted && w.checks?.teardown !== 'confirmed_none') hold(r, 'data', 'untrusted source with teardown');
     r.remainingChecks.push('workspace_owned_terminals');
     r.work = r.hold.length ? 'unknown' : 'candidate';
-    for (const path of workspacePaths(w)) applyGaps(r, { id: w.workspaceId, path, memberIds: members.map(a => a.id) });
+    for (const path of workspacePaths(w)) applyGaps(r, { id: w.workspaceId, path, memberIds: members.map(a => a.id), directory: !local });
     r.verdict = w.archivedAt || r.hold.some(h => ['self', 'recent', 'active_lane', 'hub', 'schedule_dependency'].includes(h)) ? 'exclude' : r.hold.length || active.some(a => records.get(a.id).verdict === 'review') ? 'review' : 'batch_candidate';
     if (w.archivedAt) r.reasons.push('historical workspace');
     if (!r.hold.length) r.hold.push('none');
