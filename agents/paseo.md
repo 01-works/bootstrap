@@ -152,12 +152,13 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | 화면을 보며 확인하는 UI/UX | `ui` | 사용자가 직접 화면을 보는 메인 기기. 저장소 값(예: `01-software`)과 함께 붙인다. |
 | 검증 | `verifier` | `role add verifier`를 켠 기기([verifier](../README.md#verifier)). 전용 역할이면 heavy는 검증 루프만 하고, 공유 역할이면 함께 붙은 값의 작업도 받는다([공용 heavy 대기열](heavy-queue.md)). |
 
-- 기기 이름과 배치는 이 저장소에 쓰지 않는다. 대신 감독 기기에 등록한 Paseo host의 metadata `work`에 적는다. 값이 여러 개면 쉼표로 잇는다. 예를 들어 01-software 전용 작업 기기가 없는 동안에는 외주 기기에 `외주,01-software`를 붙여, 두 작업이 그 기기의 `yw-heavy` 대기열을 나눠 쓴다([공용 heavy 대기열](heavy-queue.md)).
+- 기기 이름과 배치는 이 저장소에 쓰지 않는다. 배치표는 Infisical `bootstrap` 프로젝트 `prod` `/paseo-hosts`의 `HOST_WORK`(줄마다 `serverId work값`, `#` 주석)에 두고, 자동 갱신이 각 감독 기기 데몬에 등록된 host 중 표에 있는 것의 Paseo metadata `work`를 맞춘다. 값이 여러 개면 쉼표로 잇는다(예: `외주,01-software`는 두 작업이 그 기기의 [`yw-heavy` 대기열](heavy-queue.md)을 나눠 쓴다).
 - UI/UX 변경을 포함하거나 실제 화면 확인이 완료 조건인 작업은 같은 저장소의 `ui` 기기로 보낸다. 나머지는 같은 저장소의 `ui` 없는 기기를 우선한다.
 - 화면을 묶어 리뷰할 때([UX 선진행](skills/yw-supervisor/SKILL.md#에스컬레이션-계약))는 01-software의 `apps/ui-review`를 쓰고 실행·등록·결정 질문은 그 README를 따른다. 도구 서버가 없는 기기의 변경은 `ui` 기기의 작업으로 캡처·등록하고, 다른 저장소의 화면은 사용자가 허용한 범위에서 등록한다.
 - 감독 자신의 기기(`list_hosts`의 `self`)에는 metadata가 없다. 사용자가 정한 그 기기의 `work` 값을 lane 기록에 남기고 후보에 넣으며, `serverId`를 생략해 띄운다.
 - 감독은 `list_hosts`의 등록 host 중 `metadata.work`에 해당 값이 있는 기기의 `serverId`로 작업자를 띄운다. 사용자가 지정한 기기가 우선하지만, heavy는 그 기기도 역할·저장소 runbook상 허용돼야 한다. 허용된 후보가 없으면 yw-supervisor의 실행 기기 보류 절차를 따른다.
-- 값은 `paseo host update <등록 ID> --meta work=<값>`으로 바꾸고 `paseo host inspect <등록 ID>`로 확인한다. host 등록은 감독 기기의 데몬마다 따로 저장된다. 배치를 바꾸면 그 host를 등록한 모든 감독 기기에서 함께 고친다.
+- 배치는 `HOST_WORK`를 고쳐 바꾼다. Infisical 로그인과 읽기 권한이 없는 기기는 건너뛴다. work 밖 metadata가 있는 host도 건너뛴다(Paseo가 metadata 전체를 바꿔 그 키를 되돌릴 수 있다. 조회와 쓰기 사이 경합은 수동 `host update`와 같다). 결과: `~/.local/state/bootstrap/update/host-work`.
+- 표에서 행을 지워도 work는 남는다. 원래 값이 있었으면 표에 되돌리고, 없었으면 그 host를 등록한 각 데몬에서 `paseo host update <등록 ID> --remove-meta work` 후 `paseo host inspect`로 확인한다. work 밖 metadata 때문에 자동 갱신이 건너뛴 host도 각 데몬에서 수동으로 맞춘다.
 
 ## 총괄 운영 스킬
 

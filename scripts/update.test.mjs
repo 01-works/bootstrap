@@ -67,6 +67,12 @@ esac
     'scripts/doctor.sh': 'exit 0\n',
     'scripts/paseo-plugins.mjs': "import { appendFileSync } from 'node:fs';\n" +
       "appendFileSync(process.env.MOCK + '/plugins', process.argv.slice(2).join(' ') + '\\n');\n",
+    // host work 맞춤 대역: 인자를 남기고, $MOCK/host-work-out이 있으면 그 내용을 출력한다.
+    // $MOCK/host-work-hang이 있으면 TERM을 무시하고 멈춘다.
+    'scripts/paseo-host-work.mjs': "import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';\n" +
+      "appendFileSync(process.env.MOCK + '/host-work', `run ${process.argv.slice(2).join(' ')}\\n`);\n" +
+      "if (existsSync(process.env.MOCK + '/host-work-out')) process.stdout.write(readFileSync(process.env.MOCK + '/host-work-out'));\n" +
+      "if (existsSync(process.env.MOCK + '/host-work-hang')) { writeFileSync(process.env.MOCK + '/host-work-pid', String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); }\n",
     'scripts/paseo-profiles.mjs': "import { appendFileSync } from 'node:fs';\n" +
       "appendFileSync(process.env.MOCK + '/calls', `paseo-profiles ${process.argv.slice(2).join(' ')}\\n`);\n",
     'README.md': 'readme\n', 'Brewfile': 'brew "git"\n', 'home/zsh/.zshrc': '# zsh\n', 'agents/paseo-profiles.json': '[]\n',
@@ -634,6 +640,50 @@ test('전체 설치의 실패·대기는 상태로 남겨 터미널의 update가
   assert.equal(result.status, 0, output(result));
   assert.deepEqual(f.calls(), ['homebrew 0', 'power 0', 'dotfiles 0', 'paseo 0', 'autoupdate 0']);
   assert.equal(f.status().result, 'ok');
+});
+
+test('host work 맞춤은 바뀐 파일과 관계없이 매번 실행하고, 출력이 있을 때만 기록하며 결과에 넣지 않는다', t => {
+  const f = fixture(t);
+  const runs = join(f.mock, 'host-work');
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  rmSync(runs);
+  let result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.equal(readFileSync(runs, 'utf8'), 'run --auto\n', '실행할 단계가 없어도 확인한다');
+  assert.equal(result.stdout, '', '출력이 없으면 기록하지 않는다');
+  writeFileSync(join(f.mock, 'host-work-out'), 'host work 맞춤 실패: 데몬 응답 없음\n');
+  result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.match(result.stdout, /^\n\[[0-9-]+ [0-9:]+\]\n {4}host work 맞춤 실패: 데몬 응답 없음\n$/);
+  assert.equal(f.status().result, 'ok', '단계 결과에 넣지 않는다');
+  assert.deepEqual(f.notifications().length, 1, '알림은 처음 적용 한 번뿐');
+  assert.equal(f.update().status, 0);
+  assert.match(readFileSync(runs, 'utf8'), /run \n$/, '터미널에서는 --auto 없이');
+});
+
+test('멈춘 host work 맞춤은 TERM을 무시해도 시간 제한 뒤 끝내고 단계 적용을 계속한다', t => {
+  const f = fixture(t);
+  assert.equal(f.update('--auto').status, 0);
+  f.calls();
+  writeFileSync(join(f.mock, 'host-work-hang'), '');
+  f.push({ 'scripts/steps/40-dotfiles.sh': mockStep('dotfiles') + '# 변경\n' });
+  const result = f.update('--auto');
+  assert.equal(result.status, 0, output(result));
+  assert.match(result.stdout, /host work 맞춤 시간 초과\(25초\): 끝내고 넘어갑니다/);
+  assert.deepEqual(f.calls(), ['dotfiles 1'], '시간 초과 뒤에도 바뀐 단계를 적용한다');
+  const pid = Number(readFileSync(join(f.mock, 'host-work-pid'), 'utf8'));
+  assert.throws(() => process.kill(pid, 0), '멈춘 프로세스를 남기지 않는다');
+  assert.equal(f.status().result, 'ok');
+  assert.deepEqual(readdirSync(f.state).filter(name => name.startsWith('host-work-out')), [], '임시 파일 정리');
+});
+
+test('dry-run은 host work 맞춤을 실행하지 않는다', t => {
+  const f = fixture(t);
+  const result = f.update('--dry-run');
+  assert.equal(result.status, 0, output(result));
+  assert.match(result.stdout, /\[dry-run\] 개인 배치표로 Paseo host work 맞춤 확인/);
+  assert.equal(existsSync(join(f.mock, 'host-work')), false);
 });
 
 test('에이전트 CLI는 자동 갱신에서 하루에 한 번, 터미널에서는 매번 올리고 바뀐 버전만 기록한다', t => {
