@@ -109,6 +109,7 @@ test('chief 순찰·재개: 공통 결정 계약·새 권한 금지·만료 안�
 test('감독 계약: 닫힌 사용자 결정 목록의 안전 대상을 보존한다', () => {
   const supervisor = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
   const contract = supervisor.split('\n## 에스컬레이션 계약\n')[1]?.split('\n## ')[0] ?? '';
+  assert.match(contract, /\*\*사용자 결정은 아래 닫힌 목록만 남긴다\.\*\* 기존 승인·위임의 대상·조건 안이면 재사용한다\./);
   const decisions = [...contract.matchAll(/^(\d+)\. (.+)$/gm)];
   assert.deepEqual(decisions.map(([, id]) => id), ['1', '2', '3', '4', '5', '6', '7']);
   const requiredByDecision = [
@@ -132,6 +133,16 @@ test('감독 계약: 닫힌 사용자 결정 목록의 안전 대상을 보존�
       assert.ok(decisions[index][2].includes(target), `계약 ${index + 1}번 안전 대상 누락: ${target}`);
     }
   }
+});
+
+test('결정 위임·UX 선진행: 사용자에게 남는 결정과 운영 경계를 보존한다', () => {
+  const skill = readFileSync(new URL('../agents/skills/yw-supervisor/SKILL.md', import.meta.url), 'utf8');
+  const delegation = skill.match(/^\*\*결정 위임:\*\* .+/m)?.[0] ?? '';
+  const ux = skill.match(/^\*\*UX 선진행:\*\* .+/m)?.[0] ?? '';
+  assert.match(delegation, /원문·대상 lane을 `tasks\.md`에 남긴다/);
+  assert.match(delegation, /남긴 채 닫기·완료 처리·병합하려면 사용자가 수용해야 한다/);
+  assert.match(delegation, /새 목표·목표 밖 확장, 사용자만 아는 사실·법적 판단은 사용자가 정하고, 2~7번은 각 항목의 승인 조건을 따르며, 위임으로 권한·보호·검사를 완화할 수 없다/);
+  assert.match(ux, /운영에 배포되지 않는 브랜치일 때만 먼저 병합[^\n]*판정은 사용자만 하며 main·운영 반영 승인이 아니다/);
 });
 
 for (const name of ['yw-supervisor', 'yw-chief-supervisor', 'yw-paseo-cleanup']) {
@@ -194,5 +205,5 @@ test('감독 위임: 소유·지정 저장소의 기본 브랜치에 병합된 �
   const turnEnd = skill.split('\n## 턴 종료 계약\n')[1]?.split('\n## ')[0] ?? '';
   assert.match(skill, /대화 제목을 `감독: <목표>`로 바꾼다\(`update_agent`의 `name`\)/);
   assert.match(turnEnd, /응답 첫 줄에 지금 상태\(무엇을 하는 중인지·무엇을 기다리는지·사용자 결정이 필요한지·완료인지\)를 쓴다/);
-  assert.match(turnEnd, /완료를 말할 때는 요청별 증거·사용자 연기 결정·공유 기록을 댄다/);
+  assert.match(turnEnd, /완료를 말할 때는 요청별 증거·연기의 결정 근거·공유 기록을 댄다/);
 });

@@ -62,6 +62,7 @@ steps_for_paths() {
       scripts/agent-skills.mjs | scripts/paseo-profiles.mjs | scripts/paseo-plugins.mjs | scripts/paseo-skills.mjs | scripts/paseo-skills-client.mjs | scripts/paseo-plugins-settings-client.mjs) out="$out paseo" ;;
       scripts/paseo-api-key.py | scripts/paseo-infisical-provider.sh) out="$out paseo" ;;
       scripts/browser-use-setup.mjs) out="$out browser" ;;
+      scripts/agent-memory.mjs) out="$out agents" ;;
       scripts/brew-outside-casks.sh) out="$out homebrew" ;;
       scripts/yw-heavy.sh) out="$out heavy" ;;
       scripts/role.sh | scripts/verifier-logs.sh | scripts/verifier-clock.mjs) out="$out roles" ;;

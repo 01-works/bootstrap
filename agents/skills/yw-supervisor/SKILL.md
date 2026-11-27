@@ -28,7 +28,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 ```markdown
 - 요청 원문: <사용자 요청>
-  - 상태: 열림 / 완료(<근거>) / 연기(<사용자 결정>)
+  - 상태: 열림 / 완료(<근거>) / 연기(<결정 근거>)
   - 대기: <사유·재개 조건 또는 없음>
 ```
 
@@ -49,7 +49,11 @@ description: Manage multiple tasks through Paseo agents without implementing the
 6. 예산: 승인된 동시성·모델 등급·운영 상한 상향, 모든 계정 소진 시 대체.
 7. 감독이 소유하지 않은 독립 대화의 재개·감사 편입.
 
-목록 밖의 되돌릴 수 있고 범위 안인 결정은 실행하고 `결정함: <무엇> · 이유: <근거> · 되돌리는 법: <구체 명령>`을 보고와 `tasks.md`/`log.md`에 남긴다. 정책 판단은 [chief 판단 범위 표](../yw-chief-supervisor/SKILL.md#판단-범위)의 교차 모델 합의 행을 따른다.
+**결정 위임:** 사용자가 총괄이나 감독에게 결정을 맡기면 원문·대상 lane을 `tasks.md`에 남긴다. 맡은 세션(인계 후임 포함)은 대상 안에서 1번의 범위 축소·연기·우선순위, 소유 이슈 종료, 저장소가 그 사용자에게 맡긴 판단을 [판단 범위 표](../yw-chief-supervisor/SKILL.md#판단-범위)의 절차로 합의해 묻지 않고 정하고, 아래 `결정함` 형식에 재개 조건을 더해 공유 기록에 남기고 묶어 보고한다. 대상 lane의 감독은 기기와 관계없이 이 결정을 맡은 세션에 올리고 돌아온 결정을 근거로 진행한다. 중요 미해결은 열어 둔 채 보류·재설계할 수 있지만, 남긴 채 닫기·완료 처리·병합하려면 사용자가 수용해야 한다. 새 목표·목표 밖 확장, 사용자만 아는 사실·법적 판단은 사용자가 정하고, 2~7번은 각 항목의 승인 조건을 따르며, 위임으로 권한·보호·검사를 완화할 수 없다.
+
+**UX 선진행:** 사용자가 화면 변경을 먼저 진행하라고 맡기면 판정을 기다리지 않고 추천안으로 구현해 PR·미리보기까지 진행하고, 병합이 위임돼 있고 main이 아니며 운영에 배포되지 않는 브랜치일 때만 먼저 병합한다. 구현자는 변경 전(PR 기준점)과 리뷰를 마친 버전의 같은 화면 상태를 사용자가 정한 리뷰 도구에 등록하고([작업 배치](https://github.com/01-works/bootstrap/blob/main/agents/paseo.md#작업-배치)), 의도한 차이가 보이는지 확인해 완료 근거로 보고한다. 총괄(없으면 감독)이 미판정 화면과 남은 디자인 질문을 묶어 올리고, 지적은 소유 감독이 고쳐 다시 등록한다. 판정은 사용자만 하며 main·운영 반영 승인이 아니다.
+
+목록 밖의 되돌릴 수 있고 범위 안인 결정은 실행하고 `결정함: <무엇> · 이유: <근거> · 되돌리는 법: <구체 명령>`을 보고와 `tasks.md`/`log.md`에 남긴다. 정책 판단과 새로 확정할 중요한 선택은 [chief 판단 범위 표](../yw-chief-supervisor/SKILL.md#판단-범위)의 해당 행을, 코드 변경 리뷰는 아래 "진행과 검증"을 따른다.
 
 결정 요청은 묶어서 `선택지 | 권장안 | 근거 | 영향 작업 | 기다리는 동안 계속할 일`로 제시한다. 영향 없는 작업은 계속하며 “추천대로”는 제시한 항목에만 적용한다.
 
@@ -57,7 +61,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 
 응답 첫 줄에 지금 상태(무엇을 하는 중인지·무엇을 기다리는지·사용자 결정이 필요한지·완료인지)를 쓴다. 미결 사용자 결정을 우선하고 자신의 다음 조치는 종료 전에 실행한다. 자동 재요청이나 `/goal` 반복으로 강제하지 않는다.
 
-완료를 말할 때는 요청별 증거·사용자 연기 결정·공유 기록을 댄다.
+완료를 말할 때는 요청별 증거·연기의 결정 근거·공유 기록을 댄다.
 
 현재 배정분 종료는 누적 사용자 목표 완료가 아니다. 일부만 끝내고 후속 이슈·다른 lane으로 넘기는 것도 계약 1번의 연기다. 요청별 완료 근거·필수 검증과 대기를 대조하고, 열린 요청·확인 불가·사용자가 수용하지 않은 중요 미해결이 있으면 진행으로 남긴다. 그 밖의 미검증·경미 위험은 묻지 않고 완료 보고에 명시한다. `상태: 완료`는 누적 목표 완료에만 쓴다.
 
@@ -69,10 +73,10 @@ description: Manage multiple tasks through Paseo agents without implementing the
 - **소유 확인:** 할당 전 공유 기록(열린·최근 머지 PR, 이슈 claim)과 등록 호스트의 workspace에서 같은 파일·기능을 변경·은퇴·대체하는 lane을 확인한다. 호스트별 `serverId`로 `list_workspaces`, 대상 `cwd`로 `list_agents`를 조회하고 전체 확인에는 `includeBackground: true`를 쓴다. claim은 저장소 규칙을 따른다.
 - **정체된 claim 인수:** 공유 기록의 다음 단계 대비 정체 근거를 남겨 계약 3번을 적용한다. 원 lane이 돌아오면 소유 lane을 하나로 정하는 조정 기록을 남긴다.
 - 독립 구현은 별도 worktree에서 병렬로, 의존 작업은 통합 뒤 순차로 배정한다. 같은 checkout에 수정 작업자 둘을 두지 않고, 대기 작업은 미리 만들지 않는다. 병렬도는 독립 작업 수와 승인된 예산에 맞춘다.
-- **새 workspace:** `create_workspace`에는 `list_workspaces`나 `paseo project ls`로 확인한 소유 `projectId`를 넘겨 프로젝트 중복 생성을 막는다. 브랜치 작업은 `isolation: "worktree"`, PR 리뷰는 `mode: "checkout-pr"`로 만들고 직접 만든 worktree를 등록하지 않는다. 작업자·리뷰어는 항상 코드 worktree의 `workspaceId`를 명시하고, 읽기 전용 리뷰어끼리는 공유할 수 있다. 끝난 workspace는 아래 [archive 전 공통 안전 대조](#archive-전-공통-안전-대조)를 통과한 뒤 `archive_workspace`로 정리한다.
+- **새 workspace:** `create_workspace`에는 `list_workspaces`나 `paseo project ls`로 확인한 소유 `projectId`를 넘겨 프로젝트 중복 생성을 막는다. `isolation: "local"`로 만드는 저장소 밖 스냅샷·임시·상태 폴더도 관련 저장소의 `projectId`로 묶고, `workspaceId` 없이 `cwd`만으로 에이전트를 띄우지 않는다. 둘 다 그 경로를 새 프로젝트로 등록한다. 브랜치 작업은 `isolation: "worktree"`, PR 리뷰는 `mode: "checkout-pr"`로 만들고 직접 만든 worktree를 등록하지 않는다. 작업자·리뷰어는 항상 코드 worktree의 `workspaceId`를 명시하고, 읽기 전용 리뷰어끼리는 공유할 수 있다. 끝난 workspace는 아래 [archive 전 공통 안전 대조](#archive-전-공통-안전-대조)를 통과한 뒤 `archive_workspace`로 정리한다.
 - 다른 에이전트·세션의 항목 정리: 소유 세션이 끝난 것이 확인된 대기 줄·잠금은 정리한 뒤 소유 감독 세션에 알린다. 프로세스·worktree와 살아 있거나 판단할 수 없는 항목은 소유 세션 동의를 먼저 확인하고, 없으면 계약 2·3번에 따라 보류한다(worktree에는 미커밋 작업이 남을 수 있다). 넓은 패턴의 프로세스 종료는 금지한다.
-- **heavy:** 전체 검사·설치·빌드·dev 서버·앱 설정 전체 로딩은 기기별 `yw-heavy` 차례로 직렬 실행한다. 자체 잠금 명령(예: pre-push의 push)은 대기열 대상에서 명시적으로 제외한다. 메모리 확인 없이 병렬을 늘리거나 새 잠금·대기열을 만들지 않으며 검증 뒤 dev 서버를 종료한다. 검증 대상 SHA를 고정하고, 전제가 깨진 후속 검사는 중단하되 독립 검사는 정한 시간 한도 안에서 실패를 모은다.
-- `yw-heavy capabilities`의 **mode**와 `agents/heavy-queue.md`를 따른다. compat는 감독당 2줄/FIFO·자체 잠금 제외, round-robin은 pending 한도(감독 128·전체 1024)·코드 5 backoff·JSON 세대/token/lease 해제를 쓴다. token/빌린 lease는 직렬 중첩만, 자체 잠금의 위임 지원 확인 뒤 허용한다. 프로토콜 지원만으로 자체 잠금 제외를 없애지 않는다. 자동 갱신은 설치뿐이며 전환은 모든 소유 세션과 제출 중지·drain을 조율해 pause → mode → resume한다. 작업자에게 활성화를 맡기지 않는다. 제출 지시 직전 적용 중인 감독별 대기 한도를 확인한다.
+- **heavy:** 전체 검사·설치·빌드·dev 서버·앱 설정 전체 로딩은 기기별 `yw-heavy` 차례로 직렬 실행한다. 자체 잠금 명령(예: pre-push의 push)은 대기열 대상에서 명시적으로 제외한다. 메모리 확인 없이 병렬을 늘리거나 새 잠금·대기열을 만들지 않으며 검증 뒤 dev 서버를 종료한다. 검증 대상 SHA를 고정하고, 전제가 깨진 후속 검사는 중단하되 독립 검사는 정한 시간 한도 안에서 실패를 모은다. 짧은 연속 검증 단계는 한 차례로 묶되 설치부터 push까지 묶지 않는다. 전체 검사는 rebase와 리뷰를 마친 뒤 제출한다. 전체 검사를 통과한 SHA와 range-diff상 패치가 같은 rebase는 새 base의 영향 검사와 PR CI로 대신한다. 결제·계약 코드가 겹치는 PR과 영향이 불명확한 경우는 제외하고, 대상 저장소 규칙이 더 엄격하면 그것을 따른다.
+- `yw-heavy capabilities`의 **mode**와 `agents/heavy-queue.md`를 따른다. 모드별 한도·해제는 그 문서대로 하고 pending 한도 초과로 등록이 거절되면 backoff 뒤 재시도한다. token/빌린 lease는 직렬 중첩만, 자체 잠금의 위임 지원 확인 뒤 허용한다. 프로토콜 지원만으로 자체 잠금 제외를 없애지 않는다. 자동 갱신은 설치뿐이며 전환은 그 문서의 절차로 모든 소유 세션과 조율하고 작업자에게 맡기지 않는다. 제출 지시 직전 적용 중인 감독별 대기 한도를 확인한다.
 - 작업자 `<supervisor>`는 감독의 **전체 Paseo agent ID**로 같은 세션·동일 ID 재시도에 유지한다. 새 작업부터 적용하고 기존 실행·대기·재시도는 등록 값을 유지해 종료한다. 큐 파일은 직접 고치지 않으며 이행 중 이전/새 값을 합쳐 compat 2줄 한도를 지킨다. (제거 조건: 모든 기기의 이전 값 작업·재시도 종료)
 - 브라우저 작업은 `agents/browser.md`(공유 연결, 작업자별 own target, 조작 차례), 기기 GUI 작업은 `agents/computer-use.md`를 따른다. Paseo 작업자에게 GUI 작업을 기본으로 배정하지 않는다.
 - 작업자는 Paseo 에이전트로 만든다. 내장 서브에이전트는 판단 직전의 짧은 읽기 전용 조사에만 더 가벼운 모델로 쓴다.
@@ -88,7 +92,7 @@ description: Manage multiple tasks through Paseo agents without implementing the
 검증 동작·방법과 기기에서 허용된 실행 범위:
 브라우저·GUI면 대상·Chrome/Computer Use 도구·own target·조작 차례:
 반환: 변경 요약·diff/commit·검증 결과·지시/스킬 불일치·미해결·필요 결정.
-백그라운드 작업을 남기면 밝히고 결과는 감독자 {serverId: <감독자 serverId>, agentId: <감독자 agent ID>}에게 직접 보고한다. send_agent_prompt에 두 ID를 쓴다. 도구 없는 Codex는 같은 호스트에서만 `paseo send <감독자 agent ID>`를 쓰고, 전송 불가면 응답에 결과를 남긴다.
+결과는 최종 응답에 남긴다(완료 알림으로 전달된다). 응답을 마친 뒤에도 백그라운드 작업이 남으면 응답에 대기 대상과 최종 결과 확인 위치를 적는다. 그 백그라운드 작업이 끝나면, 자기 `list_hosts`에 감독자 {serverId: <감독자 serverId>, agentId: <감독자 agent ID>}의 serverId가 있을 때만 그 결과를 send_agent_prompt로 직접 보고하고, 없거나 Unknown host이면 작업자 세션 응답에 남긴다. 도구 없는 Codex는 같은 호스트에서만 `paseo send <감독자 agent ID>`를 쓴다.
 작업자로서 다른 작업의 총괄·재위임은 하지 않는다.
 ```
 

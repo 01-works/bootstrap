@@ -13,7 +13,7 @@
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/01-works/bootstrap/main/install.sh)"
    ```
 
-3. **로그인**: 설치가 끝나며 열어 준 앱과 Chrome Beta(에이전트 전용)에 로그인, 터미널에서 `claude`·`codex` 첫 실행. Antigravity 프로필(Gemini Cross-check·Scan Reviewer·Opus (agy))을 쓸 기기는 `agy` 첫 실행, Bug Hunter를 쓸 기기는 [OpenRouter 가져오기](agents/paseo.md#openrouter-모델-opencode) (10분)
+3. **로그인**: 설치가 끝나며 열어 준 앱과 Chrome Beta(에이전트 전용)에 로그인, 터미널에서 `claude`·`codex` 첫 실행. Antigravity 프로필(Gemini Cross-check·Scan Reviewer·Opus (agy))을 쓸 기기는 `agy` 첫 실행, Helper를 쓸 기기는 [OpenRouter 가져오기](agents/paseo.md#openrouter-모델-opencode) (10분)
 4. **화면 설정**: 새 터미널에서 `~/dev/bootstrap/bootstrap.sh doctor`. 실패·대기를 해결하고 마지막의 "직접 확인할 것"을 처리한다 (5분)
 
 한 줄 설치는 Xcode 명령줄 도구(설치 창 없이)부터 저장소 받기(`~/dev/bootstrap`), 모든 단계, 최종 doctor까지 이어서 한다. 중간에 멈추면 같은 한 줄을 다시 실행한다. 이미 받은 기기에서는 저장소를 갱신(fast-forward)한 뒤 실행한다. 할 일만 보려면 끝에 ` install --dry-run`, 다른 위치에 받으려면 앞에 `BOOTSTRAP_DIR=<경로>`를 붙인다.
@@ -89,7 +89,7 @@ preflight, xcode, Homebrew 자체 설치가 실패하면 멈춘다. Brewfile 일
 - Paseo 플러그인: 처음 설치할 때 최신본을 받는다. 이후에는 `paseo plugin update --all`에서 후보 버전을 확인하고 승인해 갱신한다. [플러그인 갱신](agents/paseo.md#플러그인-갱신)
 - 알림: 결과가 바뀔 때 한 번 macOS 알림을 띄운다. 새 터미널은 실패·대기·보류이거나 하루 넘게 저장소를 확인하지 못했을 때 한 줄 보여 주고, `doctor`도 같은 상태를 검사한다. 기록은 `~/.local/state/bootstrap/update/` (`update.log`, `status`, `applied`).
 - 휴대폰 알림(선택): `~/.config/bootstrap/notify-url`에 주소 한 줄(예: [ntfy](https://docs.ntfy.sh/publish/)의 `https://ntfy.sh/<추측하기 어려운 주제>`)을 두면 실패·대기·보류를 보낸다. 기기 이름과 단계 이름이 그 서비스로 나간다. 주제는 아는 사람 누구나 구독할 수 있으므로 비밀값처럼 다루고(권한 600) 저장소에 넣지 않는다.
-- 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다. 그래서 `main`은 PR로 바꾸고, GitHub Actions의 `test`(macOS에서 전체 테스트)가 통과한 뒤 병합한다. 에이전트도 병합할 수 있다. 브랜치 보호로 강제하지는 않으므로 `main`에 직접 push하지 않는다.
+- 주의: `main`에 push한 내용은 모든 기기에서 사용자 권한으로 자동 실행된다. 관리자 권한은 쓰지 않는다. 그래서 `main`은 PR로 바꾸고, GitHub Actions의 `test`(macOS에서 전체 테스트)가 통과한 뒤 병합한다. 에이전트도 병합할 수 있다. ruleset이 `main`의 직접 push·force push·삭제를 막는다. `test` 통과는 강제하지 않으므로(러너를 못 받아 시작하지 못하는 경우가 있다) 병합하는 쪽이 확인한다.
 - 끄기: `launchctl bootout gui/$(id -u)/local.bootstrap.update` 후 `~/Library/LaunchAgents/local.bootstrap.update.plist`를 지운다.
 
 ## 기기 역할
@@ -116,7 +116,7 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 
 작업 기기가 검증도 맡으면 `--shared`로 켠다. 상태 파일에 `shared=1`을 기록하고, 다시 적용할 때도 저장된 값을 쓴다. `--dedicated`로 전용으로 되돌린다. 공유 역할은 두 가지가 다르다.
 
-- heavy: 다른 요청도 거절하지 않고 일반 대기열에서 차례를 받는다. round-robin이면 `verifier-loop` 요청은 일반 대기열과 분리된 검증 자리 1개를 써서, 일반 작업 1개와 검증 1개가 동시에 돈다. 검증 holder의 nice는 10으로 올린다. compat이면 검증 자리 없이 함께 차례를 받는다. 모드는 재시동하면 compat로 돌아가므로 다시 켠다([공유 역할](agents/heavy-queue.md#공유-역할-role-add-verifier---shared)).
+- heavy: 다른 요청도 거절하지 않고 일반 대기열에서 차례를 받는다. round-robin이면 `verifier-loop` 요청은 일반 대기열과 분리된 검증 자리 1개를 써서, 일반 작업 1개와 검증 1개가 동시에 돈다. 검증 holder의 nice는 10으로 올린다. compat이면 검증 자리 없이 함께 차례를 받는다. 켠 모드는 재시동 뒤에도 유지된다([공유 역할](agents/heavy-queue.md#공유-역할-role-add-verifier---shared)).
 - 자동 시작: 에이전트 Chrome, Paseo 데몬, Paseo 업그레이드를 끄지 않고 이 기기 종류의 원래 등록을 유지한다. 작업 기기의 에이전트가 이 기기에서 Paseo와 브라우저 작업을 계속 쓰기 때문이다. 재적용은 실행 중인 등록을 내렸다 올리지 않는다(감독 세션 보호). 내용이 바뀌었으면 수동 작업 대기로 알리고 paseo·browser 단계에 맡긴다.
 
 메모리는 기존 `--colima-memory`로 정한다. VM은 작업과 검증이 같이 쓰므로 `max(지금 값, 6)` 이상을 준다. 선택지 없이 처음 켜면 기본 6 GiB로 줄일 수 있다. 검증 피크는 VM 약 6 GiB, 호스트 node 최대 약 6 GiB다. 01-software 검증은 VM CPU 4개를 요구하는데 role은 `cpu:`를 바꾸지 않으므로 직접 확인한다.
@@ -148,6 +148,10 @@ bootstrap으로 세팅한 모든 기기는 기본적으로 **작업 기기**다.
 override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다. 이미 있던 동일 파일은 소유하지 않는다. remove는 role이 만든 override가 여전히 바이트 단위로 같을 때만 지우며, 다른 내용으로 바뀌었으면 경고와 함께 파일을 보존하고 역할 제거는 완료한다. 인스턴스가 없어도 제거할 수 있다. **guest drop-in은 지우지 않고 남긴다.** 그 파일은 VM 재생성 시 사라지며, 제거 후에는 다음 VM에 다시 설치되지 않는다. 기존 수동 파일과 role 설치 파일을 구분하는 guest 기록은 두지 않는다.
 
 끄면 role이 등록한 colima 서비스만 `brew services stop colima`로 해제한다(서비스로 실행 중인 VM도 멈출 수 있음). 기존 서비스나 소유 기록이 없는 구버전 역할의 서비스는 보존한다. 해제 실패 시 소유 기록을 남겨 다시 실행할 수 있다. colima 값이 아직 verifier 값일 때만 원래대로 돌리고, 넣은 줄과 `verifier-logs`를 지우고, 자동 시작을 기기 종류에 맞게 다시 등록한다. 로그는 지우지 않는다(빈 디렉터리만 정리).
+
+로그 읽기 키는 하나만 저장한다. 다른 키로 add하면 거절한다. 로그를 읽을 작업 기기를 바꾸려면 먼저 아래 [run 사이 점검·정리 절차](#run-사이-점검정리-절차)의 1·2단계로 실행이 없는지 확인하고 loop를 내린다. remove가 role이 등록한 colima 서비스를 멈춰 진행 중인 회차를 끊을 수 있기 때문이다. 그다음 `role remove verifier`(위 끄기)와 새 키로 `role add verifier --ssh-key <새 공개키 파일>`을 실행하고, `role status verifier`가 0이 된 뒤 7단계로 loop를 올린다. remove가 상태 파일을 지우므로 기본값이 아닌 `--colima-memory`·`--shared`도 함께 준다.
+
+verifier를 다른 기기로 옮기는 순서와 작업 기기 쪽 후속 조치는 [01-software runbook의 이전 절](https://github.com/01-office/01-software/blob/dev/docs/runbooks/verifier-machine.md#move-the-verifier-to-another-machine)을 따른다.
 
 `role status`는 **clock override·실행 중인 기본 guest의 drop-in·unit CapabilityBoundingSet**, **colima 자동 시작 설정**, **지금 Docker 응답**, **heavy 공유·전용**을 따로 보고한다. 공유 역할은 세 자동 시작이 등록돼 있는지와 heavy 모드가 round-robin인지(아니면 2), 전용 역할은 자동 시작이 꺼졌는지 확인한다. Docker는 현재 context·`DOCKER_HOST` 대신 기본 colima 소켓(`~/.colima/default/docker.sock`, `COLIMA_HOME` 반영)에 `docker info`로 확인한다. 종료 코드는 다음과 같다(실패 1이 대기 2보다 우선):
 
@@ -187,7 +191,7 @@ override 생성 직전에 상태 파일에 `clock_override=role`을 기록한다
 ## 설정 파일
 
 - `home/<묶음>/`은 `~`과 같은 구조다. 파일 단위로 심볼릭 링크하므로 `~/.zshrc`를 고치면 바로 저장소에 반영된다 (`git diff`로 보임).
-- `.seed`로 끝나는 파일은 대상이 없을 때만 복사하고 기존 일반 파일은 그대로 둔다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용. Claude Code는 예외 경로 `home/claude/.claude/settings.json`을 같은 방식으로 처리한다. 저장소의 `settings.json`은 새 기기 초기값이며 링크하지 않는다. 전환 이후 변경은 기기 로컬에만 남으며 기기 사이 자동 설정 동기화는 끝난다.
+- `.seed`로 끝나는 파일은 대상이 없을 때만 복사하고 기존 일반 파일은 그대로 둔다. 도구가 스스로 고쳐 쓰는 파일(Codex `config.toml`)용. Claude Code는 예외 경로 `home/claude/.claude/settings.json`을 같은 방식으로 처리한다. 저장소의 `settings.json`은 새 기기 초기값이며 링크하지 않는다. 전환 이후 변경은 기기 로컬에만 남으며 기기 사이 자동 설정 동기화는 끝난다. 기존 파일에 적용하는 값은 [메모리 끄기](agents/README.md#메모리)뿐이다.
 - 기존 Claude Code `settings.json` 링크는 자동 갱신·일반 설치·기본 `--only dotfiles`에서 교체하지 않고 수동 작업 대기(pending)로 남긴다. 다른 단계와 갱신은 계속한다. 기존 기기는 Claude Code를 모두 종료하고 새로 실행하지 않는 동안 `./bootstrap.sh --only dotfiles --migrate-claude-settings`를 한 번 실행해야 한다. 명령은 `claude` 프로세스가 있거나 프로세스 조회에 실패하면 거부한다. 같은 디렉터리의 임시 파일에 현재 내용을 복사하고 아래 백업 경로에 보존한 뒤 링크와 내용을 재확인해 교체하며, 전환 후 내용도 검증한다. 전환 후 `./bootstrap.sh update`로 남은 pending을 정리한다. 전환 전에는 링크를 통한 설정 저장 때문에 갱신 보류가 다시 생길 수 있고, 같은 저장소 파일의 원격 값 변경도 기존 링크에 반영된다. 백업을 로컬 파일에 복사하면 내용을 복구할 수 있다 ([상세·실행 조건·롤백](agents/claude-code.md#설정)).
 - 같은 내용을 두 도구가 쓰는 파일은 저장소 안에서 링크한다. Codex `AGENTS.md`는 Claude Code `CLAUDE.md`를 가리킨다.
 - Paseo 프로필은 `paseo` 단계에서 별도로 병합한다. 설정이 없으면 같은 단계가 앱 없이 첫 설정부터 한다([새 기기에서](agents/paseo.md#새-기기에서)). 기존 프로필 갱신은 [Paseo 문서](agents/paseo.md#설치와-갱신) 참고.

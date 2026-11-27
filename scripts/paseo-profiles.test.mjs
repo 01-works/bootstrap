@@ -9,9 +9,10 @@ import { mergeProfiles } from './paseo-profiles.mjs';
 const manifest = JSON.parse(readFileSync(new URL('../agents/paseo-profiles.json', import.meta.url), 'utf8'));
 const script = new URL('./paseo-profiles.mjs', import.meta.url).pathname;
 
-test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는 정책 검토 전용', () => {
+test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는 정책·단계 검토 전용', () => {
   for (const [name, model, modeId, thinkingOptionId] of [
     ['Supervisor', 'claude-opus-5-5', 'bypassPermissions', 'high'],
+    ['Builder', 'gpt-6.2-sol', 'full-access', 'high'],
     ['Architect', 'claude-opus-5-5', 'bypassPermissions', 'xhigh'],
     ['Deep Reviewer', 'claude-opus-5-5', 'bypassPermissions', 'high'],
     ['Policy Reviewer (Fable)', 'claude-fable-5-2', 'bypassPermissions', 'high'],
@@ -21,13 +22,14 @@ test('역할마다 프로필 하나: 일상 역할은 Opus·Sol, Fable·Astra는
     assert.deepEqual([profile.model, profile.modeId, profile.thinkingOptionId],
       [model, modeId, thinkingOptionId], name);
   }
-  // 비용 때문에 Fable·Astra는 정책 검토 프로필에만 둔다. 모델 대체 프로필은 두지 않는다.
+  // 비용 때문에 Fable·Astra는 정책·단계 검토 프로필에만 둔다. 모델 대체 프로필은 두지 않는다.
   assert.deepEqual(manifest.profiles.filter(p => /fable|astra/i.test(p.model ?? '')).map(p => p.name),
     ['Policy Reviewer (Fable)', 'Policy Reviewer (Astra)']);
   for (const name of ['Policy Reviewer (Fable)', 'Policy Reviewer (Astra)']) {
     const notes = manifest.profiles.find(p => p.name === name).notes;
     assert.match(notes, /에만 쓰는 읽기 전용 검토자/, name);
     assert.match(notes, /그 밖의 리뷰에는 쓰지 않는다/, name);
+    assert.match(notes, /yw-chief-supervisor의 단계 검토/, name);
   }
   for (const profile of manifest.profiles) {
     assert.doesNotMatch(profile.notes ?? '', /한도 소진|대체 프로필/, profile.name);
@@ -43,20 +45,28 @@ test('Opus (agy)는 역할 없이 사용자가 직접 고르는 선택용 프로
 });
 
 test('보조 리뷰 프로필은 수정하지 않는 모드로 실행하고 권한 자동 승인을 켜지 않는다', () => {
-  // Scan Reviewer(Argon)와 Gemini Cross-check(Neon)는 서로 다른 Antigravity 쿼터를 쓴다.
   for (const [name, provider, model, modeId] of [
-    ['Scan Reviewer', 'antigravity', 'gemini-4-argon-high', 'full-access'],
-    ['Bug Hunter', 'opencode', 'openrouter/moonshotai/kimi-k3.1-pro', 'plan'],
-    ['Gemini Cross-check', 'antigravity', 'gemini-4-neon-high', 'full-access'],  // Antigravity의 유일한 모드
+    ['Scan Reviewer', 'antigravity', 'gemini-4-neon-high', 'full-access'],  // Antigravity의 유일한 모드
+    ['Gemini Cross-check', 'antigravity', 'gemini-4-neon-high', 'full-access'],
+    ['Helper', 'opencode', 'openrouter/deepseek/deepseek-v4.1-flash-1017', 'plan'],
   ]) {
     const profile = manifest.profiles.find(p => p.name === name);
     assert.deepEqual([profile.provider, profile.model, profile.modeId], [provider, model, modeId], name);
     assert.equal(profile.featureValues?.auto_accept, undefined, name);
     assert.match(profile.notes, /바꾸지 말라고 명시/, name);
   }
-  for (const name of ['Scan Reviewer', 'Bug Hunter']) {
-    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않는다/, name);
+  for (const name of ['Scan Reviewer', 'Helper']) {
+    assert.match(manifest.profiles.find(p => p.name === name).notes, /비밀값이 있는 저장소에는 쓰지 않/, name);
   }
+  // 없앤 프로필은 기기에서 지우도록 removed에만 남긴다.
+  for (const { id, name } of manifest.removed ?? []) {
+    assert.ok(!manifest.profiles.some(p => p.id === id || p.name === name), name);
+  }
+  // 이전에 설치된 Bug Hunter는 명시적 갱신에서 지워진다.
+  const old = [{ id: 'bootstrap-bug-hunter', name: 'Bug Hunter', provider: 'opencode', model: 'openrouter/moonshotai/kimi-k3.1-pro' }];
+  const updated = mergeProfiles(old, manifest, true);
+  assert.ok(updated.changes.includes('제거: Bug Hunter'));
+  assert.equal(updated.profiles.some(p => p.id === 'bootstrap-bug-hunter'), false);
 });
 
 test('기존 개인 설정 유지, 누락 추가, 반복 실행 시 중복 없음', () => {

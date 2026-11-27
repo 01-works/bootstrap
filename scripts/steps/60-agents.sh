@@ -47,4 +47,10 @@ if [[ "$DRY_RUN" != 1 ]] && has opencode; then
   fi
 fi
 
+# 로컬 메모리는 기기마다 달라지므로 끄고, Claude 자동 요약 창이 없으면 넣는다 (agents/README.md#메모리, agents/claude-code.md#자동-요약). 설치가 실패한 CLI는 위에서 이미 알렸다.
+if has node && cli_works claude && cli_works codex; then
+  # shellcheck disable=SC2046
+  node "$BOOTSTRAP_ROOT/scripts/agent-memory.mjs" $([[ "$DRY_RUN" != 1 ]] || printf %s --dry-run) || failed=1
+fi
+
 exit "$failed"

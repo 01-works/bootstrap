@@ -1,5 +1,6 @@
 {
   "renames": { "Cross Reviewer": "Deep Reviewer" },
+  "removed": [{ "id": "bootstrap-bug-hunter", "name": "Bug Hunter" }],
   "profiles": [
     {
       "id": "bootstrap-supervisor",
@@ -13,9 +14,9 @@
     {
       "id": "bootstrap-builder",
       "name": "Builder",
-      "provider": "claude",
-      "model": "claude-opus-5-5",
-      "modeId": "bypassPermissions",
+      "provider": "codex",
+      "model": "gpt-6.2-sol",
+      "modeId": "full-access",
       "thinkingOptionId": "high",
       "notes": "일반 구현, 코드 탐색, 버그 수정, 리팩터링, 테스트와 반복 작업의 기본 선택. 요구사항 범위 안에서 구현하고 관련 검증을 수행한다. 완료 시 변경 내용·검증 결과·남은 문제를 전달한다. 1차 리뷰는 별도의 새 Reviewer 세션에서 수행하며, 리뷰 지적은 코드·재현·테스트 근거를 확인한 뒤 반영한다."
     },
@@ -63,7 +64,7 @@
       "model": "claude-fable-5-2",
       "modeId": "bypassPermissions",
       "thinkingOptionId": "high",
-      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)에만 쓰는 읽기 전용 검토자. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
+      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)과 yw-chief-supervisor의 단계 검토에만 쓰는 읽기 전용 검토자. 워크플로 정책 변경 PR은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
     },
     {
       "id": "bootstrap-deep-reviewer-astra",
@@ -73,7 +74,7 @@
       "modeId": "auto-review",
       "thinkingOptionId": "xhigh",
       "featureValues": { "plan_mode": true },
-      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)에만 쓰는 읽기 전용 검토자. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. yw-chief-supervisor의 새 운영 정책 설계에는 둘 다 쓴다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
+      "notes": "비싼 최상위 모델이라 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경(예: 에이전트·모델 설정과 지시문, git 브랜치·머지·릴리스 규칙, CI·배포 흐름, 자동 갱신, 권한·보안 설정. 제품 기능 코드와 운영 방식이 그대로인 설명·문구·오타 수정은 제외)과 yw-chief-supervisor의 단계 검토에만 쓰는 읽기 전용 검토자. 워크플로 정책 변경 PR은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고(Claude가 작성하면 Astra, GPT가 작성하면 Fable), 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. 둘이 엇갈리면 yw-chief-supervisor의 불일치 처리를 따른다. 새 근거 없이 반복하지 않는다. yw-chief-supervisor의 새 운영 정책 설계에는 둘 다 쓴다. 지적마다 근거·발생 조건·영향을 붙이고 직접 수정하지 않는다. 그 밖의 리뷰에는 쓰지 않는다."
     },
     {
       "id": "bootstrap-opus-agy",
@@ -87,18 +88,17 @@
       "id": "bootstrap-scan-reviewer",
       "name": "Scan Reviewer",
       "provider": "antigravity",
-      "model": "gemini-4-argon-high",
+      "model": "gemini-4-neon-high",
       "modeId": "full-access",
-      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 1차 스캔(Gemini 4 Argon, Antigravity 구독에서 따로 계산되는 Argon 쿼터). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인하며, 비밀값이 있는 저장소에는 쓰지 않는다. Argon 주간 한도를 다 쓰면 갱신 전까지 실행이 실패한다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
+      "notes": "큰 코드베이스를 범위별로 나눠 여러 세션을 동시에 돌리는 1차 스캔(Gemini 4 Neon, Antigravity의 Gemini 쿼터를 Gemini Cross-check와 나눠 씀). 맡은 범위에서 결함 후보를 코드 위치·발생 조건·영향과 함께 보고하고 직접 수정하지 않는다. 결과는 후보이며, 확정은 Reviewer 또는 Deep Reviewer가 근거를 확인해 한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인하며, 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
     },
     {
-      "id": "bootstrap-bug-hunter",
-      "name": "Bug Hunter",
+      "id": "bootstrap-helper",
+      "name": "Helper",
       "provider": "opencode",
-      "model": "openrouter/moonshotai/kimi-k3.1-pro",
+      "model": "openrouter/deepseek/deepseek-v4.1-flash-1017",
       "modeId": "plan",
-      "thinkingOptionId": "high",
-      "notes": "놓치면 안 되는 변경에서 결함을 최대한 많이 찾는 탐색 리뷰(Kimi K3.1 Pro, OpenRouter). 재현율이 높은 대신 오탐도 많으므로 지적마다 코드 근거·발생 조건·영향·재현 방법을 붙이고, 확정은 Reviewer 또는 Deep Reviewer가 한다. 직접 수정하지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 비밀값이 있는 저장소에는 쓰지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
+      "notes": "틀려도 피해가 작고 맡긴 쪽이 결과를 확인하는 읽기 전용 잡무를 싸게 맡는 보조 작업자(DeepSeek V4.1 Flash, OpenRouter). 용도: CI·검증 실패 로그의 1차 원인 분석, 여러 리뷰 지적의 중복 정리, 수정 전 코드 지도(진입점·호출 관계·테이블·관련 문서). 결함 찾기·리뷰·확정에는 쓰지 않는다. 주장마다 파일:줄 근거를 붙이고 확인하지 못한 것은 미확인으로 적게 하며, 직접 수정하지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령은 확인 없이 허용하므로, 지시문에 파일·git 상태를 바꾸지 말라고 명시하고, 비밀값이 있는 저장소에는 쓰지 않으며 토큰·개인정보가 남아 있을 수 있는 로그·자료도 넘기지 않는다. 이 기기에 OpenCode의 OpenRouter 로그인이 없으면 실행이 실패한다."
     },
     {
       "id": "bootstrap-gemini-cross-check",
@@ -106,7 +106,7 @@
       "provider": "antigravity",
       "model": "gemini-4-neon-high",
       "modeId": "full-access",
-      "notes": "Claude·GPT와 다른 계열(Gemini 4 Neon)로 넓게 탐색하는 독립 검토자. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 보고 반례와 빠진 맥락을 찾는다. 심각도를 높게 잡고 이미 기록된 결정·이슈를 새 발견처럼 내는 경향이 있으므로, 지시문에 기존 결정·이슈를 함께 주고 결과는 Reviewer(Sol)로 반박 검증한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인한다. 시험 운영 중이며 Reviewer·Deep Reviewer를 대신하지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
+      "notes": "Claude·GPT와 다른 계열(Gemini 4 Neon)로 넓게 탐색하는 독립 검토자. 새 세션에서 요구사항·diff·관련 코드·검증 결과를 보고 반례와 빠진 맥락을 찾는다. 심각도를 높게 잡고 이미 기록된 결정·이슈를 새 발견처럼 내는 경향이 있으므로, 지시문에 기존 결정·이슈를 함께 주고 코드 리뷰의 결함 후보는 Reviewer(Sol)로 반박 검증한다. Antigravity는 권한 확인 없이만 실행되므로 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 git status로 확인한다. yw-chief-supervisor 단계 검토의 첫 단계로도 쓴다(중대 판단 제외). Reviewer·Deep Reviewer를 대신하지 않는다. 이 기기에 agy 로그인이 없으면 실행이 실패한다."
     }
   ]
 }

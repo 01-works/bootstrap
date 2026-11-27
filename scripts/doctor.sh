@@ -97,6 +97,11 @@ done
 
 step "사용자 스킬과 Paseo 프로필·플러그인"
 if has node; then
+  if node "$BOOTSTRAP_ROOT/scripts/agent-memory.mjs" --check; then
+    pass "에이전트 로컬 메모리 꺼짐·Claude 자동 요약 창"
+  else
+    miss "에이전트 로컬 메모리·Claude 자동 요약 창 확인 필요 (./bootstrap.sh --only agents)"
+  fi
   if node "$BOOTSTRAP_ROOT/scripts/agent-skills.mjs" --check; then
     pass "사용자 스킬"
   else

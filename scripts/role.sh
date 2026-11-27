@@ -610,7 +610,7 @@ verifier_status() {
 
   shared="$(state_get shared)"
   s_ok "$(shared_label "$shared")"
-  # 검증 자리는 round-robin에서만 쓴다. 모드는 /tmp에 있어 재시동하면 compat로 돌아간다.
+  # 검증 자리는 round-robin에서만 쓴다. 켠 모드는 ~/.config에 남아 재시동 뒤에도 유지된다.
   if [[ "$shared" == 1 ]]; then
     r="$("$HEAVY_BIN" capabilities 2>/dev/null)" || r=''
     if [[ "$r" != *'"verifier-shared-slot"'* ]]; then

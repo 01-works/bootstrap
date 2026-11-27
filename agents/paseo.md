@@ -27,7 +27,7 @@ Gemini CLI(`gemini --acp`)를 ACP provider로 붙이는 방법은 쓰지 않는�
 
 ## OpenRouter 모델 (OpenCode)
 
-Bug Hunter는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
+Helper는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
 
 **OpenRouter 가져오기**는 Infisical `/ai`의 `OPENROUTER_API_KEY`를 한 번 읽어 이 Mac의 OpenCode에 등록하고 Paseo의 OpenCode provider(기본값 꺼짐)를 켜는 작업이다.
 
@@ -113,31 +113,32 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-총괄·중요한 설계·일반 구현·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 일상 리뷰는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경에만 Policy Reviewer로 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
+총괄·중요한 설계·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 위임이 가장 많은 일반 구현과 일상 리뷰는 Claude 사용량을 쓰지 않는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경의 Policy Reviewer와 총괄 스킬의 단계 검토에만 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드 리뷰, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 정책 변경은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
 | Supervisor | Claude Opus 5.5 | high | bypassPermissions |
-| Builder | Claude Opus 5.5 | high | bypassPermissions |
+| Builder | GPT-6.2 Sol | high | full-access |
 | Frontend Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Reviewer | GPT-6.2 Sol | xhigh | auto-review + plan |
 | Architect | Claude Opus 5.5 | xhigh | bypassPermissions |
 | Deep Reviewer | Claude Opus 5.5 | high | bypassPermissions |
 | Policy Reviewer (Fable) | Claude Fable 5.2 | high | bypassPermissions |
 | Policy Reviewer (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
-| Scan Reviewer | Gemini 4 Argon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
-| Bug Hunter | Kimi K3.1 Pro (OpenRouter) | high | OpenCode plan |
+| Scan Reviewer | Gemini 4 Neon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
+| Helper | DeepSeek V4.1 Flash 1017 (OpenRouter) | 모델 기본값 | OpenCode plan |
 | Gemini Cross-check | Gemini 4 Neon High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
 | Opus (agy) | Claude Opus 5.5 High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
 
 - Supervisor는 여러 작업·프로젝트의 우선순위·의존성·할당·진행·검증·완료를 관리한다. 직접 구현하지 않고 수정·테스트·통합과 큰 탐색은 Paseo 작업자에게 맡긴다. 내장 서브에이전트는 짧은 읽기 전용 확인에만 쓴다.
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 중요한 변경에는 새 Deep Reviewer 세션을 추가한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
-- Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가 맡는다.
-- Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
+- Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가, Builder(Sol) 결과의 다른 계열 검토가 필요하면 Deep Reviewer(Opus)가 맡는다.
+- Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 구현은 `full-access`, Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
-- Scan Reviewer·Bug Hunter·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도로, 따로 계산되는 Argon 쿼터를 쓴다. 2026-11-21 같은 범위 비교에서 이전 모델(DeepSeek V4.1 Flash)과 결함 후보 수와 질이 비슷했다. Argon 주간 한도를 다 쓰면 갱신 전까지 실행이 실패한다.
-- 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고, Scan Reviewer와 Bug Hunter는 비밀값이 있는 저장소에 쓰지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
+- Scan Reviewer·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 결함 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도이고, 같은 모델의 Gemini Cross-check와 Gemini 쿼터를 나눠 쓴다. 모델별 선택 근거와 바꿀 때 다시 볼 조건은 [모델 선택 근거](model-selection.md).
+- Helper는 CI·검증 실패 로그 분석, 리뷰 지적 중복 정리, 수정 전 코드 지도처럼 맡긴 쪽이 결과를 확인하는 읽기 전용 잡무를 싸게 맡는다. 결함 찾기·리뷰·확정에는 쓰지 않는다.
+- 세 프로필 모두 읽기 전용이 강제되지 않는다. OpenCode plan은 편집 도구만 막고 셸 명령을 허용하며, Antigravity는 권한 확인 없이만 실행된다. 지시문에 파일·git 상태를 바꾸지 말라고 명시하고 끝난 뒤 `git status`로 확인한다. Scan Reviewer와 Helper는 비밀값이 있는 저장소에 쓰지 않고, Helper에는 토큰·개인정보가 남아 있을 수 있는 로그·자료도 넘기지 않는다. `auto_accept`를 켜지 않아 OpenCode의 `.env` 읽기 확인은 남는다.
 
 ## 작업 배치
 
@@ -148,10 +149,14 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | 외주(고객사 프로젝트) | `외주` | 모든 외주를 기기 한 대에 모은다. |
 | 01-software | `01-software` | 리소스를 가장 많이 쓰는 주력 SaaS. heavy(빌드·전체 테스트·push)는 이 값이 붙은 기기에서 하고, 검증 기기 제한은 01-software runbook을 따른다. |
 | 그 밖의 내부 서비스·실험 | `실험` | 실험용 기기나 사람이 쓰는 기기에서 한다. |
-| 검증 | `verifier` | `role add verifier`를 켠 기기. heavy는 검증 루프만 한다([verifier](../README.md#verifier)). |
+| 화면을 보며 확인하는 UI/UX | `ui` | 사용자가 직접 화면을 보는 메인 기기. 저장소 값(예: `01-software`)과 함께 붙인다. |
+| 검증 | `verifier` | `role add verifier`를 켠 기기([verifier](../README.md#verifier)). 전용 역할이면 heavy는 검증 루프만 하고, 공유 역할이면 함께 붙은 값의 작업도 받는다([공용 heavy 대기열](heavy-queue.md)). |
 
 - 기기 이름과 배치는 이 저장소에 쓰지 않는다. 배치표는 Infisical `bootstrap` 프로젝트 `prod` `/paseo-hosts`의 `HOST_WORK`(줄마다 `serverId work값`, `#` 주석)에 두고, 자동 갱신이 각 감독 기기 데몬에 등록된 host 중 표에 있는 것의 Paseo metadata `work`를 맞춘다. 값이 여러 개면 쉼표로 잇는다(예: `외주,01-software`는 두 작업이 그 기기의 [`yw-heavy` 대기열](heavy-queue.md)을 나눠 쓴다).
-- 감독은 `list_hosts`의 등록 host 중 `metadata.work`에 해당 값이 있는 기기의 `serverId`로 작업자를 띄운다. 사용자가 지정한 기기가 우선하지만, heavy는 그 기기도 역할·저장소 runbook상 허용돼야 한다.
+- UI/UX 변경을 포함하거나 실제 화면 확인이 완료 조건인 작업은 같은 저장소의 `ui` 기기로 보낸다. 나머지는 같은 저장소의 `ui` 없는 기기를 우선한다.
+- 화면을 묶어 리뷰할 때([UX 선진행](skills/yw-supervisor/SKILL.md#에스컬레이션-계약))는 01-software의 `apps/ui-review`를 쓰고 실행·등록·결정 질문은 그 README를 따른다. 도구 서버가 없는 기기의 변경은 `ui` 기기의 작업으로 캡처·등록하고, 다른 저장소의 화면은 사용자가 허용한 범위에서 등록한다.
+- 감독 자신의 기기(`list_hosts`의 `self`)에는 metadata가 없다. 사용자가 정한 그 기기의 `work` 값을 lane 기록에 남기고 후보에 넣으며, `serverId`를 생략해 띄운다.
+- 감독은 `list_hosts`의 등록 host 중 `metadata.work`에 해당 값이 있는 기기의 `serverId`로 작업자를 띄운다. 사용자가 지정한 기기가 우선하지만, heavy는 그 기기도 역할·저장소 runbook상 허용돼야 한다. 허용된 후보가 없으면 yw-supervisor의 실행 기기 보류 절차를 따른다.
 - 배치는 `HOST_WORK`를 고쳐 바꾼다. Infisical 로그인과 읽기 권한이 없는 기기는 건너뛴다. work 밖 metadata가 있는 host도 건너뛴다(Paseo가 metadata 전체를 바꿔 그 키를 되돌릴 수 있다. 조회와 쓰기 사이 경합은 수동 `host update`와 같다). 결과: `~/.local/state/bootstrap/update/host-work`.
 - 표에서 행을 지워도 work는 남는다. 원래 값이 있었으면 표에 되돌리고, 없었으면 그 host를 등록한 각 데몬에서 `paseo host update <등록 ID> --remove-meta work` 후 `paseo host inspect`로 확인한다. work 밖 metadata 때문에 자동 갱신이 건너뛴 host도 각 데몬에서 수동으로 맞춘다.
 
@@ -278,6 +283,6 @@ agent-list는 Better Paseo로 대체해 은퇴했다(`retired`). Better Paseo의
 
 `paseo` 단계가 설정이 없으면 앱의 첫 실행 화면 대신 공식 CLI로 첫 설정을 하고 데몬을 띄운다: `paseo onboard --relay --voice disable`. 고정값은 원격(릴레이) 연결 켬, 음성 기능 끔이다. 이어서 같은 단계에서 프로필과 Paseo 도구 설정까지 끝난다. 다른 기기(노트북·휴대폰)의 앱은 데스크톱 데몬에서 `paseo daemon pair`로 받은 연결 링크로 붙는다(릴레이). 에이전트는 같은 링크를 `paseo --host '<링크>' ls`처럼 CLI에 준다. 링크는 데몬 접속 권한 자체라 저장소·공유 문서에 넣지 않는다. 감독 기기에 작업 기기를 host로 등록하는 절차는 [README](../README.md#작업-기기를-paseo-host로-등록-처음-한-번)를 따른다 ([원격 접속](../macos/system-settings.md#원격-접속)).
 
-늘 켜두는 기기(배터리 없음)는 LaunchAgent `local.bootstrap.paseo`가 로그인할 때 `paseo daemon start`를 실행한다. 이미 실행 중이면 아무것도 하지 않는다. 이 등록 내용(예: PATH)이 바뀌면 `paseo` 단계가 등록을 내렸다 올리고, 이때 데몬과 에이전트가 함께 끝난다. 그래서 자동 갱신, Paseo 에이전트 안, 실행 중인 에이전트가 있을 때는 올리지 않고 대기로 남긴다. 에이전트가 끝난 뒤(또는 `paseo daemon stop`으로 직접 끈 뒤) 터미널에서 `./bootstrap.sh update`를 실행한다. 노트북은 앱을 열 때 데몬이 함께 뜬다. 데스크톱에서 끄려면 `launchctl bootout gui/$(id -u)/local.bootstrap.paseo` 후 `~/Library/LaunchAgents/local.bootstrap.paseo.plist`를 지운다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
+늘 켜두는 기기(배터리 없음)는 LaunchAgent `local.bootstrap.paseo`가 로그인할 때 `paseo daemon start`를 실행한다. 이미 실행 중이면 아무것도 하지 않는다. 이 등록 내용(예: PATH)이 바뀌면 `paseo` 단계가 등록을 내렸다 올리고, 이때 데몬과 에이전트가 함께 끝난다. 그래서 자동 갱신, Paseo 에이전트 안, 실행 중인 에이전트가 있을 때는 올리지 않고 대기로 남긴다. 에이전트가 끝난 뒤(또는 `paseo daemon stop`으로 직접 끈 뒤) 터미널에서 `./bootstrap.sh update`를 실행한다. 노트북은 앱을 열 때 데몬이 함께 뜬다. 이 데몬은 기본값으로 앱을 종료하면 에이전트와 함께 끝나므로, 노트북은 앱 Settings에서 Keep daemon running after quit를 켠다. 앱 업데이트로 재시작할 때는 이 설정과 관계없이 데몬이 교체되므로 실행 중인 에이전트가 없을 때 한다 ([Paseo 배포 모델](https://github.com/getpaseo/paseo/blob/main/docs/architecture.md#deployment-models)). 데스크톱에서 끄려면 `launchctl bootout gui/$(id -u)/local.bootstrap.paseo` 후 `~/Library/LaunchAgents/local.bootstrap.paseo.plist`를 지운다. 설치한 스킬이 현재 세션에 보이지 않으면 새 에이전트를 연다.
 
 작업자의 브라우저 작업은 [브라우저 작업](browser.md)의 운영 규칙(공유 연결, own 탭, 순서대로 조작)을, 네이티브 GUI 작업은 [기기 GUI 작업](computer-use.md)을 따른다. Paseo 작업자의 Computer Use 지원은 확인되지 않았으므로 GUI 작업을 기본으로 배정하지 않는다.

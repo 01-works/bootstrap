@@ -56,7 +56,9 @@ function fixture(t, { waitTimeout = 60000 } = {}) {
   let hooks = 0;
   const hookWith = extra => { const path = join(dir, `bash-env-${++hooks}`); writeFileSync(path, baseHook + extra + '\n'); return path; };
   const env = { ...process.env, HOME: join(dir, 'home'), XDG_CONFIG_HOME: join(dir, 'config'), YW_HEAVY_VERIFIER_OVERRIDE_REASON: '', BASH_ENV: hook, YW_HEAVY_QUEUE: q, YW_HEAVY_EXEC_LOCK: x, YW_HEAVY_EDIT_LOCK: e,
-    YW_HEAVY_FLOCK: join(dir, 'flock'), YW_HEAVY_LOG: join(dir, 'log'), YW_HEAVY_NO_RECLAIM: join(dir, 'no-reclaim'), YW_HEAVY_EVENTS: join(dir, 'events'), YW_HEAVY_FAST_POLL: '.05', YW_HEAVY_POLL: '.05', YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '' };
+    YW_HEAVY_FLOCK: join(dir, 'flock'), YW_HEAVY_LOG: join(dir, 'log'), YW_HEAVY_NO_RECLAIM: join(dir, 'no-reclaim'), YW_HEAVY_EVENTS: join(dir, 'events'), YW_HEAVY_FAST_POLL: '.05', YW_HEAVY_POLL: '.05', YW_HEAVY_GENERATION: '', YW_HEAVY_TOKEN: '',
+    // 순환 순서 검사가 초 단위 보유 시간에 흔들리지 않게 사용 시간 비교를 끈다. 사용 시간 순서는 따로 검사한다.
+    YW_HEAVY_FAIR_WINDOW: '0' };
   mkdirSync(env.HOME);
   const children = [];
   const track = p => {
@@ -1529,4 +1531,247 @@ test('R5-no-reclaim: 취소 큐 삭제 직후 SIGKILL된 감독자는 다른 대
   for (const p of [h, b, rejoin]) assert.equal(await f.finish(p), 0, p.err);
   assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['H', 'B', 'REJOIN']);
   assert.equal(events(f).filter(e => e.event === 'reclaim').length, 0);
+});
+
+test('v3 status의 예상 차례는 등록 순서가 아니라 실제 실행 순서와 같다', async t => {
+  const f = fixture(t); enable(f);
+  const h = await holding(f);
+  const waiters = [];
+  for (const [id, sup] of [['H2', 'H'], ['A1', 'A'], ['A2', 'A'], ['B1', 'B'], ['A3', 'A'], ['B2', 'B']]) {
+    waiters.push(f.cli('run', id, 'w', sup, '--', 'true'));
+    await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
+  }
+  const st = f.sync('status');
+  assert.equal(st.status, 0);
+  const predicted = st.stdout.match(/^예상 차례: (.*)$/m)?.[1].split(' → ');
+  assert.deepEqual(predicted, ['A1', 'B1', 'H2', 'A2', 'B2', 'A3']);
+  h.stdin.end('done\n');
+  for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
+  const ran = events(f).filter(e => e.event === 'start').map(e => e.requestId);
+  assert.deepEqual(ran.slice(-predicted.length), predicted);
+  assert.doesNotMatch(f.sync('status').stdout, /예상 차례/, '대기가 없으면 표시하지 않는다');
+});
+
+test('v3 최근 사용 시간이 적은 감독자가 먼저 차례를 받고, 구간 밖·취소·잘린 기록은 세지 않으며, 0이면 순환 순서만 쓴다', async t => {
+  const f = fixture(t); enable(f);
+  f.env.YW_HEAVY_FAIR_WINDOW = '3600';
+  const now = Math.floor(Date.now() / 1000);
+  const ev = (event, sup, held, at) => JSON.stringify({ event, at, requestId: 'old', generation: 'g', supervisor: sup, waitSeconds: 0, heldSeconds: held, exitCode: 'unknown', signal: 'unknown' });
+  // C는 end·reclaim을 합쳐야 A(45초)보다 많다. 구간 밖·취소·미래 시각·잘린 줄은 세지 않는다.
+  writeFileSync(f.env.YW_HEAVY_EVENTS, [ev('end', 'A', 45, now - 60), ev('reclaim', 'C', 30, now - 60), ev('end', 'C', 30, now - 120),
+    ev('end', 'B', 99999, now - 7200), ev('cancel', 'B', 99999, now - 60), ev('end', 'B', 99999, now + 600),
+    ev('end', 'B', 99999, now - 30).replace(/,"exitCode".*$/, '')].join('\n') + '\n');
+  const h = await holding(f);
+  const waiters = [];
+  for (const [id, sup] of [['A1', 'A'], ['B1', 'B'], ['C1', 'C'], ['A2', 'A']]) {
+    waiters.push(f.cli('run', id, 'w', sup, '--', 'true'));
+    await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
+  }
+  const turns = () => f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1];
+  assert.equal(turns(), 'B1 → A1 → A2 → C1');
+  f.env.YW_HEAVY_FAIR_WINDOW = '0';
+  assert.equal(turns(), 'A1 → B1 → C1 → A2', '끄면 등록 순서대로 순환한다');
+  h.stdin.end('done\n');
+  for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
+  const ran = read(f.env.YW_HEAVY_EVENTS).split('\n').filter(l => l.endsWith('}')).map(JSON.parse).filter(e => e.event === 'start').map(e => e.requestId);
+  assert.deepEqual(ran.slice(-4), ['B1', 'A1', 'A2', 'C1']);
+});
+
+test('v3 예상 차례는 실행 중 감독자도 사용 시간으로 비교해 끝난 뒤 다시 먼저 받을 수 있다', async t => {
+  const f = fixture(t); enable(f);
+  f.env.YW_HEAVY_FAIR_WINDOW = '3600';
+  const now = Math.floor(Date.now() / 1000);
+  writeFileSync(f.env.YW_HEAVY_EVENTS, JSON.stringify({ event: 'end', at: now - 60, requestId: 'old', generation: 'g', supervisor: 'B', waitSeconds: 0, heldSeconds: 600, exitCode: '0', signal: 'unknown' }) + '\n');
+  const h = await holding(f, 'A1', 'A');
+  const waiters = [];
+  for (const [id, sup] of [['B1', 'B'], ['A2', 'A']]) {
+    waiters.push(f.cli('run', id, 'w', sup, '--', 'true'));
+    await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
+  }
+  assert.equal(f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1], 'A2 → B1');
+  h.stdin.end('done\n');
+  for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
+  assert.deepEqual(events(f).filter(e => e.event === 'start').map(e => e.requestId), ['A1', 'A2', 'B1']);
+});
+
+test('기본 대기열은 호출자의 YW_HEAVY_FAIR_WINDOW·YW_HEAVY_EVENTS를 읽지 않아 대기자마다 기준이 갈리지 않는다', async t => {
+  const f = fixture(t);
+  f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
+  enable(f);
+  const now = Math.floor(Date.now() / 1000);
+  writeFileSync(f.q + '.events', JSON.stringify({ event: 'end', at: now - 60, requestId: 'old', generation: 'g', supervisor: 'A', waitSeconds: 0, heldSeconds: 600, exitCode: '0', signal: 'unknown' }) + '\n');
+  const other = join(f.dir, 'other-events');
+  writeFileSync(other, '');
+  const h = await holding(f);
+  const waiters = [];
+  // A는 구간 0, B는 빈 다른 이벤트 파일을 넘긴다. 둘 다 무시되어야 같은 차례를 계산하고 인계가 이어진다.
+  for (const [id, sup, extra] of [['A1', 'A', { YW_HEAVY_FAIR_WINDOW: '0' }], ['B1', 'B', { YW_HEAVY_EVENTS: other }]]) {
+    waiters.push(f.cliEnv(extra, 'run', id, 'w', sup, '--', 'true'));
+    await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
+  }
+  assert.equal(f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1], 'B1 → A1');
+  h.stdin.end('done\n');
+  for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
+  const ran = read(f.q + '.events').trim().split('\n').map(JSON.parse).filter(e => e.event === 'start').map(e => e.requestId);
+  assert.deepEqual(ran.slice(-2), ['B1', 'A1']);
+  assert.equal(read(other), '', '다른 이벤트 경로에는 쓰지 않는다');
+});
+
+test('v3 status의 예상 차례는 죽은 줄을 빼고, 회수가 꺼졌거나 v3가 아닌 줄이 있으면 표시하지 않는다', t => {
+  const f = fixture(t); enable(f);
+  const p = f.live(), start = procStart(p.pid);
+  const v3 = (id, sup, pid, st) => `${id} worker=w supervisor=${sup} v=3 pid=${pid} start=${st}\n`;
+  const turns = () => f.sync('status').stdout.match(/^예상 차례: (.*)$/m)?.[1];
+  const lines = v3('A0', 'A', dead, 'x') + v3('B1', 'B', p.pid, start) + v3('A1', 'A', p.pid, start);
+  writeFileSync(f.q + '.rotation', 'A\nB');  // 끝에 개행 없음
+  writeFileSync(f.q, lines);
+  assert.equal(turns(), 'A1 → B1');
+  writeFileSync(f.env.YW_HEAVY_NO_RECLAIM, '');
+  assert.equal(turns(), undefined);
+  rmSync(f.env.YW_HEAVY_NO_RECLAIM);
+  writeFileSync(f.q, lines + f.line('V2', p.pid, start));
+  assert.equal(turns(), undefined);
+  writeFileSync(f.q, lines + 'OLD worker=w supervisor=s\n');
+  assert.equal(turns(), undefined);
+});
+
+test('status --json은 실행·대기·예상 차례를 JSON으로 내고 비밀값과 상태를 바꾸지 않는다', async t => {
+  const f = fixture(t); enable(f);
+  const get = () => {
+    const r = f.sync('status', '--json');
+    assert.equal(r.status, 0, r.stderr); assert.equal(r.stdout.trim().split('\n').length, 1);
+    return [JSON.parse(r.stdout), r.stdout];
+  };
+  assert.deepEqual(get()[0], { schema: 1, mode: 'round-robin', paused: false, slots: [{ name: 'main', running: null, waiting: [], turns: [] }] });
+  const h = await holding(f);
+  const owner = JSON.parse(f.ownerText()), before = tree(f.dir);
+  assert.deepEqual(get()[0].slots[0].running, { id: owner.task, pid: owner.holder, supervisor: 'H', queued: owner.queued, started: owner.started, state: 'alive' });
+  assert.deepEqual(tree(f.dir), before, '읽기 전용');
+  const waiters = [];
+  for (const [id, sup] of [['A1', 'A'], ['A2', 'A'], ['B1', 'B']]) {
+    waiters.push(f.cli('run', id, 'w', sup, '--', 'true'));
+    await f.wait(() => read(f.q).includes(`${id} `), `${id} queued`);
+  }
+  const [now, raw] = get();
+  assert.deepEqual(now.slots[0].waiting.map(w => [w.id, w.supervisor, w.state]), [['A1', 'A', 'alive'], ['A2', 'A', 'alive'], ['B1', 'B', 'alive']]);
+  assert.ok(now.slots[0].waiting.every(w => Number.isInteger(w.queued)));
+  assert.deepEqual(now.slots[0].waiting.map(w => w.pid), waiters.map(p => p.pid));
+  assert.deepEqual(now.slots[0].turns, ['A1', 'B1', 'A2']);
+  for (const secret of [owner.token, owner.lease, owner.generation]) assert.ok(secret && !raw.includes(secret));
+  h.stdin.end('done\n');
+  for (const p of [h, ...waiters]) assert.equal(await f.finish(p), 0, p.err);
+  assert.equal(f.sync('status', '--bad').status, 2);
+});
+
+test('status --json은 compat·구형식·빈 owner에서도 JSON이고 차례를 모르면 null이다', t => {
+  const f = fixture(t);
+  writeFileSync(f.q, 'OLD worker=w supervisor=s\n' + f.line('V2', dead, 'x', 'a"b\\c'));
+  mkdirSync(f.x); writeFileSync(join(f.x, 'owner.txt'), '');
+  const slot = JSON.parse(f.sync('status', '--json').stdout).slots[0];
+  assert.deepEqual(slot.running, { id: null, pid: null, supervisor: null, queued: null, started: null, state: 'unknown' });
+  assert.equal(slot.turns, null);
+  assert.deepEqual(slot.waiting.map(w => [w.id, w.supervisor, w.state]), [['OLD', 's', 'legacy'], ['V2', 'a"b\\c', 'dead:esrch']]);
+  assert.deepEqual(slot.waiting.map(w => w.pid), [null, Number(dead)]);
+});
+
+test('status --json은 특이한 작업 ID와 깨진 모드 파일, v2 owner의 시작 시각을 바르게 낸다', t => {
+  const f = fixture(t); enable(f);
+  const p = f.live(), start = procStart(p.pid);
+  const v3 = (id, sup) => `${id} worker=w supervisor=${sup} v=3 pid=${p.pid} start=${start} queued=5\n`;
+  writeFileSync(f.q, v3('A', 'x') + v3('→', 'y') + v3('B', 'z'));
+  const slot = () => JSON.parse(f.sync('status', '--json').stdout).slots[0];
+  assert.deepEqual(slot().turns, ['A', '→', 'B']);
+  assert.match(f.sync('status').stdout, /^예상 차례: A → → → B$/m);
+  f.owner({ v: 2, pid: p.pid, holder: p.pid, holderStart: start, task: 'V2RUN', supervisor: 's', startedAt: '2026-10-19T05:08:49Z' });
+  assert.deepEqual([slot().running.id, slot().running.started], ['V2RUN', Date.UTC(2026, 9, 19, 5, 8, 49) / 1000]);
+  writeFileSync(f.q + '.mode', 'bad"mode\n');
+  assert.doesNotThrow(() => JSON.parse(f.sync('status', '--json').stdout));
+});
+
+test('status --json은 compat에서 실행 중인 작업을 대기에 다시 넣지 않는다', async t => {
+  const f = fixture(t);
+  const h = f.start(['-c', `${quote(script)} run RUN w s -- /bin/sh -c 'read -r _'`]);
+  // owner가 생긴 뒤에도 줄을 고쳐 쓰므로, 획득이 끝난 신호 뒤에 줄을 더한다.
+  await f.wait(() => h.err.includes('ACQUIRED RUN'), 'acquired');
+  writeFileSync(f.q, read(f.q) + f.line('NEXT', h.pid, procStart(h.pid)));
+  const slot = JSON.parse(f.sync('status', '--json').stdout).slots[0];
+  assert.equal(slot.running.id, 'RUN');
+  assert.deepEqual(slot.waiting.map(w => w.id), ['NEXT']);
+  assert.match(f.sync('status').stdout, /1\. RUN {2}v2/, '사람용 status는 그대로 줄을 보인다');
+  h.stdin.end('done\n');
+});
+
+test('명시적으로 켠 모드는 /tmp가 비어도 유지되고, compat으로 되돌리면 저장값도 바뀐다', async t => {
+  const f = fixture(t);
+  f.env.YW_HEAVY_DEFAULT_QUEUE = f.q; // 이 대기열을 기본 대기열로 취급한다(helper처럼 경로를 명시해 넘김).
+  const saved = join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode');
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 0);
+  assert.equal(read(saved).trim(), 'round-robin');
+  assert.equal(lstatSync(saved).mode & 0o777, 0o600);
+  assert.equal(f.sync('resume').status, 0);
+  // 재시동: /tmp의 상태 파일이 모두 사라진다.
+  for (const p of [f.q + '.mode', f.q + '.rotation', f.q + '.paused', f.q]) rmSync(p, { force: true });
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'round-robin');
+  const json = f.cli('acquire', 'HELPER', 'w', 'S', '--json');
+  assert.equal(await f.finish(json), 0, 'helper의 JSON 획득이 재시동 직후에도 된다: ' + json.err);
+  assert.equal(releaseLease(f, JSON.parse(json.out)).status, 0);
+  const run = f.cli('run', 'AFTER-BOOT', 'w', 'S', '--', 'true');
+  assert.equal(await f.finish(run), 0, run.err);
+  // 기본 대기열은 YW_HEAVY_EVENTS를 무시하고 $Q.events에 쓴다.
+  assert.ok(read(f.q + '.events').trim().split('\n').map(JSON.parse).some(e => e.event === 'start' && e.requestId === 'AFTER-BOOT'), 'round-robin 이벤트가 남는다');
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'compat').status, 0);
+  assert.equal(read(saved).trim(), 'compat');
+  rmSync(f.q + '.mode', { force: true });
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
+});
+
+test('기본이 아닌 대기열은 저장된 모드를 읽지도 쓰지도 않고, 알 수 없는 저장값은 무시한다', t => {
+  const f = fixture(t);
+  const saved = join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode');
+  mkdirSync(join(f.env.HOME, '.config', 'bootstrap'), { recursive: true });
+  writeFileSync(saved, 'round-robin\n');
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
+  assert.equal(f.sync('pause').status, 0);
+  assert.equal(f.sync('mode', 'round-robin').status, 0);
+  assert.equal(f.sync('mode', 'compat').status, 0);
+  assert.equal(read(saved).trim(), 'round-robin', '다른 대기열의 전환은 저장값을 바꾸지 않는다');
+  f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
+  writeFileSync(saved, 'fast\n'); rmSync(f.q + '.mode', { force: true });
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'compat');
+});
+
+test('저장값 이행·우선순위·저장 실패: 이미 켠 기기는 첫 잠금 때 저장하고, 살아 있는 v3가 저장된 compat보다 앞서며, 디렉터리면 전환이 실패를 알린다', async t => {
+  const f = fixture(t); enable(f);
+  f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
+  const saved = join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode');
+  assert.equal(existsSync(saved), false);
+  const h = await holding(f);
+  assert.equal(read(saved).trim(), 'round-robin', '이 기능 전에 켠 round-robin을 첫 잠금 호출이 남긴다');
+  writeFileSync(saved, 'compat\n'); rmSync(f.q + '.mode', { force: true });
+  assert.equal(JSON.parse(f.sync('capabilities').stdout).mode, 'round-robin', 'v3 실행이 살아 있으면 저장된 compat보다 앞선다');
+  h.stdin.end('done\n'); assert.equal(await f.finish(h), 0);
+  rmSync(saved); mkdirSync(saved);
+  assert.equal(f.sync('pause').status, 0);
+  const r = f.sync('mode', 'compat');
+  assert.equal(r.status, 1, r.stderr); assert.match(r.stderr, /유지할 설정을 쓰지 못했습니다/);
+  // 이미 켠 기기에서 저장할 수 없으면 첫 잠금 호출이 경고와 기록을 남긴다.
+  assert.equal(f.sync('resume').status, 0);
+  writeFileSync(f.q + '.mode', 'round-robin\n'); rmSync(saved, { recursive: true }); writeFileSync(join(f.env.HOME, '.config', 'bootstrap', 'x'), ''); rmSync(join(f.env.HOME, '.config', 'bootstrap'), { recursive: true });
+  mkdirSync(saved, { recursive: true }); // 저장 경로가 디렉터리인 기존 기기
+  const run = f.cli('run', 'WARN', 'w', 'S', '--', 'true');
+  assert.equal(await f.finish(run), 0, run.err);
+  assert.match(run.err, /유지할 모드를 저장하지 못했습니다/); assert.match(f.log(), /mode-save from=existing to=round-robin result=failed/);
+});
+
+
+test('저장값은 XDG_CONFIG_HOME과 관계없이 같은 경로를 쓴다', t => {
+  const f = fixture(t); f.env.YW_HEAVY_DEFAULT_QUEUE = f.q;
+  mkdirSync(join(f.env.HOME, '.config', 'bootstrap'), { recursive: true });
+  writeFileSync(join(f.env.HOME, '.config', 'bootstrap', 'heavy-mode'), 'round-robin\n');
+  for (const xdg of [f.env.XDG_CONFIG_HOME, join(f.dir, 'other-config'), '']) {
+    const r = spawnSync('/bin/bash', [script, 'capabilities'], { env: { ...f.env, XDG_CONFIG_HOME: xdg }, encoding: 'utf8' });
+    assert.equal(JSON.parse(r.stdout).mode, 'round-robin', `XDG_CONFIG_HOME=${xdg}`);
+  }
 });

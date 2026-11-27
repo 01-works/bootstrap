@@ -18,7 +18,7 @@ supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS �
 - **round-robin**이면 supervisor가 `verifier-loop`인 새 획득은 **검증 자리**를 쓴다. 그래서 일반 작업 1개와 검증 1개가 동시에 실행된다.
   - 검증 자리는 일반 자리와 같은 v3 코드를 대기열·실행 lock·순환 파일만 바꿔 쓴다. 대기열은 `$YW_HEAVY_QUEUE.verifier`, 실행 lock은 `$YW_HEAVY_EXEC_LOCK.verifier`, 순환 파일은 `$YW_HEAVY_QUEUE.verifier.rotation`이다. 편집 잠금·기록·이벤트·모드·제출 중지 파일은 일반 자리와 같이 쓴다.
   - 실행 슬롯은 1개라 검증 요청이 둘이면 나중 요청은 검증 자리에서 기다린다.
-- **compat**이면 검증 자리를 쓰지 않는다. verifier-loop도 일반 대기열에서 함께 차례를 받으므로 동시에 돌지 않는다. 두 v2 대기열에 같은 ID가 등록되면 `release <ID>`가 어느 자리를 풀지 모호해지므로 지원하지 않는다. 모드 파일은 `/tmp`에 있어 재시동하면 compat로 돌아간다. 공유 기기는 재시동이나 재로그인 뒤 [활성화 절차](#활성화와-롤백)로 round-robin을 다시 켠다. `role status verifier`는 공유 역할인데 round-robin이 아니면 수동 작업 대기(2)로 알린다.
+- **compat**이면 검증 자리를 쓰지 않는다. verifier-loop도 일반 대기열에서 함께 차례를 받으므로 동시에 돌지 않는다. 두 v2 대기열에 같은 ID가 등록되면 `release <ID>`가 어느 자리를 풀지 모호해지므로 지원하지 않는다. `role status verifier`는 공유 역할인데 round-robin이 아니면 수동 작업 대기(2)로 알린다.
 - 자리 선택은 기존 재진입 계약을 먼저 따른다.
   1. 상속한 token(`YW_HEAVY_GENERATION`·`YW_HEAVY_TOKEN`)은 세대가 같은 자리를 쓴다.
   2. token이 없으면 호출자가 그 자리 holder의 자손인 자리를 쓴다.
@@ -39,13 +39,15 @@ supervisor는 호출자가 주는 운영 식별자다. 이 제한은 같은 OS �
 - `taskpolicy -b`(darwin background)는 쓰지 않는다. CPU뿐 아니라 디스크 I/O도 낮은 등급으로 묶고 Apple Silicon에서 효율 코어로 보내서, 기기가 한가해도 95~98분 걸리는 검증이 크게 늘어날 수 있다.
 - 메모리는 새로 막지 않는다. 01-software 검증(`nightly-local-check`)은 시작할 때와 lane마다 여유 메모리 35% 이상·swap 8 GiB 미만을 확인하고, 모자라면 최대 3시간 기다리거나 미룬다.
 
-01-software의 heavy lock(`scripts/heavy-machine-lock.mjs`)은 round-robin에서 작업과 검증을 모두 yw-heavy에 위임하므로, 바꾸지 않아도 공유 역할에서 동시에 돈다. compat에서는 자기 저장소 lock 하나를 쓰고, 역할 파일이 있으면 verifier-loop가 아닌 요청을 스스로 거절한다.
+01-software의 heavy lock(`scripts/heavy-machine-lock.mjs`)은 round-robin에서 작업과 검증을 모두 yw-heavy에 위임하므로, 바꾸지 않아도 공유 역할에서 동시에 돈다. compat에서는 자기 저장소 lock 하나를 쓴다. 전용 역할이면 verifier-loop가 아닌 요청을 스스로 거절하고, 공유 역할이면 작업과 검증을 그 lock으로 차례대로 실행한다.
 
 ## 모드와 전환 원칙
 
 설치·자동 갱신의 기본은 **compat**다. 기존 FIFO, 감독자당 2줄, v2 출력·파일 형식을 유지한다. 재진입·라운드로빈·작업 이벤트는 감독자가 기기에서 **round-robin**을 명시적으로 켠 뒤에만 동작한다. `capabilities`의 기능 목록은 설치된 구현의 지원 목록이고, 소비자는 `mode`도 반드시 확인한다.
 
 새 모드는 실행 슬롯 **1개**를 유지하면서 감독자별 FIFO를 순환한다. 새 감독자는 순환 끝에 들어간다. 실행 중 감독자는 차례를 끝낼 때 남은 작업이 있으면 끝으로 간다. 같은 ID·감독자의 재시도는 줄 위치·세대·등록 시각을 보존하고 이전 대기자는 코드 3으로 끝난다. 대기자 없는 감독자는 목록에서 빠지고, 다시 제출하면 끝에 붙는다.
+
+자리가 비면 대기 줄이 있는 감독자 중 **최근 1시간 안에 끝난 차례의 보유 시간 합(작업 이벤트 끝 1000줄 안)이 가장 적은 감독자**가 먼저 받고, 같으면 위의 순환 순서를 따른다. 짧은 검사만 내는 감독자가 긴 실행 뒤에 한 바퀴씩 밀리지 않게 하려는 것이다. 많이 쓴 감독자의 기록도 1시간이 지나면 빠지므로 계속 밀리지는 않는다. 모든 대기자가 같은 기준으로 골라야 한다. 자동 갱신은 참여자가 없을 때만 설치본을 바꾸므로 보통은 구버전 대기자와 섞이지 않는다. 조회 직후 들어온 구버전 대기자와 섞이면 서로 양보해 사용 기록이 빠질 때(최대 1시간)까지 멈출 수 있으니, 수동 설치는 아래 전환 절차처럼 제출 중지·drain 뒤에 한다.
 
 큐와 실행 owner를 기준으로 감독자 순환 목록을 편집 잠금 아래에서 복구한다. 큐·순환 파일 갱신 사이에 프로세스가 종료돼도 기존 감독자 순서를 보존하고, 누락된 감독자는 큐 등록 순서대로 끝에 추가하며, 더 이상 실행·대기하지 않는 감독자는 제거한다. 이 동기화는 신규 등록 전에도 수행하며, no-reclaim은 실행 lock·대기 줄 회수만 막고 순환 목록 복구는 막지 않는다.
 
@@ -83,7 +85,7 @@ yw-heavy release --generation GENERATION --token TOKEN --lease LEASE
 
 ### 작업 이벤트
 
-활성 모드는 `$YW_HEAVY_QUEUE.events`(기본 `/tmp/yw-heavy-queue.events`, `YW_HEAVY_EVENTS`로 변경)에 JSONL을 추가한다. 새 파일과 owner는 권한 600, 실행 lock 디렉터리는 700이다. 기존 `.log`는 편집 잠금 등 진단 기록으로 유지한다.
+활성 모드는 `$YW_HEAVY_QUEUE.events`(기본 `/tmp/yw-heavy-queue.events`)에 JSONL을 추가한다. 차례 계산이 이 기록을 읽으므로 기본 대기열은 `YW_HEAVY_EVENTS`를 무시하고, 격리 대기열만 그 값으로 바꾼다. 새 파일과 owner는 권한 600, 실행 lock 디렉터리는 700이다. 기존 `.log`는 편집 잠금 등 진단 기록으로 유지한다.
 
 ```json
 {"event":"end","at":1790000000,"requestId":"REQUEST","generation":"<hex>","supervisor":"S","waitSeconds":2,"heldSeconds":8,"exitCode":"0","signal":"unknown"}
@@ -117,7 +119,7 @@ CPU 평균 코어 상한 측정값 6.91→0.21은 flock spin 대기 제거 효�
 3. 모든 호출자가 새 구현을 쓰는지 확인한다. `yw-heavy mode round-robin`은 편집 잠금 아래에서 제출 중지·빈 대기열·실행 lock 부재를 확인한다(검증 자리 포함). v2 실행·대기 줄, 구형식 줄, owner 없는 lock이 하나라도 남으면 코드 4로 거절한다. 제출 중지 상태는 유지한다.
 4. `capabilities`·`status`에서 모드를 확인하고 `yw-heavy resume`으로 새 제출을 연다. 두 번의 인계와 이벤트 기록을 확인한다.
 
-모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라지므로 compat로 돌아간다. 재활성화도 같은 drain 절차를 따른다.
+모드·pause·순환 상태는 각각 `$YW_HEAVY_QUEUE.mode`, `.paused`, `.rotation`에 둔다. 큐 경로가 기기별 상태를 구분하고, 기본 `/tmp` 경로는 재시동 후 사라진다. 기본 대기열에서 `mode`로 명시적으로 바꾼 모드는 `~/.config/bootstrap/heavy-mode`(호출자의 `XDG_CONFIG_HOME`과 관계없는 고정 경로)에도 남아(권한 600), `.mode`가 없으면 그 값을 읽는다. 재시동 직후에는 대기열이 비어 있으므로 첫 제출부터 같은 모드가 된다. 켠 적 없는 기기는 compat이 기본이다. 이 기능 전에 이미 켠 기기는 다음 잠금 호출이 지금 모드를 한 번 저장한다. 살아 있는 v3 실행·대기가 있으면 저장값보다 round-robin이 앞선다. 되돌리기는 같은 drain 절차로 `mode compat`을 실행하면 저장값도 compat이 된다. 기본 대기열인지는 경로(`/tmp/yw-heavy-queue`)로 판정한다. helper가 이 경로를 `YW_HEAVY_QUEUE`로 넘겨도 같은 값을 읽고, 다른 경로의 테스트·격리 대기열은 저장값을 읽거나 쓰지 않는다.
 
 macOS `com.apple.tmp_cleaner`는 매일 로컬 0시에 atime·mtime·ctime이 모두 3일 넘은 `/tmp` 파일을 지운다. APFS는 atime이 mtime보다 새로우면 읽어도 atime을 바꾸지 않으므로, 읽기만 하는 모드 파일과 `.flock`이 재시동 없이 지워진다(#114). 그래서 편집 잠금을 잡은 프로세스는 `YW_HEAVY_KEEP_EVERY`(기본 3600초)마다 한 번, `run`은 명령이 실행되는 동안 같은 주기로(갱신 프로세스는 `YW_HEAVY_KEEP_CHECK`, 기본 20초마다 run이 살아 있는지 확인하고 없으면 끝난다) 큐 본문·실행 lock `owner.txt`·`.flock`·`.mode`·`.paused`·`.rotation`·`.no-reclaim`·`.log`·`.events`의 mtime을 갱신한다(없는 파일은 만들지 않는다). 모드 파일이 없거나 읽을 수 없어도 v3 대기 줄이나 v3 실행 owner가 남아 있으면 round-robin으로 읽고, 다음 잠금 보유자가 파일을 되살리며 `mode-restore`를 기록한다. compat 전환은 빈 대기열에서만 가능하므로 이 상태는 파일 유실뿐이다. `mode` 전환은 이전·다음 모드와 호출한 부모 프로세스(PID·실행 파일 이름)를 `.log`에 `mode-change`로 남긴다. `status`는 로그 tail과 별개로 `마지막 모드 변경:` 한 줄을 보인다(기록이 없으면 `기록 없음`). 테스트는 큐·실행 lock·편집 lock·기록을 모두 임시 경로로 격리한다.
 
@@ -144,8 +146,11 @@ yw-heavy status                                              # 읽기 전용
 - holder는 "작업 전체 수명을 대표하는 프로세스"다. holder가 끝난 것이 확정되면 다른 대기자가 차례를 회수한다. 그래서 holder는 **acquire부터 release까지 같은 스크립트·같은 도구 호출 안에서 끝까지 살아 있는 프로세스**여야 한다. 에이전트의 Bash 호출 하나가 끝나면 그 셸(`$$`)도 끝나므로, 다음 호출까지 차례를 이어 가는 holder로 쓰면 그 사이에 회수된다.
 - 도구 호출을 넘겨 차례를 잡아야 하면 명령 하나로 묶어 `run`을 쓰거나, holder 없이 `acquire` 하고 끝나면 반드시 `release`한다(holder가 없으면 자동 회수하지 않는다). nightly처럼 종료를 확인하지 못했을 때 차례를 일부러 남기는 작업도 holder 없이 쓴다.
 - 도구 호출 사이에 걸치는 background `acquire`는 동작은 하지만 자동 회수가 없다. `run`으로 바꾼다.
+- 도구가 대기 중인 프로세스를 차례 전에 끊을 수 있으면, 배정된 호스트의 작업 workspace에 연 Paseo 터미널에서 배정받은 명령을 같은 감독 ID로 처음부터 실행한다. 터미널 MCP가 없으면 CLI(`paseo terminal`)를 쓰고, 쓸 수 없으면 감독자에게 알린다. 터미널의 실행 계정·PATH를 확인하고 자체 잠금 helper에는 `YW_HEAVY_SUPERVISOR`를 넘긴다. 응답을 먼저 끝내면 백그라운드 대기를 밝힌다. 끝나면 종료 코드를 파일에 남기고 아래 완료 알림 규칙대로 `paseo send --no-wait --behavior steer <자기 agent ID> '[heavy 자동 알림] …'`로 자기 세션을 깨워 결과를 확인한 뒤 감독자에게 직접 보고하고 터미널을 닫는다. 이 알림은 사용자 메시지처럼 보이지만 승인이나 지시가 아니다.
 - 차례를 잡은 명령은 할 일이 끝나면 프로세스도 끝나야 한다. DB·Redis 연결을 여는 일회성 node 스크립트(seed 등)는 성공·실패 모두 `finally`에서 연결을 닫거나 `process.exit`로 끝낸다. 그러지 않으면 출력은 끝났는데 프로세스가 남아 차례를 계속 쥔다(2026-11-01 두 번, 각 30~50분 정체).
-- 차례는 무거운 명령 단위로 잡는다. 설치부터 push까지의 작업 흐름 전체를 한 차례로 잡지 않는다. 저장소가 자체 기기 잠금을 제공하면(예: pre-push 내부) 그 잠금이 감싸는 구간은 다시 감싸지 않고, 잠금 밖의 무거운 단계만 차례에 넣는다. 감독자가 작업자 지침에 대기열에 넣을 명령 목록을 줄 때는 이런 구간을 명시적으로 뺀다. 예를 들어 01-software의 pre-push가 도는 `git push`와 공식 real-DB wrapper는 `scripts/heavy-machine-lock.mjs`를 스스로 잡는다. compat 기기에서 이를 다시 감싸면 push 하나가 감독자의 대기 줄을 몇 분씩 차지한다(2026-11-09, 감독자 줄 2개가 push와 "설치→push" 묶음으로 막혔다). round-robin 기기에서는 01-software dev `0c00fd9` 이후의 helper가 이 차례를 yw-heavy에 위임하고 재진입하므로, 감싸든 감싸지 않든 같은 차례를 쓴다. 이때 helper가 위임할 때 쓰는 supervisor는 `YW_HEAVY_SUPERVISOR`(감독 세션 전체 Paseo agent ID, dev `aa73c82` 이후)로 넘긴다. 지정하지 않으면 `01-software`로 묶여 감독 세션 사이 순환을 받지 못한다. 그보다 오래된 base의 worktree는 별도 저장소 잠금을 잡으므로 round-robin 기기에서는 heavy 전에 rebase한다.
+- 완료 알림과 자기 세션 재개 callback(`paseo send` 등)은 차례를 소유한 바깥 호출자가 차례를 푼 뒤 실행한다. `run`의 명령 안에 넣지 않고, 알림에는 시간 한도를 두며 알림 실패가 검사 결과의 종료 코드를 바꾸지 않게 한다(2026-11-12 자기 turn 대기, 2026-11-18 알림 정체로 약 1시간 점유).
+- 무거운 실행이 끝나고 사람 확인이나 외부 신호 대기만 남으면 차례를 풀고 기다린다.
+- 차례는 무거운 명령 단위로 잡는다. 설치부터 push까지의 작업 흐름 전체를 한 차례로 잡지 않는다. 다만 의존성 설치·`build-deps`는 따로 제출하지 않고 바로 뒤의 첫 검증과 한 `run`으로 묶는다(앞 단계가 실패하면 거기서 멈춘다). 첫 검증이 자체 기기 잠금을 쓰면(아래) 묶지 않고, push는 묶지 않는다. 저장소가 자체 기기 잠금을 제공하면(예: pre-push 내부) 그 잠금이 감싸는 구간은 다시 감싸지 않고, 잠금 밖의 무거운 단계만 차례에 넣는다. 감독자가 작업자 지침에 대기열에 넣을 명령 목록을 줄 때는 이런 구간을 명시적으로 뺀다. 예를 들어 01-software의 pre-push가 도는 `git push`와 공식 real-DB wrapper는 `scripts/heavy-machine-lock.mjs`를 스스로 잡는다. compat 기기에서 이를 다시 감싸면 push 하나가 감독자의 대기 줄을 몇 분씩 차지한다(2026-11-09, 감독자 줄 2개가 push와 "설치→push" 묶음으로 막혔다). round-robin 기기에서는 01-software dev `0c00fd9` 이후의 helper가 이 차례를 yw-heavy에 위임하고 재진입하므로, 감싸든 감싸지 않든 같은 차례를 쓴다. 이때 helper가 위임할 때 쓰는 supervisor는 `YW_HEAVY_SUPERVISOR`(감독 세션 전체 Paseo agent ID, dev `aa73c82` 이후)로 넘긴다. 지정하지 않으면 `01-software`로 묶여 감독 세션 사이 순환을 받지 못한다. 그보다 오래된 base의 worktree는 별도 저장소 잠금을 잡으므로 round-robin 기기에서는 heavy 전에 rebase한다.
 - launchd·Python 등 PATH가 다른 곳에서는 절대 경로 `~/.local/bin/yw-heavy`를 쓴다.
 - ID·worker·supervisor는 공백·따옴표·역슬래시 없이 쓴다. 감독자마다 대기 줄은 2개까지다. 세 번째는 자리가 날 때까지 기다린다.
 
@@ -195,6 +200,8 @@ yw-heavy status                                              # 읽기 전용
 관문: 닫힘 (구형식 줄 1개). 실행 lock은 자동 회수하지 않음
 ```
 
+- `status --json`은 화면·도구용 한 줄 JSON이다(읽기 전용). 최상위는 `schema`(1)·`mode`·`paused`·`slots`, slot은 `name`(`main`, 검증 자리가 있으면 `verifier`)·`running`·`waiting`·`turns`다. `running`은 실행 중이 아니면 `null`, 그 외와 `waiting` 항목은 `id`·`pid`(대기자·holder, 모르면 `null`)·`supervisor`·`queued`·`state`(실행 중은 `started`도, epoch 초)를 갖고, 예상 차례를 알 수 없으면 `turns`는 `null`이다. 실행 중인 작업은 `waiting`에 넣지 않는다. 등록 시각을 적지 않는 v2 줄의 `queued`는 `null`이다. token·lease·세대·명령은 내보내지 않는다. 이 옵션을 모르는 구버전은 사람용 문장을 출력하므로 소비자는 JSON으로 읽지 못하면 미지원으로 다룬다.
+- round-robin에서 줄 번호는 등록 순서다. 실제로 실행될 순서는 `예상 차례:` 줄로 본다. 지금 등록된 v3 줄과 감독자별 최근 사용 시간으로 계산한 예상이라 새 제출·취소·회수나 앞 작업의 실행 시간에 따라 바뀐다. 회수될 줄은 빼고, 회수가 꺼져 있거나 v3가 아닌 줄이 섞여 있으면 표시하지 않는다.
 - 줄 상태: `alive`, `unknown`(판단 불가, 보존), `dead:…`(다음 대기자가 회수), `holder 없음`(차례를 얻은 뒤 holder 없이 실행 중, 자동 회수 안 함).
 - 관문이 닫혀 있으면 구버전 대기자가 남아 있다는 뜻이다. 그동안 v2 holder가 끝나면 `release <ID>`로 직접 푼다.
 - `실행 lock: … (owner 없음, N초 전 변경)`: 관문이 열려 있으면 60초 뒤 다음 대기자가 회수한다. 관문이 닫혀 있어 계속 남으면, 구버전 대기자 중 차례를 막 얻은 것이 없는지(`pgrep -f 'cc-yw-heavy.sh|heavy.sh'`, 그 대기자의 출력) 확인한 뒤 flock 아래에서 지운다:
