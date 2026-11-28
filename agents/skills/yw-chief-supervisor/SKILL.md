@@ -81,6 +81,7 @@ heavy의 모드별 한도·전환·이전 ID 이행·회수 기준은 bootstrap 
 
 | 총괄 감독 | 중요한 감사·완료 판단 | 새 운영 정책 설계 |
 |---|---|---|
+| GPT(Astra) | Deep Reviewer (Opus) | Policy Reviewer (Fable)·(Astra) |
 | Claude(Opus) | Reviewer (Sol) | Policy Reviewer (Fable)·(Astra) |
 
 - 감사·완료 판단은 총괄 포함 2모델, 새 운영 정책 설계는 총괄과 두 Policy Reviewer의 합의다. 합의에는 표가 notes보다 우선한다.

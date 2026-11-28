@@ -113,15 +113,15 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 
 ## 프로필
 
-총괄·중요한 설계·시각적 완성도가 중요한 UI 구현·심층 리뷰는 Opus 5.5에, 위임이 가장 많은 일반 구현과 일상 리뷰는 Claude 사용량을 쓰지 않는 GPT-6.2 Sol에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. Opus 한도는 ZeroSub의 Claude 계정 전환에 맡긴다. 비싼 Fable 5.2와 GPT-6.2 Astra는 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경의 Policy Reviewer와 총괄 스킬의 단계 검토에만 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드 리뷰, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 정책 변경은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
+총괄과 중요한 설계는 GPT-6.2 Astra에, 위임이 가장 많은 일반 구현과 일상 리뷰는 GPT-6.2 Sol에 맡겨 Claude 사용량을 쓰지 않는다. 시각적 완성도가 중요한 UI 구현과, Sol·Astra 결과의 다른 계열 검토인 심층 리뷰는 Opus 5.5에 맡긴다. 역할마다 프로필이 하나이고 모델 대체 프로필은 두지 않는다. 예외로 `Opus (agy)`는 역할 없이 사용자가 직접 고르는 선택용 프로필이며 Supervisor는 자동으로 고르지 않는다. 모델 한도는 ZeroSub의 계정 전환에 맡긴다. Policy Reviewer 프로필(비싼 Fable 5.2와 GPT-6.2 Astra)은 저장소와 관계없이 사람과 에이전트가 일하는 방식을 바꾸는 워크플로 정책 변경의 Policy Reviewer와 총괄 스킬의 단계 검토에만 쓴다. 예: 이 저장소의 에이전트·모델 설정과 지시문·자동 갱신, 01-software의 git 브랜치·머지·릴리스 규칙과 CI·배포 흐름, 권한·보안 설정. 제품 기능 코드 리뷰, 운영 방식이 그대로인 설명·문구·오타 수정, 일상 감사에는 쓰지 않는다. 정책 변경은 작성 모델과 다른 계열의 Policy Reviewer 하나가 한 차례 검토하고, 큰 새 정책 설계나 논쟁적인 지적에만 둘 다 쓴다. [yw-chief-supervisor](skills/yw-chief-supervisor/SKILL.md#독립-검토와-조치)의 교차 모델 합의 구성은 그 스킬이 원장이다.
 
 | 프로필 | 기본 모델 | 추론 | 모드 |
 |---|---|---|---|
-| Supervisor | Claude Opus 5.5 | high | bypassPermissions |
+| Supervisor | GPT-6.2 Astra | high | full-access |
 | Builder | GPT-6.2 Sol | high | full-access |
 | Frontend Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Reviewer | GPT-6.2 Sol | xhigh | auto-review + plan |
-| Architect | Claude Opus 5.5 | xhigh | bypassPermissions |
+| Architect | GPT-6.2 Astra | xhigh | full-access |
 | Deep Reviewer | Claude Opus 5.5 | high | bypassPermissions |
 | Policy Reviewer (Fable) | Claude Fable 5.2 | high | bypassPermissions |
 | Policy Reviewer (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
