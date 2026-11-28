@@ -25,6 +25,16 @@ Gemini 모델과 `Opus (agy)`는 Paseo 내장 Antigravity provider로 쓴다. `B
 
 Gemini CLI(`gemini --acp`)를 ACP provider로 붙이는 방법은 쓰지 않는다. 2026-11-21 기준 개인 Google 계정 로그인이 "no longer supported for Gemini Code Assist for individuals"로 거부되고 Antigravity로 이전하라고 안내한다. 공식 문서: [Antigravity provider](https://paseo.sh/docs/supported-providers/antigravity.md).
 
+### 다른 Mac에서 Antigravity 사용량 확인
+
+현재 CLI 계정은 로컬 터미널에서 `agy -p /usage`로 조회한다. 첫 실행이면 `agy`에서 Google 로그인을 먼저 한다. 모델 그룹별로 5시간·주간 잔여 비율이 표시된다.
+
+여러 Google 계정을 ZeroSub 화면에서 확인하려면 아래처럼 요청한다.
+
+> 이 Mac에 bootstrap의 ZeroSub macOS 사용량 패치를 적용해 줘. 기존 계정과 설정을 보존하고, 내가 계정별로 로그인하면 5시간·주간 사용량이 뜨는지 확인해 줘.
+
+공식 ZeroSub v1.35.0은 Linux에서 Antigravity 계정을 추가할 수 있다. macOS용 패치는 별도로 설치한다. [macOS 설치·계정 추가·인증 오류 해결](zerosub-macos.md) · [ZeroSub v1.35.0 안내](https://github.com/kapybara-org/zerosub/blob/v1.35.0/README.md#antigravity-accounts)
+
 ## OpenRouter 모델 (OpenCode)
 
 Helper는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents` 단계가 OpenCode v2 공식 설치 스크립트로 `~/.opencode/bin`에 설치하고, 자동 갱신이 하루에 한 번 `opencode upgrade`를 실행한다. 아래는 기기마다 한 번 한다.
@@ -42,7 +52,7 @@ Helper는 Paseo 내장 OpenCode provider로 OpenRouter 모델을 쓴다. `agents
    OpenCode는 키를 터미널 입력으로만 받아서, 스크립트가 가상 터미널로 `opencode auth login openrouter`에 키를 넣는다. 키는 명령 인자·환경변수·출력에 남지 않고 OpenCode 데이터(`~/.local/share/opencode`)에만 저장된다. 다시 로그인하면 OpenCode가 계정을 하나 더 만들어서, OpenRouter가 이미 등록돼 있으면 등록은 건너뛰고 provider만 켠다. 키를 바꿀 때는 `opencode auth logout openrouter` 후 다시 실행한다. Infisical 없이 하려면 `opencode auth login`에서 OpenRouter를 고르고 키를 넣은 뒤 Paseo 앱 Settings → 호스트 → Providers에서 OpenCode를 켠다.
 2. 확인: `paseo provider diagnostic opencode`(Ready), `paseo provider models opencode`에 프로필의 모델 ID가 있는지.
 
-새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 OpenCode·Antigravity 프로필은 공유 프로필로 추가되지만 실행이 실패한다(Antigravity 프로필은 agy 로그인 필요). ZeroSub는 OpenCode·Antigravity 계정을 관리하지 않는다.
+새 모델이 목록에 없으면 `opencode models --refresh` 후 `paseo reload`한다. 로그인이나 CLI가 없는 기기에서도 OpenCode·Antigravity 프로필은 공유 프로필로 추가되지만 실행이 실패한다(Antigravity 프로필은 agy 로그인 필요). OpenCode 계정은 OpenCode에서 관리한다.
 
 ## Claude API 키와 프로필
 
