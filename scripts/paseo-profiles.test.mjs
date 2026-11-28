@@ -13,7 +13,7 @@ test('역할마다 프로필 하나: 감독·설계는 Astra, 구현·일상 리
   for (const [name, model, modeId, thinkingOptionId] of [
     ['Supervisor', 'gpt-6.2-astra', 'full-access', 'high'],
     ['Builder', 'gpt-6.2-sol', 'full-access', 'high'],
-    ['Architect', 'gpt-6.2-astra', 'full-access', 'xhigh'],
+    ['Architect', 'gpt-6.2-astra', 'auto-review', 'xhigh'],
     ['Deep Reviewer', 'claude-opus-5-5', 'bypassPermissions', 'high'],
     ['Policy Reviewer (Fable)', 'claude-fable-5-2', 'bypassPermissions', 'high'],
     ['Policy Reviewer (Astra)', 'gpt-6.2-astra', 'auto-review', 'xhigh'],
@@ -81,7 +81,7 @@ test('기존 개인 설정 유지, 누락 추가, 반복 실행 시 중복 없�
 
 test('명시적 갱신은 ID·외형을 보존하고 제공자 기능을 교체하며 이전 이름을 이전한다', () => {
   const existing = [
-    { id: 'a', name: 'Architect', provider: 'claude', icon: 'hammer', featureValues: { plan_mode: true } },
+    { id: 'a', name: 'Architect', provider: 'claude', icon: 'hammer', featureValues: { effort: 'max' } },
     { id: 'b', name: 'Cross Reviewer', provider: 'claude', color: 'orange' }
   ];
   // 갱신 없이는 이전 이름을 그대로 두고 새 이름의 프로필을 따로 추가하지 않는다.
@@ -91,7 +91,7 @@ test('명시적 갱신은 ID·외형을 보존하고 제공자 기능을 교체�
   assert.equal(result.profiles[0].provider, 'codex');
   assert.equal(result.profiles[0].id, 'a');
   assert.equal(result.profiles[0].icon, 'hammer');
-  assert.equal(Object.hasOwn(result.profiles[0], 'featureValues'), false);
+  assert.deepEqual(result.profiles[0].featureValues, { plan_mode: true });
   assert.equal(result.profiles[1].name, 'Deep Reviewer');
   assert.equal(result.profiles[1].id, 'b');
   assert.equal(result.profiles[1].color, 'orange');

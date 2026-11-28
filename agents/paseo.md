@@ -121,7 +121,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | Builder | GPT-6.2 Sol | high | full-access |
 | Frontend Builder | Claude Opus 5.5 | high | bypassPermissions |
 | Reviewer | GPT-6.2 Sol | xhigh | auto-review + plan |
-| Architect | GPT-6.2 Astra | xhigh | full-access |
+| Architect | GPT-6.2 Astra | xhigh | auto-review + plan |
 | Deep Reviewer | Claude Opus 5.5 | high | bypassPermissions |
 | Policy Reviewer (Fable) | Claude Fable 5.2 | high | bypassPermissions |
 | Policy Reviewer (Astra) | GPT-6.2 Astra | xhigh | auto-review + plan |
@@ -134,7 +134,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 - 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 새 Deep Reviewer 세션은 고위험 변경과 중대 지적·근거 충돌에만 추가한다. 고위험 여부는 저장소의 위험 기준을 따르고, 기준이 없으면 권한·인증·돈·데이터 이전·테넌트 격리 경계에 영향을 주는지로 판단한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가, Builder(Sol) 결과의 다른 계열 검토가 필요하면 Deep Reviewer(Opus)가 맡는다.
-- Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 구현은 `full-access`, Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
+- Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 구현·감독은 `full-access`, Codex 리뷰·설계는 수정을 막는 auto-review + plan을 유지한다.
 - 프로필 변경은 이후 선택에 적용된다. 이미 실행 중인 에이전트의 모델은 바뀌지 않는다.
 - Scan Reviewer·Gemini Cross-check는 결함 후보를 넓게 찾는 보조 리뷰다. 결함 확정은 Reviewer·Deep Reviewer가 근거를 확인해 한다. Scan Reviewer는 큰 코드를 범위별로 나눠 여러 세션을 동시에 띄우는 용도이고, 같은 모델의 Gemini Cross-check와 Gemini 쿼터를 나눠 쓴다. 모델별 선택 근거와 바꿀 때 다시 볼 조건은 [모델 선택 근거](model-selection.md).
 - Helper는 CI·검증 실패 로그 분석, 리뷰 지적 중복 정리, 수정 전 코드 지도처럼 맡긴 쪽이 결과를 확인하는 읽기 전용 잡무를 싸게 맡는다. 결함 찾기·리뷰·확정에는 쓰지 않는다.

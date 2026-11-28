@@ -44,8 +44,9 @@
       "name": "Architect",
       "provider": "codex",
       "model": "gpt-6.2-astra",
-      "modeId": "full-access",
+      "modeId": "auto-review",
       "thinkingOptionId": "xhigh",
+      "featureValues": { "plan_mode": true },
       "notes": "중요한 아키텍처 결정, 복잡한 원인 분석과 설계에 선택. 요구사항·제약·대안·근거·검증 방법을 정리하고 구현은 Builder에 맡긴다."
     },
     {
