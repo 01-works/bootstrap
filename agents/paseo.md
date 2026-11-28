@@ -131,7 +131,7 @@ Paseo의 새 에이전트 모델 선택기에서 각 프로필을 고르면 해�
 | Opus (agy) | Claude Opus 5.5 High (Antigravity) | 모델에 포함 | full-access (유일한 모드) |
 
 - Supervisor는 여러 작업·프로젝트의 우선순위·의존성·할당·진행·검증·완료를 관리한다. 직접 구현하지 않고 수정·테스트·통합과 큰 탐색은 Paseo 작업자에게 맡긴다. 내장 서브에이전트는 짧은 읽기 전용 확인에만 쓴다.
-- 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 새 Deep Reviewer 세션은 권한·인증·돈·데이터 이전·테넌트 격리·공개 계약처럼 저장소 규칙이 두 번째 리뷰를 요구하거나 권장하는 고위험 변경과, 중대 지적·근거 충돌에만 추가한다. 그 밖의 변경은 Reviewer 하나로 끝낸다.
+- 기본 흐름: Builder 구현 → 새 Reviewer 세션에서 독립 리뷰 → Supervisor가 결과 확인. 새 Deep Reviewer 세션은 고위험 변경과 중대 지적·근거 충돌에만 추가한다. 고위험 여부는 저장소의 위험 기준을 따르고, 기준이 없으면 권한·인증·돈·데이터 이전·테넌트 격리 경계에 영향을 주는지로 판단한다.
 - 같은 모델이 작성했더라도 독립 리뷰가 가능하다. 리뷰에는 요구사항·diff·관련 코드·검증 결과를 전달하고, 지적은 코드 근거·발생 조건·영향·재현 방법으로 검증한다.
 - Deep Reviewer는 Opus이므로 Opus가 작성한 결과의 다른 계열 검토는 Reviewer(Sol)가, Builder(Sol) 결과의 다른 계열 검토가 필요하면 Deep Reviewer(Opus)가 맡는다.
 - Claude 프로필은 모두 권한 확인 없이 실행한다(`bypassPermissions`). Claude plan 모드는 ZeroSub 계정 폴더의 공유 plans 링크 때문에 plan 파일을 쓸 때마다 권한을 묻기 때문이다. Claude 리뷰·설계 프로필의 읽기 전용은 지시문으로만 지켜진다. Codex 구현은 `full-access`, Codex 리뷰는 수정을 막는 auto-review + plan을 유지한다.
