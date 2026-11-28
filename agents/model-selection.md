@@ -26,12 +26,12 @@
 
 | 프로필 | 모델 | 근거 | 약점과 대응 |
 |---|---|---|---|
-| Supervisor·Architect | Claude Opus 5.5 | Terminal-Bench 4.0 66.4%(Anthropic 발표, Artificial Analysis 재측정 59.6%)로 에이전트 코딩 최상위권 | 구현·설계 능력은 자체 비교로 재지 않았다 |
-| Builder | GPT-6.2 Sol | 2026-11-22~25 원격 3대에서 Opus로 위임된 세션 95개 중 60개가 Builder였다(세션 수 기준, 제목으로 역할 분류). 위임이 가장 많은 역할을 Claude 사용량 밖으로 옮긴다. 자체 결함 찾기 비교 9/23으로 Opus(7/23)보다 많이 찾았고, 2026-11-22 이전 Builder 모델이었다. 사용자 결정(2026-11-26) | 구현 능력은 자체 비교로 재지 않았다. Reviewer도 Sol이라 기본 리뷰가 같은 계열이므로, 다른 계열 검토가 필요한 변경은 Deep Reviewer(Opus)를 더한다. 어려운 설계·원인 분석은 Architect(Opus)가 맡는다 |
+| Supervisor·Architect | GPT-6.2 Astra | 2026-11-27부터 01-software 감독 10개와 총괄 대리가 Astra로 이어져 병합까지 운영됐다. 감독 교체 뒤 감독 체계의 남은 Opus 사용 중 설계가 큰 몫이었다(세션 첫 지시 키워드로 역할 분류한 근사치). Claude 사용량을 쓰지 않는다. 사용자 결정(2026-11-29) | 감독·설계 품질은 자체 비교로 재지 않았다. Builder·Reviewer와 Codex 쿼터를 나눠 쓴다. 고위험 설계는 Deep Reviewer(Opus)가 다른 계열로 검토한다 |
+| Builder | GPT-6.2 Sol | 2026-11-22~25 원격 3대에서 Opus로 위임된 세션 95개 중 60개가 Builder였다(세션 수 기준, 제목으로 역할 분류). 위임이 가장 많은 역할을 Claude 사용량 밖으로 옮긴다. 자체 결함 찾기 비교 9/23으로 Opus(7/23)보다 많이 찾았고, 2026-11-22 이전 Builder 모델이었다. 사용자 결정(2026-11-26) | 구현 능력은 자체 비교로 재지 않았다. Reviewer도 Sol이라 기본 리뷰가 같은 계열이므로, 다른 계열 검토가 필요한 변경은 Deep Reviewer(Opus)를 더한다. 어려운 설계·원인 분석은 Architect가 맡는다 |
 | Frontend Builder | Claude Opus 5.5 | WebDev Arena 디자인 부문 1위(2026-11-11 기준) | Arena는 사용자 투표라 실제 화면은 브라우저로 검증한다 |
 | Reviewer | GPT-6.2 Sol | 자체 비교 9/23. Astra와 코딩 점수가 비슷하고 가격은 1/4 | 지적이 많고 확신도를 높게 매기므로 지적마다 근거를 확인한다 |
 | Deep Reviewer | Claude Opus 5.5 | 에이전트 코딩 최상위권이고, 자체 비교에서 지적이 적고 근거를 따져 후보를 걸러 냈다 | 확정 정밀도는 재지 않았다. Opus 결과에 다른 계열 검토가 필요하면 Reviewer(Sol)가 맡는다 |
-| Policy Reviewer (Fable / Astra) | Claude Fable 5.2 / GPT-6.2 Astra | Fable은 에이전트 코딩, Astra는 과학·전문 업무에서 앞선다 | 작업당 비용이 Fable이 약 6배라 둘 다 정책 변경 검토와 단계 검토에만 쓴다 |
+| Policy Reviewer (Fable / Astra) | Claude Fable 5.2 / GPT-6.2 Astra | Fable은 에이전트 코딩, Astra는 과학·전문 업무에서 앞선다 | 작업당 비용이 Fable이 약 6배라 Policy Reviewer 프로필은 정책 변경 검토와 단계 검토에만 쓴다 |
 | Scan Reviewer | Gemini 4 Neon | 자체 비교 10/23으로 가장 많이 찾음. 구독 쿼터라 추가 비용이 없다 | Gemini Cross-check와 같은 쿼터를 나눠 쓴다. 결과는 후보로만 쓴다 |
 | Helper | DeepSeek V4.1 Flash | 같은 입력으로 Sol과 비교한 읽기 전용 잡무 시험(CI 실패 로그 5개, 리뷰 지적 32개 묶기, 모듈 코드 지도)에서 Sol과 비슷한 결과를 냈다(로그 5/5 대 5/5, 묶기 정답 20묶음 중 18 대 19, 채점은 Opus 한 개). 원인이 로그에 없는 실패는 추측하지 않고 확인할 첨부 파일을 짚었고, 코드 지도의 근거 위치도 정확했다. 세 작업 비용 약 $0.05 | 결함 찾기는 약해서(위 4/23) 리뷰·확정에는 쓰지 않는다 |
 | Gemini Cross-check | Gemini 4 Neon | Claude·GPT와 다른 계열로 반례와 빠진 맥락을 찾는다 | 심각도를 높게 잡고 기존 결정을 새 발견처럼 내므로 코드 리뷰의 결함 후보는 Sol로 반박 검증한다 |
@@ -45,6 +45,7 @@
 ## 다시 볼 조건
 
 - Builder(Sol) 결과에서 Reviewer 재작업이나 Architect 이관이 Opus 때보다 눈에 띄게 늘면 Builder 모델을 다시 비교한다.
+- Supervisor·Architect(Astra)로 Codex 한도 막힘이나 설계 재작업이 눈에 띄게 늘면 두 역할의 모델을 다시 비교한다.
 - Scan Reviewer와 Gemini Cross-check를 함께 쓰다가 Gemini 쿼터에 자주 막히면 스캔 모델을 다시 비교한다.
 
 ## 출처

@@ -71,7 +71,7 @@ heavy의 모드별 한도·전환·이전 ID 이행·회수 기준은 bootstrap 
 | 총괄 단독 | 조회, 사실 목록·기록 갱신, 근거 요청, 기존 결정 전달·readback·합의 조치의 진행 확인, 아래 "순찰과 재개"의 진행·재개 요청, 실행 없는 잠정 가설 보고 |
 | 교차 모델 합의(중요한 감사·완료 판단) | 정책 위반·중대 결함의 확정·기각, 누적 사용자 목표의 완료 판정과 세션·workspace 정리, 소유권 충돌, 승인 범위·기존 규칙의 예외 판단, 여러 lane에 영향을 주는 운영 규칙 변경의 확정 |
 | 교차 모델 합의(새 운영 정책 설계) | 여러 lane에 영향을 주는 새 운영 규칙·우선순위 정책의 설계 |
-| 단계 검토(그 밖의 중요 판단) | 결제·권한·데이터·계약·보안이나 되돌리기 어려운 판단은 Astra → Fable(Neon은 참고 병행 가능), 설계 선택·우선순위 등은 Neon(Gemini Cross-check) → Astra → Fable |
+| 단계 검토(그 밖의 중요 판단) | 결제·권한·데이터·계약·보안이나 되돌리기 어려운 판단은 Astra → Fable(Neon은 참고 병행 가능), 설계 선택·우선순위 등은 Neon(Gemini Cross-check) → Astra → Fable. 총괄과 같은 계열의 단계는 건너뛴다 |
 
 합의는 실행 권한을 추가하지 않는다. 사용자 결정은 공통 에스컬레이션 계약만 따른다.
 
@@ -81,6 +81,7 @@ heavy의 모드별 한도·전환·이전 ID 이행·회수 기준은 bootstrap 
 
 | 총괄 감독 | 중요한 감사·완료 판단 | 새 운영 정책 설계 |
 |---|---|---|
+| GPT(Astra) | Deep Reviewer (Opus) | Policy Reviewer (Fable)·(Astra) |
 | Claude(Opus) | Reviewer (Sol) | Policy Reviewer (Fable)·(Astra) |
 
 - 감사·완료 판단은 총괄 포함 2모델, 새 운영 정책 설계는 총괄과 두 Policy Reviewer의 합의다. 합의에는 표가 notes보다 우선한다.
