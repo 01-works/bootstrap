@@ -1,0 +1,172 @@
+ZeroSub macOS Antigravity account isolation and usage display
+Upstream: https://github.com/kapybara-org/zerosub at 0a2abe28a93e288d4bf74726720ea723d1d24220 (v1.35.0)
+
+MIT License
+
+Copyright (c) 2026 Kapybara
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+diff --git a/server/antigravity.test.ts b/server/antigravity.test.ts
+index c31f77c..c4020e6 100644
+--- a/server/antigravity.test.ts
++++ b/server/antigravity.test.ts
+@@ -2,9 +2,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+ import { describe, expect, it, vi } from "vitest";
+-import { AntigravityAdapter, AntigravityLogin, antigravityEmail, parseAntigravityUsage } from "./antigravity";
++import { AntigravityAdapter, AntigravityLogin, antigravityEmail, antigravityUsageError, parseAntigravityUsage } from "./antigravity";
+ import { familiesFromConfig } from "./families";
+
++const supported = process.platform === "linux" || process.platform === "darwin";
++
+ describe("Antigravity accounts", () => {
+   it("routes the built-in provider and leaves independently configured homes and keys alone", () => {
+     expect(familiesFromConfig({}).antigravity).toBe("antigravity");
+@@ -17,18 +19,19 @@ describe("Antigravity accounts", () => {
+     expect(families).not.toHaveProperty("separate");
+     expect(families).not.toHaveProperty("key");
+     expect(familiesFromConfig({ antigravity: { env: { HOME: "/other" } } }).antigravity).toBeUndefined();
++    expect(familiesFromConfig({ antigravity: { env: { GEMINI_HOME: "/other" } } }).antigravity).toBeUndefined();
+     expect(familiesFromConfig({ antigravity: { command: ["agy", "acp", "--app-data-dir=/other"] } }).antigravity).toBeUndefined();
+   });
+
+-  it.skipIf(process.platform !== "linux")("keeps the CLI environment and isolates the added sign-in", async () => {
++  it.skipIf(!supported)("keeps the CLI environment and isolates the added sign-in", async () => {
+     const adapter = new AntigravityAdapter();
+     expect(await adapter.env(null)).toEqual({});
+     expect(await adapter.env("/isolated")).toMatchObject({
+-      HOME: "/isolated", SSH_CONNECTION: "paseo", GEMINI_API_KEY: "", GOOGLE_APPLICATION_CREDENTIALS: "",
++      HOME: "/isolated", SSH_CONNECTION: "paseo", GEMINI_HOME: "", GEMINI_API_KEY: "", GOOGLE_APPLICATION_CREDENTIALS: "",
+     });
+   });
+
+-  it.skipIf(process.platform !== "linux")("passes the pasted code to the official login process", async () => {
++  it.skipIf(!supported)("passes the pasted code to the official login process", async () => {
+     const home = await mkdtemp(join(tmpdir(), "zerosub-agy-login-"));
+     const command = join(home, "agy");
+     await writeFile(command, '#!/bin/sh\nprintf "https://accounts.google.com/sign-in\\n"\nread -r code\n[ "$code" = "test-code" ]\n', { mode: 0o700 });
+@@ -65,4 +68,14 @@ describe("Antigravity accounts", () => {
+     ]);
+     expect(parseAntigravityUsage("<error>")).toEqual([]);
+   });
++
++  it("shows account verification as the cause without returning the challenge URL", () => {
++    const failure = JSON.stringify({
++      error: "Eligibility check failed: Your current account is not eligible for Antigravity. Verify your account to continue.\nhttps://accounts.google.com/verify",
++    });
++    const message = antigravityUsageError(failure);
++    expect(message).toContain("Google requires account verification");
++    expect(message).not.toContain("https://");
++    expect(antigravityUsageError("not JSON")).toContain("Check /usage inside agy");
++  });
+ });
+diff --git a/server/antigravity.ts b/server/antigravity.ts
+index f521b38..34d5fce 100644
+--- a/server/antigravity.ts
++++ b/server/antigravity.ts
+@@ -9,7 +9,8 @@ import { ANTIGRAVITY_AUTH_ENV } from "./families";
+ import { readJson } from "./json-file";
+ import { firstUrl, run, stripAnsi } from "./process";
+
+-const unsupported = "Isolated Antigravity accounts are supported on Linux.";
++const supported = process.platform === "linux" || process.platform === "darwin";
++const unsupported = "Isolated Antigravity accounts are supported on Linux and macOS.";
+ const signedOut = /please sign in|authentication required|not signed in/i;
+
+ /** Only consumer OAuth establishes a match; an enterprise identity can cover several organizations. */
+@@ -32,6 +33,8 @@ async function signedInEmail(env: NodeJS.ProcessEnv): Promise<string | null> {
+   if (env.SSH_CONNECTION || env.SSH_CLIENT || env.SSH_TTY) {
+     return antigravityEmail(await readFile(join(configDir, "antigravity-oauth-token"), "utf8"));
+   }
++  // The desktop login on macOS can run without granting ZeroSub access to the Keychain.
++  if (process.platform === "darwin") return null;
+   const secret = await run("secret-tool", ["lookup", "service", "gemini", "username", "antigravity"], { env, timeoutMs: 3_000 });
+   return secret.code === 0 ? antigravityEmail(secret.stdout) : null;
+ }
+@@ -60,6 +63,20 @@ export function parseAntigravityUsage(output: string): UsageWindow[] {
+   return [...windows.values()];
+ }
+
++/** Summarize known errors without exposing Google's account verification URL. */
++export function antigravityUsageError(output: string): string {
++  try {
++    const result = JSON.parse(output) as { error?: unknown } | null;
++    if (typeof result?.error === "string" && result.error.includes("Eligibility check failed:") &&
++        result.error.includes("Verify your account to continue.")) {
++      return "Google requires account verification. Run /usage in agy with this account and follow Google's verification link.";
++    }
++  } catch {
++    // agy can fail before returning JSON.
++  }
++  return "Antigravity did not report usage. Check /usage inside agy.";
++}
++
+ export class AntigravityAdapter implements FamilyAdapter {
+   readonly family = "antigravity" as const;
+   readonly portable = false;
+@@ -67,13 +84,13 @@ export class AntigravityAdapter implements FamilyAdapter {
+
+   async env(home: string | null): Promise<EnvPatch> {
+     if (!home) return {};
+-    if (process.platform !== "linux") throw new Error(unsupported);
+-    // Linux agy uses an account-specific token file in SSH mode instead of the shared desktop keyring.
++    if (!supported) throw new Error(unsupported);
++    // agy uses an account-specific token file in SSH mode instead of the shared desktop keyring.
+     return { HOME: home, SSH_CONNECTION: "paseo", ...Object.fromEntries(ANTIGRAVITY_AUTH_ENV.map((key) => [key, ""])) };
+   }
+
+   async available(): Promise<{ ok: boolean; detail: string | null }> {
+-    if (process.platform !== "linux") return { ok: false, detail: unsupported };
++    if (!supported) return { ok: false, detail: unsupported };
+     const { command } = await providerCommand(this.family);
+     const result = await run(command, ["acp", "--help"], { timeoutMs: 10_000 }).catch(() => null);
+     const ok = result?.code === 0 && /--login\b/.test(`${result.stdout}\n${result.stderr}`);
+@@ -81,7 +98,7 @@ export class AntigravityAdapter implements FamilyAdapter {
+   }
+
+   async prepareHome(home: string): Promise<void> {
+-    if (process.platform !== "linux") throw new Error(unsupported);
++    if (!supported) throw new Error(unsupported);
+     await mkdir(home, { recursive: true, mode: 0o700 });
+   }
+
+@@ -102,7 +119,7 @@ export class AntigravityAdapter implements FamilyAdapter {
+     const windows = result.code === 0 ? parseAntigravityUsage(result.stdout) : [];
+     return {
+       fetchedAt: new Date().toISOString(), windows, cached: false, resets: null,
+-      error: windows.length ? null : "Antigravity did not report usage. Check /usage inside agy.",
++      error: windows.length ? null : antigravityUsageError(result.stdout),
+     };
+   }
+
+diff --git a/server/families.ts b/server/families.ts
+index 4854157..f058dfe 100644
+--- a/server/families.ts
++++ b/server/families.ts
+@@ -7,7 +7,7 @@ type PaseoApi = PluginHandlerContext["paseo"];
+
+ export const ANTIGRAVITY_AUTH_ENV = [
+   "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS",
+-  "AGY_ADC_AUTH", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
++  "AGY_ADC_AUTH", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "GEMINI_HOME",
+ ] as const;
+
+ /**
