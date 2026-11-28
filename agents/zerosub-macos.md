@@ -1,6 +1,6 @@
 # macOS에서 ZeroSub로 Antigravity 계정별 사용량 보기
 
-Paseo의 **Accounts (ZeroSub) → Antigravity**에 Google 계정을 따로 로그인하고 각 계정의 5시간·주간 사용량을 확인한다. 공식 ZeroSub v1.35.0의 Linux용 계정 등록 기능을 macOS에서도 쓸 수 있게 한 선택 설치다. 현재 CLI 계정 하나만 확인하려면 터미널에서 `agy -p /usage`를 실행하면 된다.
+Paseo의 **Accounts (ZeroSub) → Antigravity**에 Google 계정을 따로 로그인하고 각 계정의 5시간·주간 사용량을 확인한다. 공식 ZeroSub v1.35.0의 Linux용 계정 등록 기능을 macOS에서도 쓸 수 있게 한 선택 설치다. 설치하면 ZeroSub가 사용량을 주기적으로 `agy -p /usage`로 조회한다. 현재 CLI 계정 하나만 확인하려면 터미널에서 같은 명령을 직접 실행하면 된다.
 
 이 패치는 계정 한도에 따른 전환이나 계정 간 대화 전송을 추가하지 않는다. Google은 개인 구독에서 제3자 앱이 CLI를 감싸 실행하는 방식과 계정 자동 전환을 지원하지 않는다고 안내하며, 직접 CLI로 스크립트를 실행하는 용도를 설명한다. [Google Antigravity FAQ](https://antigravity.google/docs/faq#can-i-use-antigravity-cli-headless-mode-in-third-party-coding-agents-or-automate-account-switching)
 
@@ -59,6 +59,8 @@ patch_file="$PWD/agents/patches/zerosub-v1.35.0-macos.patch"
 ```
 
 `paseo plugin ls zerosub`에서 폴더 경로와 `running`을 확인하고 **Accounts**에서 기존 계정·설정을 확인한다. 설치에 실패하면 백업의 `installation.json`에서 원래 소스를 확인해 같은 ID로 다시 설치하고, 위와 같이 설정을 복원한 뒤 `paseo plugin reload zerosub`를 실행한다. 계정 목록이 사라진 경우에만 백업의 `state.json`과 비교한다. bootstrap의 정기 갱신은 폴더 설치를 유지한다.
+
+공식 업데이트를 다시 받으려면 위 교체 절차로 현재 설정을 새로 백업하고 마지막 설치 명령의 소스를 `"$plugin_dir"`에서 `kapybara-org/zerosub`로 바꾼다. 공식 릴리스가 macOS 계정을 지원하는지 확인한 뒤 전환한다.
 
 ## 계정 추가와 사용량 확인
 
